@@ -1,1 +1,0 @@
-# TechVJ template init
