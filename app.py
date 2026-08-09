@@ -1,9 +1,10 @@
 from flask import Flask
+
 app = Flask(__name__)
 
 @app.route('/')
 def hello_world():
-    return 'TechVJ'
+    return 'ASH FILE STORE & CLONE MANAGER BOT'
 
 
 if __name__ == "__main__":
