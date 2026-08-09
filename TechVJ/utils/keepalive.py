@@ -1,13 +1,8 @@
-# Don't Remove Credit @VJ_Bots
-# Subscribe YouTube Channel For Amazing Bot @Tech_VJ
-# Ask Doubt on telegram @KingVJ01
-
 import asyncio
 import logging
 import aiohttp
 import traceback
-from config import PING_INTERVAL
-
+from config import PING_INTERVAL, URL
 
 async def ping_server():
     sleep_time = PING_INTERVAL
@@ -17,7 +12,7 @@ async def ping_server():
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=10)
             ) as session:
-                async with session.get(Var.URL) as resp:
+                async with session.get(URL) as resp:
                     logging.info("Pinged server with response: {}".format(resp.status))
         except TimeoutError:
             logging.warning("Couldn't connect to the site URL..!")
