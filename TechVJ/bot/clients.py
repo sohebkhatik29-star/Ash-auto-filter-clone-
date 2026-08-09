@@ -1,15 +1,9 @@
-# Don't Remove Credit @VJ_Bots
-# Subscribe YouTube Channel For Amazing Bot @Tech_VJ
-# Ask Doubt on telegram @KingVJ01
-
-
 import asyncio
 import logging
 from config import API_HASH, API_ID, MULTI_CLIENT, SLEEP_THRESHOLD
 from pyrogram import Client
 from TechVJ.utils.config_parser import TokenParser
 from . import multi_clients, work_loads, StreamBot
-
 
 async def initialize_clients():
     multi_clients[0] = StreamBot
@@ -18,7 +12,7 @@ async def initialize_clients():
     if not all_tokens:
         print("No additional clients found, using default client")
         return
-    
+
     async def start_client(client_id, token):
         try:
             print(f"Starting - Client {client_id}")
@@ -38,11 +32,10 @@ async def initialize_clients():
             return client_id, client
         except Exception:
             logging.error(f"Failed starting Client - {client_id} Error:", exc_info=True)
-    
+
     clients = await asyncio.gather(*[start_client(i, token) for i, token in all_tokens.items()])
     multi_clients.update(dict(clients))
     if len(multi_clients) != 1:
-        MULTI_CLIENT = True
         print("Multi-Client Mode Enabled")
     else:
         print("No additional clients were initialized, using default client")
