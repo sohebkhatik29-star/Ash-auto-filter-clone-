@@ -1,121 +1,81 @@
 <p align="center">
-  <img src="https://i.ibb.co/dJ0gpJf1/photo-2025-06-16-12-07-05-7516517596376596504.jpg" alt="VJ-FILE-STORE-BOT Logo">
+  <h1 align="center">ASH FILE STORE & CLONE MANAGER BOT</h1>
 </p>
-<h1 align="center">
-  VJ FILE STORE BOT
-</h1>
 
-![Typing SVG](https://readme-typing-svg.herokuapp.com/?lines=Welcome+To+VJ-FILE-STORE-BOT;A+Highly+Advance+File+Store+Bot;Made+By+Yt-@Tech_VJ!;With+Clone+Feature+Stream/Download+Link;Custom+Url+Sho[...]
+<p align="center">Telegram File Store + Clone Manager Bot</p>
 
-### Deploy Tutorial [Video Link](https://youtu.be/VxAn9VcYtQg)
+## 👤 Owner & Contact
 
-## Features
+- **Owner:** [@movies_1780](https://t.me/movies_1780)
+- **Bot:** [@Ash_files_or_clone_mangar_bot](https://t.me/Ash_files_or_clone_mangar_bot)
+- **YouTube:** [Tech AS](https://www.youtube.com/@tech_as_0)
 
-<b><details><summary>Tap On Me For Bot Features</summary>
- 
-- [x] Permanent Link By Using Website [ Premium Feature] 
-- [x] Clone Feature Added [ Premium Feature] 
-- [x] Token Verification Feature 
-- [x] Stram Feature Added With Many Player Support
-- [x] Custom Url Shortner Support Any User Can Add His Own Shortner
-- [x] Batch Support Added, Any User Can Use Batch By Making Bot Admin In His File Store Channel
-- [x] Auto Delete Feature Added
-- [x] Custom Start Message With Picture And Buttons
-</b>
-</details>
+## 📢 Telegram
 
-## Environment Variables
+- **Channel:** [MoviesGroupG3](https://t.me/MoviesGroupG3)
+- **Group:** [ash_movie_j](https://t.me/ash_movie_j)
 
-<b><details><summary>Tap On Me For Environment Variable</summary>
+## ✨ Features
 
-- `API_ID` : Get From [my.telegram.org](https://my.telegram.org)
-- `API_HASH` : Get From [my.telegram.org](https://my.telegram.org)
-- `BOT_TOKEN` : Get From [BotFather](https://telegram.me/BotFather)
-- `BOT_USERNAME` : Your Bot Username Without @
-- `DB_URI` : Mongodb Database Url For Main Bot [Tutorial Watch Here](https://youtu.be/DAHRmFdw99o)
-- `CLONE_DB_URI` : Mongodb Database Url For Clone Bot [Tutorial Watch Here](https://youtu.be/DAHRmFdw99o)
-- `ADMINS` : It mean Admin/Owner Id For Broadcasting Message.
-- `LOG_CHANNEL` : Log channel id start with -100xxxxxx
-- `URL` : Your Server App Link With https:// and in last make sure one / is given.
-- `AUTO_DELETE` : Time In Minutes
-- `AUTO_DELETE_TIME` : Time In Seconds
-- `PYTHON_VERSION` : This Variable Is Only For Render, Value IS `3.10.8`
-- `PORT` : This Variable Is Only For Render, Value IS `8080`
-</b>
-</details>
+- [x] Permanent file links
+- [x] Clone feature
+- [x] Token verification
+- [x] Stream/download support
+- [x] Custom URL shortener support
+- [x] Batch support
+- [x] Auto-delete feature
+- [x] Custom start message with picture and buttons
 
-## See How Bot Look Like
+## ⚙️ Environment Variables
 
-<b><details><summary>Tap On Me For Demo Bot</summary></b>
+- `API_ID` — Get from Telegram API settings
+- `API_HASH` — Get from Telegram API settings
+- `BOT_TOKEN` — Get from BotFather
+- `BOT_USERNAME` — Your bot username without `@`
+- `DB_URI` — MongoDB database URL for the main bot
+- `CLONE_DB_URI` — MongoDB database URL for clone bots
+- `ADMINS` — Admin/owner Telegram user ID
+- `LOG_CHANNEL` — Log channel ID
+- `URL` — Your deployed server URL, ending with `/`
+- `AUTO_DELETE` — Auto-delete time in minutes
+- `AUTO_DELETE_TIME` — Auto-delete time in seconds
+- `PYTHON_VERSION` — Python version used by your deployment platform
+- `PORT` — Web server port
 
-<img src="https://graph.org/file/bb9c59043c52072e8dc93.jpg" alt="Bot Demo">
-<img src="https://graph.org/file/295e41dfab93acf42a111.jpg" alt="Bot Demo">
-<img src="https://graph.org/file/ccc1b6ab4967a7d155ab8.jpg" alt="Bot Demo">
-<img src="https://graph.org/file/75db5257c39436b734b49.jpg" alt="Bot Demo">
-<img src="https://graph.org/file/1ce62a17012ed5723aaca.jpg" alt="Bot Demo">
-</details>
+## 📝 Commands
 
-## Command To Use Bot
+### Main Bot
 
-<b><details><summary>Tap On Me For Bot Commands</summary>
+- `/start` — Check whether the bot is alive
+- `/link` — Generate a shareable link for a replied file
+- `/batch` — Generate multiple shareable links
+- `/base_site` — Set URL shortener domain
+- `/api` — Set URL shortener API key
+- `/deletecloned` — Delete a cloned bot
+- `/broadcast` — Broadcast a message to bot users (owner only)
 
-🖍️ Main Bot Commands :-
+### Clone Bots
 
-- `/start` : By This Command You Can Check Bot Is Alive Or Not
-- `/link` : By This Command You Can Generate A Shareable Link Of File By Replying This Command To That File
-- `/batch` : By This Command You Can Generate Multiple File Shareable Link At A Time [Use Like This /batch (first post link) (last post link)]
-- `/base_site` : By This Command You Can Set Your Url Shortner Domain [Use Like This /base_site domain.com]
-- `/api` : By This Command You Can Set Your Url Shortner Api [Use Like This /api (your api key)]
-- `/deletecloned` : By This Command You Can Delete Your Cloned Bot [Use Like This /deletecloned (your bot token)]
-- `/broadcast` : By Using This Command You Can Broadcast A Message To Your Bot User, Reply This Command To Broadcast Message [Owner Only Command]
+- `/start` — Check whether the bot is alive
+- `/link` — Generate a shareable file link
+- `/base_site` — Set URL shortener domain
+- `/api` — Set URL shortener API key
+- `/broadcast` — Broadcast a message to clone-bot users
 
-🖍️ Clone Bot Commands :- 
+## 📌 Project Notice
 
-- `/start` : By This Command You Can Check Bot Is Alive Or Not
-- `/link` : By This Command You Can Generate A Shareable Link Of File By Replying This Command To That File
-- `/base_site` : By This Command You Can Set Your Url Shortner Domain [Use Like This /base_site domain.com]
-- `/api` : By This Command You Can Set Your Url Shortner Api [Use Like This /api (your api key)]
-- `/broadcast` : By Using This Command You Can Broadcast A Message To Your Bot User, Reply This Command To Broadcast Message [Clone Bot Owner Only Command]
-
-</b>
-</details>
-
-## Credit
-
-<b><details><summary>Tap On Me For See Credit</summary>
-
-💝 Credit Goes To [Tech VJ](https://telegram.me/VJ_Bots)
-
-🖍️ This Code Is Fully Written Or Coded And Public By [Tech VJ](https://github.com/VJBots) So Don't Forgot To Give Credit
-
-💖 And Thank You So Much To All Who Help In This Journey 💕
-
-Copyright ©️ [Tech VJ](https://youtube.com/@Tech_VJ)
-
-</b>
-</details>
-
-## About Owner 
-
-<b><details><summary>Tap On Me For See Details Of Owner</summary>
-
-- YouTube Channel : [Tech VJ](https://youtube.com/@Tech_VJ)
-- Telegram Channel : [VJ Bots](https://telegram.me/VJ_Bots)
-- Contact Link : [King VJ](https://telegram.me/Kingvj01)
-- Instagram Id Link : [Tech VJ](https://instagram.com/tech.vj)
-
-</b>
-</details>
-
-
-### Copyright ©️ [Tech VJ](https://youtube.com/@Tech_VJ)
-
-<b>Selling This Repo Or Code Of This Repo For Money Is Strictly Prohibited 🚫</b>
-
-
+This repository is a customized deployment/configuration of a Telegram file-store and clone-manager project. Please review and follow the original project's license and attribution requirements before redistributing the underlying code.
 
 ---
 
-Update channel: https://t.me/sky_movies_0
+## 💙 ASH FILE STORE & CLONE MANAGER BOT
 
-Group link: https://t.me/+YeV5cU5-8lA1MTU9
+**Owner:** [@movies_1780](https://t.me/movies_1780)
+
+**Bot:** [@Ash_files_or_clone_mangar_bot](https://t.me/Ash_files_or_clone_mangar_bot)
+
+**Channel:** [MoviesGroupG3](https://t.me/MoviesGroupG3)
+
+**Group:** [ash_movie_j](https://t.me/ash_movie_j)
+
+**YouTube:** [Tech AS](https://www.youtube.com/@tech_as_0)
