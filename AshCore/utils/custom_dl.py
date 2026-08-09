@@ -1,6 +1,6 @@
-# Don't Remove Credit @VJ_Bots
-# Subscribe YouTube Channel For Amazing Bot @Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+# Don't Remove Credit @movies_1780
+# Subscribe YouTube Channel For Amazing Bot @tech_as_0
+# Ask Doubt on telegram @movies_1780
 
 
 import math
@@ -8,12 +8,12 @@ import asyncio
 import logging
 from config import LOG_CHANNEL
 from typing import Dict, Union
-from TechVJ.bot import work_loads
+from AshCore.bot import work_loads
 from pyrogram import Client, utils, raw
 from .file_properties import get_file_ids
 from pyrogram.session import Session, Auth
 from pyrogram.errors import AuthBytesInvalid
-from TechVJ.server.exceptions import FIleNotFound
+from AshCore.server.exceptions import FIleNotFound
 from pyrogram.file_id import FileId, FileType, ThumbnailSource
 
 

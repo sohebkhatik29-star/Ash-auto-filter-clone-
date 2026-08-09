@@ -1,6 +1,6 @@
-# Don't Remove Credit @VJ_Bots
-# Subscribe YouTube Channel For Amazing Bot @Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+# Don't Remove Credit @movies_1780
+# Subscribe YouTube Channel For Amazing Bot @tech_as_0
+# Ask Doubt on telegram @movies_1780
 
 
 from pyrogram import Client
@@ -8,7 +8,7 @@ from typing import Any, Optional
 from pyrogram.types import Message
 from pyrogram.file_id import FileId
 from pyrogram.raw.types.messages import Messages
-from TechVJ.server.exceptions import FIleNotFound
+from AshCore.server.exceptions import FIleNotFound
 
 
 async def parse_file_id(message: "Message") -> Optional[FileId]:

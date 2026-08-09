@@ -2,7 +2,7 @@ import asyncio
 import logging
 from config import API_HASH, API_ID, MULTI_CLIENT, SLEEP_THRESHOLD
 from pyrogram import Client
-from TechVJ.utils.config_parser import TokenParser
+from AshCore.utils.config_parser import TokenParser
 from . import multi_clients, work_loads, StreamBot
 
 async def initialize_clients():

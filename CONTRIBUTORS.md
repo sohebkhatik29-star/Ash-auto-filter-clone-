@@ -8,4 +8,4 @@
 
 ## Original Source
 
-This project was originally published as [VJ-File-Store](https://github.com/VJBots/VJ-File-Store) by Tech VJ and is licensed under the GNU GPL v3.0. This repository preserves the original license and credit.
+This project was originally published as [VJ-File-Store](https://github.com/VJBots/VJ-File-Store) by Tech AS and is licensed under the GNU GPL v3.0. This repository preserves the original license and credit.

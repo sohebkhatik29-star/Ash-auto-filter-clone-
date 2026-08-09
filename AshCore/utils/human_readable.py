@@ -1,6 +1,6 @@
-# Don't Remove Credit @VJ_Bots
-# Subscribe YouTube Channel For Amazing Bot @Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+# Don't Remove Credit @movies_1780
+# Subscribe YouTube Channel For Amazing Bot @tech_as_0
+# Ask Doubt on telegram @movies_1780
 
 def humanbytes(size):
     # https://stackoverflow.com/a/49361727/4723940

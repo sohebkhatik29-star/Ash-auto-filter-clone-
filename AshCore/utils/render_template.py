@@ -1,13 +1,13 @@
-# Don't Remove Credit @VJ_Bots
-# Subscribe YouTube Channel For Amazing Bot @Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+# Don't Remove Credit @movies_1780
+# Subscribe YouTube Channel For Amazing Bot @tech_as_0
+# Ask Doubt on telegram @movies_1780
 
 import jinja2
 from config import LOG_CHANNEL, URL
-from TechVJ.bot import StreamBot
-from TechVJ.utils.human_readable import humanbytes
-from TechVJ.utils.file_properties import get_file_ids
-from TechVJ.server.exceptions import InvalidHash
+from AshCore.bot import StreamBot
+from AshCore.utils.human_readable import humanbytes
+from AshCore.utils.file_properties import get_file_ids
+from AshCore.server.exceptions import InvalidHash
 import urllib.parse
 import logging
 import aiohttp
@@ -29,9 +29,9 @@ async def render_page(id, secure_hash, src=None):
     tag = file_data.mime_type.split("/")[0].strip()
     file_size = humanbytes(file_data.file_size)
     if tag in ["video", "audio"]:
-        template_file = "TechVJ/template/req.html"
+        template_file = "AshCore/template/req.html"
     else:
-        template_file = "TechVJ/template/dl.html"
+        template_file = "AshCore/template/dl.html"
         async with aiohttp.ClientSession() as s:
             async with s.get(src) as u:
                 file_size = humanbytes(int(u.headers.get("Content-Length")))
