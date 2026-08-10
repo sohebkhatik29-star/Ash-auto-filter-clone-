@@ -6,8 +6,9 @@ from datetime import date, datetime
 import pytz
 from aiohttp import web
 from pyrogram import idle
+from pyrogram.types import BotCommand, BotCommandScopeChat
 
-from config import LOG_CHANNEL, ON_HEROKU, CLONE_MODE, PORT
+from config import LOG_CHANNEL, ON_HEROKU, CLONE_MODE, PORT, ADMINS
 from Script import script
 from AshCore.server import web_server
 from AshCore.bot import StreamBot
@@ -21,18 +22,44 @@ logging.getLogger("pyrogram").setLevel(logging.ERROR)
 
 loop = asyncio.get_event_loop()
 
+async def setup_main_menu():
+    user_commands = [
+        BotCommand("start", "Start the bot"),
+        BotCommand("link", "Create a shareable file link"),
+        BotCommand("api", "Set or view shortener API"),
+        BotCommand("base_site", "Set or view shortener site"),
+        BotCommand("clone", "Create your own clone bot"),
+    ]
+    admin_commands = user_commands + [
+        BotCommand("broadcast", "Broadcast a message to users"),
+        BotCommand("deletecloned", "Remove a cloned bot record"),
+    ]
+    try:
+        await StreamBot.set_bot_commands(user_commands)
+        for admin in ADMINS:
+            try:
+                admin_id = int(admin)
+                await StreamBot.set_bot_commands(
+                    admin_commands,
+                    scope=BotCommandScopeChat(chat_id=admin_id),
+                )
+            except (TypeError, ValueError):
+                continue
+            except Exception:
+                logging.exception("Unable to set admin command menu for %s", admin)
+    except Exception:
+        logging.exception("Unable to set main bot command menu")
+
 async def start():
     print("\n")
     print("Initializing ASH FILE STORE & CLONE MANAGER BOT")
 
-    # StreamBot already uses Pyrogram Smart Plugins with root='plugins'.
-    # Do not manually import plugins after start; Pyrogram loads them during
-    # initialize(). Manual re-importing can register duplicate handlers and
-    # cause command handlers to be skipped.
+    # StreamBot uses Pyrogram Smart Plugins with root='plugins'.
     await StreamBot.start()
 
     bot_info = await StreamBot.get_me()
     StreamBot.username = bot_info.username
+    await setup_main_menu()
     await initialize_clients()
 
     if ON_HEROKU:
