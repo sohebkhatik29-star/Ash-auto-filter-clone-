@@ -1,11 +1,12 @@
 import asyncio
 import base64
+import json
 import os
 import re
 import tempfile
 
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, BotCommandScopeChat
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram.errors import FloodWait
 
 from config import LOG_CHANNEL, AUTO_DELETE_MODE, AUTO_DELETE_TIME
@@ -36,56 +37,91 @@ def save_settings(bot_id, **values):
     mongo_db.clone_settings.update_one({"bot_id": bot_id}, {"$set": values}, upsert=True)
 
 
+def banned(bot_id, user_id):
+    return bool(mongo_db.clone_bans.find_one({"bot_id": bot_id, "user_id": int(user_id)}))
+
+
 async def share_link(client, message):
     if not message.reply_to_message:
         await message.reply_text("Reply to a file/message with /link or /genlink.")
         return None
     post = await message.reply_to_message.copy(LOG_CHANNEL)
-    raw = f"file_{post.id}".encode()
-    token = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    token = base64.urlsafe_b64encode(f"file_{post.id}".encode()).decode().rstrip("=")
     me = await client.get_me()
-    link = f"https://t.me/{me.username}?start={token}"
-    return link
+    return f"https://t.me/{me.username}?start={token}"
 
 
 async def send_share_result(client, message):
     link = await share_link(client, message)
-    if link:
-        s = settings((await client.get_me()).id)
-        # Shortener is optional; never make /link fail when it is not configured.
-        if s.get("base_site") and s.get("shortener_api"):
-            try:
-                import requests
-                r = requests.get(
-                    f"https://{s['base_site']}/api",
-                    params={"api": s["shortener_api"], "url": link},
-                    timeout=15,
-                )
-                data = r.json()
-                link = data.get("shortenedUrl") or data.get("shortenedUrl") or link
-            except Exception:
-                pass
-        await message.reply_text(f"<b>🔗 Shareable link:</b>\n{link}")
+    if not link:
+        return
+    s = settings((await client.get_me()).id)
+    if s.get("base_site") and s.get("shortener_api"):
+        try:
+            import requests
+            r = requests.get(
+                f"https://{s['base_site']}/api",
+                params={"api": s["shortener_api"], "url": link},
+                timeout=15,
+            )
+            link = r.json().get("shortenedUrl") or link
+        except Exception:
+            pass
+    await message.reply_text(f"<b>🔗 Shareable link:</b>\n{link}")
 
 
-@Client.on_message(filters.command(["start"]) & filters.private)
+async def delete_later(message, seconds):
+    await asyncio.sleep(max(1, seconds))
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
+@Client.on_message(filters.command("start") & filters.private)
 async def clone_start(client, message):
     me = await client.get_me()
+    if banned(me.id, message.from_user.id):
+        return await message.reply_text("⛔ You are banned from this bot.")
     await clonedb.add_user(me.id, message.from_user.id)
     if len(message.command) < 2:
         buttons = InlineKeyboardMarkup([
             [InlineKeyboardButton("📚 HELP", callback_data="chelp")],
             [InlineKeyboardButton("⚙️ SETTINGS", callback_data="csettings"), InlineKeyboardButton("📊 STATS", callback_data="cstats")],
         ])
-        await message.reply_text(
+        return await message.reply_text(
             f"<b>👋 Hello {message.from_user.first_name}!</b>\n\n"
             f"I am <b>{me.first_name}</b>, an advanced file-store and link bot.\n\n"
             "Use /help to see all available commands.",
             reply_markup=buttons,
         )
-        return
+
     token = message.command[1]
     try:
+        if token.startswith("BATCH-"):
+            pad = "=" * (-len(token[6:]) % 4)
+            msg_id = int(base64.urlsafe_b64decode(token[6:] + pad).decode())
+            index = await client.get_messages(LOG_CHANNEL, msg_id)
+            if not index or index.empty or not index.document:
+                return await message.reply_text("Batch link not found.")
+            path = await client.download_media(index, in_memory=False)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    items = json.load(f)
+                count = 0
+                for item in items:
+                    stored = await client.get_messages(item["channel_id"], item["msg_id"])
+                    if stored and not stored.empty:
+                        sent = await stored.copy(message.chat.id)
+                        count += 1
+                        s = settings(me.id)
+                        if s.get("auto_delete_mode"):
+                            asyncio.create_task(delete_later(sent, int(s.get("auto_delete") or AUTO_DELETE_TIME)))
+                return await message.reply_text(f"✅ Delivered <code>{count}</code> stored messages.")
+            finally:
+                try: os.remove(path)
+                except OSError: pass
+
         pad = "=" * (-len(token) % 4)
         raw = base64.urlsafe_b64decode(token + pad).decode()
         if raw.startswith("file_"):
@@ -98,26 +134,22 @@ async def clone_start(client, message):
             if s.get("auto_delete_mode"):
                 asyncio.create_task(delete_later(sent, int(s.get("auto_delete") or AUTO_DELETE_TIME)))
             return
+        await message.reply_text("Invalid link payload.")
     except Exception as e:
         await message.reply_text(f"Unable to open this link: <code>{e}</code>")
 
 
-async def delete_later(message, seconds):
-    await asyncio.sleep(max(1, seconds))
-    try:
-        await message.delete()
-    except Exception:
-        pass
-
-
 @Client.on_message(filters.command(["link", "genlink"]) & filters.private)
 async def clone_link(client, message):
+    if banned((await client.get_me()).id, message.from_user.id):
+        return await message.reply_text("⛔ You are banned from this bot.")
     await send_share_result(client, message)
 
 
 @Client.on_message(filters.command("batch") & filters.private)
 async def clone_batch(client, message):
-    if not is_owner(message, (await client.get_me()).id):
+    me = await client.get_me()
+    if not is_owner(message, me.id):
         return await message.reply_text("<b>⛔ Owner/moderator only.</b>")
     parts = message.text.split()
     if len(parts) != 3:
@@ -141,15 +173,12 @@ async def clone_batch(client, message):
             data.append({"channel_id": chat_id, "msg_id": m.id})
     fd, path = tempfile.mkstemp(prefix="batch_", suffix=".json")
     os.close(fd)
-    import json
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f)
     try:
         post = await client.send_document(LOG_CHANNEL, path, caption="Batch index")
         token = base64.urlsafe_b64encode(str(post.id).encode()).decode().rstrip("=")
-        me = await client.get_me()
-        link = f"https://t.me/{me.username}?start=BATCH-{token}"
-        await message.reply_text(f"<b>✅ Batch generated</b>\nMessages: <code>{len(data)}</code>\n{link}")
+        await message.reply_text(f"<b>✅ Batch generated</b>\nMessages: <code>{len(data)}</code>\nhttps://t.me/{me.username}?start=BATCH-{token}")
     finally:
         try: os.remove(path)
         except OSError: pass
@@ -157,7 +186,8 @@ async def clone_batch(client, message):
 
 @Client.on_message(filters.command(["custom_batch", "special_link", "universal_link"]) & filters.private)
 async def clone_extra_links(client, message):
-    if not is_owner(message, (await client.get_me()).id):
+    me = await client.get_me()
+    if not is_owner(message, me.id):
         return await message.reply_text("<b>⛔ Owner/moderator only.</b>")
     link = await share_link(client, message)
     if link:
@@ -190,17 +220,19 @@ async def clone_base_site(client, message):
 
 @Client.on_message(filters.command("shortener") & filters.private)
 async def clone_shortener(client, message):
+    me = await client.get_me()
+    if not is_owner(message, me.id):
+        return await message.reply_text("<b>⛔ Owner only.</b>")
     if not message.reply_to_message and len(message.command) < 2:
         return await message.reply_text("Use /shortener <URL> or reply to a message containing a URL.")
     url = message.command[1] if len(message.command) > 1 else (message.reply_to_message.text or "").strip()
-    me = await client.get_me(); s = settings(me.id)
+    s = settings(me.id)
     if not s.get("base_site") or not s.get("shortener_api"):
         return await message.reply_text("Set /api and /base_site first.")
     try:
         import requests
         r = requests.get(f"https://{s['base_site']}/api", params={"api": s["shortener_api"], "url": url}, timeout=15)
-        data = r.json()
-        out = data.get("shortenedUrl")
+        out = r.json().get("shortenedUrl")
         await message.reply_text(out or "Shortener did not return a link.")
     except Exception as e:
         await message.reply_text(f"Shortener error: <code>{e}</code>")
@@ -217,9 +249,7 @@ async def clone_help(client, message):
 @Client.on_message(filters.command("settings") & filters.private)
 async def clone_settings_cmd(client, message):
     me = await client.get_me(); s = settings(me.id)
-    await message.reply_text(
-        f"<b>⚙️ Settings</b>\n\nAPI: <code>{s.get('shortener_api') or 'None'}</code>\nSite: <code>{s.get('base_site') or 'None'}</code>\nAuto delete: <code>{s.get('auto_delete_mode')}</code>\nDelete after: <code>{s.get('auto_delete')}s</code>"
-    )
+    await message.reply_text(f"<b>⚙️ Settings</b>\n\nAPI: <code>{s.get('shortener_api') or 'None'}</code>\nSite: <code>{s.get('base_site') or 'None'}</code>\nAuto delete: <code>{s.get('auto_delete_mode')}</code>\nDelete after: <code>{s.get('auto_delete')}s</code>")
 
 
 @Client.on_message(filters.command(["admin", "stats", "broadcast", "ban", "unban"]) & filters.private)
@@ -227,16 +257,25 @@ async def clone_owner_commands(client, message):
     me = await client.get_me()
     if not is_owner(message, me.id):
         return await message.reply_text("<b>⛔ Owner only.</b>")
-    if message.command[0] == "admin":
-        return await message.reply_text("<b>⚙️ CLONE BOT ADMIN PANEL</b>\n\nUse the buttons below.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📊 Statistics", callback_data="cstats"), InlineKeyboardButton("🤖 Bot Info", callback_data="cinfo")], [InlineKeyboardButton("📣 Broadcast", callback_data="cbroadcast")]]))
-    if message.command[0] == "stats":
+    command = message.command[0]
+    if command == "admin":
+        return await message.reply_text(
+            "<b>⚙️ CLONE BOT ADMIN PANEL</b>\n\nChoose an option:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📊 Statistics", callback_data="cstats"), InlineKeyboardButton("🤖 Bot Info", callback_data="cinfo")],
+                [InlineKeyboardButton("📣 Broadcast", callback_data="cbroadcast")],
+            ]),
+        )
+    if command == "stats":
         return await message.reply_text(f"<b>📊 Statistics</b>\n\n👥 Users: <code>{await clonedb.total_users_count(me.id)}</code>\n🤖 @{me.username}")
-    if message.command[0] == "broadcast":
+    if command == "broadcast":
         if not message.reply_to_message:
             return await message.reply_text("Reply to the message you want to broadcast and send /broadcast.")
         ok = fail = 0
         async for u in await clonedb.get_all_users(me.id):
             try:
+                if banned(me.id, int(u["user_id"])):
+                    continue
                 await message.reply_to_message.copy(int(u["user_id"]))
                 ok += 1
             except FloodWait as e:
@@ -244,29 +283,28 @@ async def clone_owner_commands(client, message):
             except Exception:
                 fail += 1
         return await message.reply_text(f"Broadcast complete.\n✅ {ok}\n❌ {fail}")
-    if message.command[0] in ("ban", "unban"):
-        if len(message.command) < 2:
-            return await message.reply_text(f"Use /{message.command[0]} <user_id>")
-        uid = int(message.command[1])
-        if message.command[0] == "ban":
-            mongo_db.clone_bans.update_one({"bot_id": me.id, "user_id": uid}, {"$set": {"bot_id": me.id, "user_id": uid}}, upsert=True)
-            return await message.reply_text("✅ User banned.")
-        mongo_db.clone_bans.delete_one({"bot_id": me.id, "user_id": uid})
-        return await message.reply_text("✅ User unbanned.")
+    if len(message.command) < 2:
+        return await message.reply_text(f"Use /{command} <user_id>")
+    uid = int(message.command[1])
+    if command == "ban":
+        mongo_db.clone_bans.update_one({"bot_id": me.id, "user_id": uid}, {"$set": {"bot_id": me.id, "user_id": uid}}, upsert=True)
+        return await message.reply_text("✅ User banned.")
+    mongo_db.clone_bans.delete_one({"bot_id": me.id, "user_id": uid})
+    return await message.reply_text("✅ User unbanned.")
 
 
-@Client.on_callback_query(filters.regex(r"^c(hep|settings|stats|info)$"))
+@Client.on_callback_query(filters.regex(r"^c(hep|settings|stats|info|broadcast)$"))
 async def clone_callbacks(client, query):
     me = await client.get_me()
     if query.data == "chelp":
         await query.answer(); return await query.message.edit_text(HELP)
     if query.data == "csettings":
         s = settings(me.id); await query.answer(); return await query.message.edit_text(f"<b>⚙️ Settings</b>\n\nAPI: <code>{s.get('shortener_api') or 'None'}</code>\nSite: <code>{s.get('base_site') or 'None'}</code>\nAuto delete: <code>{s.get('auto_delete_mode')}</code>\nDelete after: <code>{s.get('auto_delete')}s</code>")
+    if not is_owner(query, me.id):
+        await query.answer("Owner only", show_alert=True); return
     if query.data == "cstats":
-        if not is_owner(query, me.id):
-            await query.answer("Owner only", show_alert=True); return
         await query.answer(); return await query.message.edit_text(f"<b>📊 Statistics</b>\n\n👥 Users: <code>{await clonedb.total_users_count(me.id)}</code>")
     if query.data == "cinfo":
-        if not is_owner(query, me.id):
-            await query.answer("Owner only", show_alert=True); return
         await query.answer(); return await query.message.edit_text(f"<b>🤖 Bot Info</b>\n\nName: <code>{me.first_name}</code>\nUsername: <code>@{me.username}</code>\nID: <code>{me.id}</code>")
+    if query.data == "cbroadcast":
+        await query.answer("Reply to a message and use /broadcast.", show_alert=True)
