@@ -1,62 +1,51 @@
-# © Telegram : @movies_1780 , GitHub : @VJBots
+# © Telegram: @movies_1780
+# Project branding: ASH FILE STORE & CLONE MANAGER
 
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
-
-import requests
-import json
+import asyncio
+import aiohttp
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import CLONE_DB_URI, CDB_NAME
-
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
 
 client = AsyncIOMotorClient(CLONE_DB_URI)
 db = client[CDB_NAME]
 col = db["users"]
 
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
-
-async def get_short_link(user, link):
-    api_key = user["shortener_api"]
-    base_site = user["base_site"]
-    print(user)
-    response = requests.get(f"https://{base_site}/api?api={api_key}&url={link}")
-    data = response.json()
-    if data["status"] == "success" or rget.status_code == 200:
-        return data["shortenedUrl"]
-
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
-
 async def get_user(user_id):
     user_id = int(user_id)
     user = await col.find_one({"user_id": user_id})
     if not user:
-        res = {
+        user = {
             "user_id": user_id,
             "shortener_api": None,
             "base_site": None,
+            "verify_enabled": False,
+            "verify_ttl": 86400,
         }
-        await col.insert_one(res)
-        user = await col.find_one({"user_id": user_id})
+        await col.insert_one(user)
     return user
 
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
+async def update_user_info(user_id, value: dict):
+    await col.update_one({"user_id": int(user_id)}, {"$set": value}, upsert=True)
 
-async def update_user_info(user_id, value:dict):
-    user_id = int(user_id)
-    myquery = {"user_id": user_id}
-    newvalues = { "$set": value }
-    await col.update_one(myquery, newvalues)
+async def get_short_link(user, link):
+    api_key = user.get("shortener_api")
+    base_site = (user.get("base_site") or "").strip().rstrip("/")
+    if not api_key or not base_site:
+        return link
 
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
+    if not base_site.startswith(("http://", "https://")):
+        base_site = "https://" + base_site
+
+    url = f"{base_site}/api"
+    try:
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, params={"api": api_key, "url": link}) as response:
+                if response.status != 200:
+                    return link
+                data = await response.json(content_type=None)
+                if data.get("status") == "success":
+                    return data.get("shortenedUrl") or data.get("shortened_url") or link
+    except Exception:
+        return link
+    return link
