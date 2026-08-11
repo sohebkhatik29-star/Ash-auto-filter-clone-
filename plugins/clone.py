@@ -8,6 +8,16 @@ from config import API_ID, API_HASH, DB_URI, CLONE_MODE
 mongo_client = MongoClient(DB_URI) if DB_URI else None
 mongo_db = mongo_client["ash_clone_bots"] if mongo_client else None
 
+# Explicitly import the command modules after mongo_db exists.
+# This guarantees Pyrogram registers their decorators for every client,
+# including dynamically-created clone clients.
+if mongo_db is not None:
+    try:
+        import clone_plugins.commands  # noqa: F401
+        import clone_plugins.advanced  # noqa: F401
+    except Exception:
+        logging.exception("Unable to load clone command handlers")
+
 
 def clone_commands(include_owner=False):
     commands = [
