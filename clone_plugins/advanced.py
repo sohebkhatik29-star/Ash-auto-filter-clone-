@@ -5,6 +5,7 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from clone_plugins.dbusers import clonedb
 from clone_plugins.users_api import get_user
 from plugins.clone import mongo_db
+from config import ADMINS
 
 
 def bot_record(client):
@@ -14,11 +15,20 @@ def bot_record(client):
 
 
 def owner_only(client, user_id):
+    # For a cloned bot: only the user who created that clone is the owner.
     doc = bot_record(client)
-    return bool(doc and int(doc.get("user_id", 0)) == int(user_id))
+    if doc and int(doc.get("user_id", 0)) == int(user_id):
+        return True
+    # For the main bot: configured ADMINS are owners/admins.
+    try:
+        return int(user_id) in {int(x) for x in ADMINS}
+    except Exception:
+        return False
 
 
 def save(client, data):
+    if mongo_db is None:
+        return
     mongo_db.bots.update_one({"bot_id": client.me.id}, {"$set": data}, upsert=True)
 
 
