@@ -22,28 +22,44 @@ loop = asyncio.get_event_loop()
 
 def all_commands():
     return [
-        BotCommand('start', 'Start the bot'), BotCommand('help', 'Show all commands'),
-        BotCommand('link', 'Create a shareable file link'), BotCommand('genlink', 'Generate a file link'),
-        BotCommand('batch', 'Create batch links'), BotCommand('custom_batch', 'Create custom batch links'),
-        BotCommand('special_link', 'Create a special link'), BotCommand('universal_link', 'Create a universal link'),
-        BotCommand('shortener', 'Link shortener'), BotCommand('settings', 'Customize settings'),
-        BotCommand('api', 'Set or view shortener API'), BotCommand('base_site', 'Set or view shortener site'),
+        BotCommand('start', 'Start the bot'),
+        BotCommand('help', 'Show all commands'),
+        BotCommand('link', 'Create a shareable file link'),
+        BotCommand('genlink', 'Generate a file link'),
+        BotCommand('batch', 'Create batch links'),
+        BotCommand('custom_batch', 'Create custom batch links'),
+        BotCommand('special_link', 'Create a special link'),
+        BotCommand('universal_link', 'Create a universal link'),
+        BotCommand('shortener', 'Link shortener'),
+        BotCommand('settings', 'Customize settings'),
+        BotCommand('api', 'Set or view shortener API'),
+        BotCommand('base_site', 'Set or view shortener site'),
         BotCommand('clone', 'Create your own clone bot'),
     ]
 
 
 def owner_commands():
     return all_commands() + [
-        BotCommand('admin', 'Open owner admin panel'), BotCommand('stats', 'Show statistics'),
-        BotCommand('broadcast', 'Broadcast a message'), BotCommand('ban', 'Ban a user'),
-        BotCommand('unban', 'Unban a user'), BotCommand('force_sub', 'Set Force Subscribe'),
-        BotCommand('caption', 'Set Custom Caption'), BotCommand('button', 'Add Custom Button'),
-        BotCommand('protect', 'Protect Content'), BotCommand('auto_delete', 'Auto delete delivered files'),
-        BotCommand('no_forward', 'Disable forwarding'), BotCommand('moderator', 'Manage moderators'),
-        BotCommand('access_token', 'Access token settings'), BotCommand('transfer_db', 'Transfer users'),
-        BotCommand('deactivate', 'Deactivate or activate clone'), BotCommand('mode', 'Public/private mode'),
-        BotCommand('restart', 'Save and restart'), BotCommand('delete', 'Delete clone record'),
+        BotCommand('admin', 'Open owner admin panel'),
+        BotCommand('stats', 'Show statistics'),
+        BotCommand('broadcast', 'Broadcast a message'),
+        BotCommand('ban', 'Ban a user'),
+        BotCommand('unban', 'Unban a user'),
+        BotCommand('force_sub', 'Set Force Subscribe'),
+        BotCommand('caption', 'Set Custom Caption'),
+        BotCommand('button', 'Add Custom Button'),
+        BotCommand('protect', 'Protect Content'),
+        BotCommand('auto_delete', 'Auto delete delivered files'),
+        BotCommand('no_forward', 'Disable forwarding'),
+        BotCommand('moderator', 'Manage moderators'),
+        BotCommand('access_token', 'Access token settings'),
+        BotCommand('transfer_db', 'Transfer users'),
+        BotCommand('deactivate', 'Deactivate or activate clone'),
+        BotCommand('mode', 'Public/private mode'),
+        BotCommand('restart', 'Save and restart'),
+        BotCommand('delete', 'Delete clone record'),
         BotCommand('start_msg', 'Set start message'),
+        BotCommand('deletecloned', 'Remove a cloned bot record'),
     ]
 
 
@@ -52,7 +68,10 @@ async def setup_main_menu():
         await StreamBot.set_bot_commands(all_commands())
         for admin in ADMINS:
             try:
-                await StreamBot.set_bot_commands(owner_commands(), scope=BotCommandScopeChat(chat_id=int(admin)))
+                await StreamBot.set_bot_commands(
+                    owner_commands(),
+                    scope=BotCommandScopeChat(chat_id=int(admin)),
+                )
             except Exception:
                 logging.exception('Unable to set admin menu for %s', admin)
     except Exception:
