@@ -89,10 +89,7 @@ async def protect(client, message):
 
 async def admin_panel(client, message):
     if not owner_only(client, message.from_user.id): return await message.reply("❌ Owner only.")
-    await message.reply("👑 <b>Owner Panel</b>", reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("⚙️ Settings", callback_data="settings"), InlineKeyboardButton("📊 Stats", callback_data="clone_stats")],
-        [InlineKeyboardButton("📢 Broadcast", callback_data="admin_broadcast"), InlineKeyboardButton("🔗 Shortener", callback_data="link_shortener")],
-    ]))
+    await message.reply("👑 <b>Owner Panel</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⚙️ Settings", callback_data="settings"), InlineKeyboardButton("📊 Stats", callback_data="clone_stats")],[InlineKeyboardButton("📢 Broadcast", callback_data="admin_broadcast"), InlineKeyboardButton("🔗 Shortener", callback_data="link_shortener")]]))
 
 
 async def stats(client, message):
@@ -103,29 +100,29 @@ async def stats(client, message):
 async def broadcast(client, message):
     if not owner_only(client, message.from_user.id): return await message.reply("❌ Owner only.")
     if not message.reply_to_message: return await message.reply("Reply to a message and use /broadcast")
-    sent = failed = 0
+    sent=failed=0
     async for u in clonedb.get_all_users(client.me.id):
-        try: await message.reply_to_message.copy(u["user_id"]); sent += 1
-        except Exception: failed += 1
+        try: await message.reply_to_message.copy(u["user_id"]); sent+=1
+        except Exception: failed+=1
         await asyncio.sleep(0.05)
     await message.reply(f"📢 Done\nSent: {sent}\nFailed: {failed}")
 
 
 async def ban(client, message):
     if not owner_only(client, message.from_user.id): return await message.reply("❌ Owner only.")
-    if len(message.command) != 2 or not message.command[1].isdigit(): return await message.reply("Usage: /ban USER_ID")
-    await clonedb.db[str(client.me.id)].update_one({"user_id": int(message.command[1])}, {"$set": {"banned": True}}, upsert=True); await message.reply("🚫 User banned.")
+    if len(message.command)!=2 or not message.command[1].isdigit(): return await message.reply("Usage: /ban USER_ID")
+    await clonedb.db[str(client.me.id)].update_one({"user_id":int(message.command[1])},{"$set":{"banned":True}},upsert=True); await message.reply("🚫 User banned.")
 
 
 async def unban(client, message):
     if not owner_only(client, message.from_user.id): return await message.reply("❌ Owner only.")
-    if len(message.command) != 2 or not message.command[1].isdigit(): return await message.reply("Usage: /unban USER_ID")
-    await clonedb.db[str(client.me.id)].update_one({"user_id": int(message.command[1])}, {"$set": {"banned": False}}, upsert=True); await message.reply("✅ User unbanned.")
+    if len(message.command)!=2 or not message.command[1].isdigit(): return await message.reply("Usage: /unban USER_ID")
+    await clonedb.db[str(client.me.id)].update_one({"user_id":int(message.command[1])},{"$set":{"banned":False}},upsert=True); await message.reply("✅ User unbanned.")
 
 
 async def auto_delete(client, message):
     if not owner_only(client, message.from_user.id): return await message.reply("❌ Owner only.")
-    args = message.command[1:] if len(message.command) > 1 else []
+    args=message.command[1:] if len(message.command)>1 else []
     if not args:
         d=bot_record(client); return await message.reply(f"🗑️ <b>Auto Delete</b>\nStatus: {'Enabled ✅' if d.get('auto_delete_enabled') else 'Disabled ❌'}\nTime: {d.get('auto_delete_minutes',15)} minutes\n\nUse /auto_delete on 15 or /auto_delete off")
     if args[0].lower()=="off": save(client,{"auto_delete_enabled":False}); return await message.reply("🗑️ Auto Delete disabled.")
@@ -214,9 +211,9 @@ async def startmsg(client, message):
 
 async def clone_callback(client, query):
     data=query.data
-    if data=="my_clone":
-        return await query.message.edit_text(f"🛠 <b>Customize Clone</b>\n\n➜ <b>Name:</b> {client.me.first_name}\n\nConfigure Your Clone Settings Using Given Buttons",reply_markup=clone_menu())
-    if not data.startswith("clone_") and data not in ("delete_confirm",): return
+    if data=="my_clone": return await query.message.edit_text(f"🛠 <b>Customize Clone</b>\n\n➜ <b>Name:</b> {client.me.first_name}\n\nConfigure Your Clone Settings Using Given Buttons",reply_markup=clone_menu())
+    allowed=data.startswith(("clone_","autodelete_","noforward_","access_","mode_","hide_owner")) or data in ("delete_confirm",)
+    if not allowed: return
     if not owner_only(client,query.from_user.id): return await query.answer("Owner only.",show_alert=True)
     d=bot_record(client)
     if data=="clone_startmsg": return await query.message.edit_text("📝 <b>Start Message</b>\n\nReply to any message/photo and use <code>/start_msg</code> to save its text/caption.",reply_markup=back_button())
@@ -225,7 +222,7 @@ async def clone_callback(client, query):
         mods=d.get("moderators",[]); return await query.message.edit_text("👮 <b>Moderators</b>\n\n"+("\n".join(f"• <code>{x}</code>" for x in mods) if mods else "No moderators.")+"\n\n<code>/moderator add USER_ID</code>\n<code>/moderator del USER_ID</code>",reply_markup=back_button())
     if data=="clone_autodelete": return await query.message.edit_text("🗑️ <b>Auto Delete</b>\n\nStatus: %s\nTime: %s minutes"%(('Enabled ✅' if d.get('auto_delete_enabled') else 'Disabled ❌'),d.get('auto_delete_minutes',15)),reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("15 MIN",callback_data="autodelete_15"),InlineKeyboardButton("30 MIN",callback_data="autodelete_30")],[InlineKeyboardButton("1 HOUR",callback_data="autodelete_60"),InlineKeyboardButton("DISABLE ❌",callback_data="autodelete_off")],[InlineKeyboardButton("‹ BACK",callback_data="my_clone")]]))
     if data=="clone_noforward": return await query.message.edit_text("🚫 <b>No Forward</b>\n\nRestrict clone users from forwarding messages from shareable links.\n\nStatus: %s"%('Enabled ✅' if d.get('no_forward') else 'Disabled ❌'),reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Enable",callback_data="noforward_on"),InlineKeyboardButton("Disable ❌",callback_data="noforward_off")],[InlineKeyboardButton("‹ BACK",callback_data="my_clone")]]))
-    if data=="clone_access": return await query.message.edit_text("🔑 <b>Access Token</b>\n\nUsers need to pass a shortened link in gain special access to messages from all clone shareable links.\n\nStatus: %s\nValidity: %s hour(s)\nRenewed: 0 users"%(('Enabled ✅' if d.get('access_token_enabled',True) else 'Disabled ❌'),d.get('access_token_hours',1)),reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("SHORTENERS",callback_data="access_shorteners"),InlineKeyboardButton("VALIDITY",callback_data="access_validity")],[InlineKeyboardButton("TUTORIAL",callback_data="access_tutorial"),InlineKeyboardButton("WHITELISTERS",callback_data="access_whitelist")],[InlineKeyboardButton("REFERRAL",callback_data="access_referral")],[InlineKeyboardButton("‹ BACK",callback_data="my_clone")]]))
+    if data=="clone_access": return await query.message.edit_text("🔑 <b>Access Token</b>\n\nUsers need to pass a shortened link to gain special access to messages from clone shareable links.\n\nStatus: %s\nValidity: %s hour(s)\nRenewed: 0 users"%(('Enabled ✅' if d.get('access_token_enabled',True) else 'Disabled ❌'),d.get('access_token_hours',1)),reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("SHORTENERS",callback_data="access_shorteners"),InlineKeyboardButton("VALIDITY",callback_data="access_validity")],[InlineKeyboardButton("TUTORIAL",callback_data="access_tutorial"),InlineKeyboardButton("WHITELISTERS",callback_data="access_whitelist")],[InlineKeyboardButton("REFERRAL",callback_data="access_referral")],[InlineKeyboardButton("‹ BACK",callback_data="my_clone")]]))
     if data=="clone_transfer": return await query.message.edit_text("🔄 <b>Transfer Users</b>\n\nTransfer users from another clone using the same MongoDB database.\n\nUse <code>/transfer_db OLD_BOT_ID</code>.",reply_markup=back_button())
     if data=="clone_deactivate": return await query.message.edit_text("⏸ <b>Deactivate</b>\n\nCurrent: %s\n\nUse <code>/deactivate on</code> or <code>/deactivate off</code>."%('Deactivated' if d.get('deactivated') else 'Active'),reply_markup=back_button())
     if data=="clone_mode": return await query.message.edit_text("🔒 <b>Clone Mode</b>\n\nPublic Mode: any Telegram user can generate shareable and short links.\nPrivate Mode: only owner/moderators can generate them.\n\nCurrent Mode: <b>%s</b>"%d.get('mode','private').title(),reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Make Public",callback_data="mode_public")],[InlineKeyboardButton("Make Private",callback_data="mode_private")],[InlineKeyboardButton("HIDE OWNER",callback_data="hide_owner")],[InlineKeyboardButton("‹ BACK",callback_data="my_clone")]]))
