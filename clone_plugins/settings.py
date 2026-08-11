@@ -8,11 +8,14 @@ from config import CLONE_DB_URI
 _client = AsyncIOMotorClient(CLONE_DB_URI) if CLONE_DB_URI else None
 _db = _client["ash_clone_bots"] if _client else None
 settings = _db["settings"] if _db else None
+bots = _db["bots"] if _db else None
+
+DEFAULTS = {"force_channels": [], "custom_caption": None, "custom_buttons": [], "protect_content": False}
 
 async def _owner(client):
-    if _db is None:
+    if bots is None:
         return None
-    doc = await _db.bots.find_one({"bot_id": client.me.id})
+    doc = await bots.find_one({"bot_id": client.me.id})
     return int(doc["user_id"]) if doc and doc.get("user_id") is not None else None
 
 async def is_owner(client, user_id):
@@ -21,16 +24,20 @@ async def is_owner(client, user_id):
 async def get_settings(client):
     bot_id = client.me.id
     if settings is None:
-        return {"bot_id": bot_id, "force_channels": [], "caption": None,
-                "buttons": [], "protect_content": False}
-    return await settings.find_one({"bot_id": bot_id}) or {
-        "bot_id": bot_id, "force_channels": [], "caption": None,
-        "buttons": [], "protect_content": False,
-    }
+        return {"bot_id": bot_id, **DEFAULTS}
+    doc = await settings.find_one({"bot_id": bot_id})
+    if not doc:
+        doc = {"bot_id": bot_id, **DEFAULTS}
+        await settings.insert_one(doc)
+    return doc
 
 async def save_settings(client, values):
+    bot_id = client.me.id
     if settings is not None:
-        await settings.update_one({"bot_id": client.me.id}, {"$set": values}, upsert=True)
+        await settings.update_one({"bot_id": bot_id}, {"$set": values}, upsert=True)
+    # Delivery code reads the clone record, so keep both documents synchronized.
+    if bots is not None:
+        await bots.update_one({"bot_id": bot_id}, {"$set": values}, upsert=True)
 
 @Client.on_message(filters.command("settings") & filters.private)
 async def settings_cmd(client, message):
@@ -40,8 +47,8 @@ async def settings_cmd(client, message):
     await message.reply_text(
         "⚙️ <b>Clone Settings</b>\n\n"
         f"Force Join: <code>{len(s.get('force_channels', []))}</code>\n"
-        f"Caption: <code>{'ON' if s.get('caption') else 'OFF'}</code>\n"
-        f"Custom Buttons: <code>{len(s.get('buttons', []))}</code>\n"
+        f"Caption: <code>{'ON' if s.get('custom_caption') else 'OFF'}</code>\n"
+        f"Custom Buttons: <code>{len(s.get('custom_buttons', []))}</code>\n"
         f"Protect Content: <code>{'ON' if s.get('protect_content') else 'OFF'}</code>"
     )
 
@@ -52,7 +59,7 @@ async def force_sub_cmd(client, message):
     if len(message.command) != 2:
         return await message.reply_text("Usage: <code>/force_sub CHANNEL_ID</code>")
     s = await get_settings(client)
-    channels = s.get("force_channels", [])
+    channels = list(s.get("force_channels", []))
     value = message.command[1].strip()
     if value not in channels:
         channels.append(value)
@@ -65,7 +72,7 @@ async def caption_cmd(client, message):
         return await message.reply_text("❌ Owner only.")
     if len(message.command) < 2:
         return await message.reply_text("Usage: <code>/caption YOUR CAPTION</code>")
-    await save_settings(client, {"caption": message.text.split(None, 1)[1]})
+    await save_settings(client, {"custom_caption": message.text.split(None, 1)[1]})
     await message.reply_text("✅ Custom caption saved.")
 
 @Client.on_message(filters.command("button") & filters.private)
@@ -79,9 +86,9 @@ async def button_cmd(client, message):
     if not url.startswith(("http://", "https://")):
         return await message.reply_text("❌ Invalid button URL.")
     s = await get_settings(client)
-    buttons = s.get("buttons", [])
+    buttons = list(s.get("custom_buttons", []))
     buttons.append({"text": text, "url": url})
-    await save_settings(client, {"buttons": buttons})
+    await save_settings(client, {"custom_buttons": buttons})
     await message.reply_text("✅ Custom button saved.")
 
 @Client.on_message(filters.command("protect") & filters.private)
