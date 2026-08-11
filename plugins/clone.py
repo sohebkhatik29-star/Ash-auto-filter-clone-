@@ -11,40 +11,60 @@ mongo_db = mongo_client["ash_clone_bots"] if mongo_client else None
 
 def clone_commands(include_owner=False):
     commands = [
-        BotCommand("start", "Check bot / open stored link"), BotCommand("help", "Show all commands"),
-        BotCommand("link", "Create a shareable file link"), BotCommand("genlink", "Create a shareable file link"),
-        BotCommand("batch", "Create batch links"), BotCommand("custom_batch", "Create custom batch links"),
-        BotCommand("special_link", "Create a special link"), BotCommand("universal_link", "Create a universal link"),
-        BotCommand("shortener", "View link shortener"), BotCommand("settings", "Customize your clone"),
-        BotCommand("api", "Set or view shortener API"), BotCommand("base_site", "Set or view shortener site"),
-        BotCommand("clone", "Create another clone"),
+        BotCommand("start", "Check bot / open stored link"),
+        BotCommand("help", "Show all commands"),
+        BotCommand("link", "Create a shareable file link"),
+        BotCommand("genlink", "Create a shareable file link"),
+        BotCommand("batch", "Create batch links"),
+        BotCommand("custom_batch", "Create custom batch links"),
+        BotCommand("special_link", "Create a special link"),
+        BotCommand("universal_link", "Create a universal link"),
+        BotCommand("shortener", "View link shortener"),
+        BotCommand("settings", "Customize your clone"),
+        BotCommand("api", "Set or view shortener API"),
+        BotCommand("base_site", "Set or view shortener site"),
     ]
     if include_owner:
         commands += [
-            BotCommand("admin", "Open owner admin panel"), BotCommand("stats", "Show bot statistics"),
-            BotCommand("broadcast", "Broadcast a message"), BotCommand("ban", "Ban a user"),
-            BotCommand("unban", "Unban a user"), BotCommand("force_sub", "Set Force Subscribe"),
-            BotCommand("caption", "Set Custom Caption"), BotCommand("button", "Add Custom Button"),
-            BotCommand("protect", "Protect Content"), BotCommand("auto_delete", "Auto delete delivered files"),
-            BotCommand("no_forward", "Disable forwarding"), BotCommand("moderator", "Manage moderators"),
-            BotCommand("access_token", "Access token settings"), BotCommand("transfer_db", "Transfer users"),
-            BotCommand("deactivate", "Deactivate or activate clone"), BotCommand("mode", "Public/private mode"),
-            BotCommand("restart", "Save and restart"), BotCommand("delete", "Delete clone record"),
+            BotCommand("admin", "Open owner admin panel"),
+            BotCommand("stats", "Show bot statistics"),
+            BotCommand("broadcast", "Broadcast a message"),
+            BotCommand("ban", "Ban a user"),
+            BotCommand("unban", "Unban a user"),
+            BotCommand("force_sub", "Set Force Subscribe"),
+            BotCommand("caption", "Set Custom Caption"),
+            BotCommand("button", "Add Custom Button"),
+            BotCommand("protect", "Protect Content"),
+            BotCommand("auto_delete", "Auto delete delivered files"),
+            BotCommand("no_forward", "Disable forwarding"),
+            BotCommand("moderator", "Manage moderators"),
+            BotCommand("access_token", "Access token settings"),
+            BotCommand("transfer_db", "Transfer users"),
+            BotCommand("deactivate", "Deactivate or activate clone"),
+            BotCommand("mode", "Public/private mode"),
+            BotCommand("restart", "Save and restart"),
+            BotCommand("delete", "Delete clone record"),
             BotCommand("start_msg", "Set start message"),
         ]
     return commands
 
 
 async def set_clone_menu(client, owner_id=None):
+    # Normal users see the normal file-store commands.
     await client.set_bot_commands(clone_commands())
+    # The clone owner gets the complete owner menu only in their private chat.
     if owner_id:
         try:
-            await client.set_bot_commands(clone_commands(True), scope=BotCommandScopeChat(chat_id=int(owner_id)))
+            await client.set_bot_commands(
+                clone_commands(True),
+                scope=BotCommandScopeChat(chat_id=int(owner_id)),
+            )
         except Exception:
             logging.exception("Unable to set owner command menu")
 
 
 def register_clone_handlers(client):
+    """Load every command handler on this exact clone client instance."""
     from clone_plugins.commands import register as register_commands
     from clone_plugins.advanced import register as register_advanced
     register_commands(client)
@@ -55,8 +75,14 @@ def register_clone_handlers(client):
 async def clone(client, message):
     if not CLONE_MODE or mongo_db is None:
         return await message.reply_text("Clone mode is disabled or database is not configured.")
-    prompt = ("<b>1) Send <code>/newbot</code> to @BotFather\n2) Give a name.\n3) Give a username.\n"
-              "4) Copy the bot token message.\n5) Forward it to me.\n\n/cancel - cancel.</b>")
+    prompt = (
+        "<b>1) Send <code>/newbot</code> to @BotFather\n"
+        "2) Give a name.\n"
+        "3) Give a username.\n"
+        "4) Copy the bot token message.\n"
+        "5) Forward it to me.\n\n"
+        "/cancel - cancel.</b>"
+    )
     token_msg = await client.ask(message.chat.id, prompt)
     if (token_msg.text or "").strip() == "/cancel":
         return await message.reply_text("<b>Cancelled 🚫</b>")
@@ -72,16 +98,36 @@ async def clone(client, message):
         await vj.start()
         register_clone_handlers(vj)
         bot = await vj.get_me()
-        mongo_db.bots.update_one({"bot_id": bot.id}, {"$set": {
-            "bot_id": bot.id, "is_bot": True, "user_id": message.from_user.id,
-            "name": bot.first_name, "token": bot_token, "username": bot.username,
-            "force_channels": [], "custom_caption": None, "custom_buttons": [], "protect_content": False,
-            "no_forward": False, "auto_delete_enabled": False, "auto_delete_minutes": 15,
-            "access_token_enabled": True, "access_token_hours": 1, "moderators": [],
-            "mode": "private", "deactivated": False, "hide_owner": False
-        }}, upsert=True)
+        mongo_db.bots.update_one(
+            {"bot_id": bot.id},
+            {"$set": {
+                "bot_id": bot.id,
+                "is_bot": True,
+                "user_id": message.from_user.id,
+                "name": bot.first_name,
+                "token": bot_token,
+                "username": bot.username,
+                "force_channels": [],
+                "custom_caption": None,
+                "custom_buttons": [],
+                "protect_content": False,
+                "no_forward": False,
+                "auto_delete_enabled": False,
+                "auto_delete_minutes": 15,
+                "access_token_enabled": True,
+                "access_token_hours": 1,
+                "moderators": [],
+                "mode": "private",
+                "deactivated": False,
+                "hide_owner": False,
+            }},
+            upsert=True,
+        )
         await set_clone_menu(vj, message.from_user.id)
-        await msg.edit_text(f"<b>✅ Successfully cloned: @{bot.username}</b>\n\nAll commands, settings and owner controls are loaded.")
+        await msg.edit_text(
+            f"<b>✅ Successfully cloned: @{bot.username}</b>\n\n"
+            "All commands, settings and owner controls are loaded."
+        )
     except BaseException as e:
         logging.exception("Clone creation failed")
         await msg.edit_text(f"⚠️ <b>Bot Error:</b>\n\n<code>{e}</code>")
