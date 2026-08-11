@@ -8,16 +8,6 @@ from config import API_ID, API_HASH, DB_URI, CLONE_MODE
 mongo_client = MongoClient(DB_URI) if DB_URI else None
 mongo_db = mongo_client["ash_clone_bots"] if mongo_client else None
 
-# Explicitly import the command modules after mongo_db exists.
-# This guarantees Pyrogram registers their decorators for every client,
-# including dynamically-created clone clients.
-if mongo_db is not None:
-    try:
-        import clone_plugins.commands  # noqa: F401
-        import clone_plugins.advanced  # noqa: F401
-    except Exception:
-        logging.exception("Unable to load clone command handlers")
-
 
 def clone_commands(include_owner=False):
     commands = [
@@ -36,17 +26,30 @@ def clone_commands(include_owner=False):
                      BotCommand("protect", "Protect Content on/off")]
     return commands
 
+
 async def set_clone_menu(client, owner_id=None):
     await client.set_bot_commands(clone_commands())
     if owner_id:
-        await client.set_bot_commands(clone_commands(True), scope=BotCommandScopeChat(chat_id=int(owner_id)))
+        try:
+            await client.set_bot_commands(clone_commands(True), scope=BotCommandScopeChat(chat_id=int(owner_id)))
+        except Exception:
+            logging.exception("Unable to set owner command menu")
+
+
+def register_clone_handlers(client):
+    """Load clone command handlers on this exact client instance."""
+    from clone_plugins.commands import register as register_commands
+    from clone_plugins.advanced import register as register_advanced
+    register_commands(client)
+    register_advanced(client)
+
 
 @Client.on_message(filters.command("clone") & filters.private)
 async def clone(client, message):
     if not CLONE_MODE or mongo_db is None:
         return await message.reply_text("Clone mode is disabled or database is not configured.")
     prompt = ("<b>1) Send <code>/newbot</code> to @BotFather\n2) Give a name.\n3) Give a username.\n"
-              "4) Copy the bot token message.\n5) Forward it to me.\n\n/cancel - cancel.</b>")
+              "4) Copy the bot token message.\n5) Copy/forward the token message to me.\n\n/cancel - cancel.</b>")
     token_msg = await client.ask(message.chat.id, prompt)
     if (token_msg.text or "").strip() == "/cancel":
         return await message.reply_text("<b>Cancelled 🚫</b>")
@@ -58,8 +61,11 @@ async def clone(client, message):
     bot_token = match.group(1)
     msg = await message.reply_text("<b>👨‍💻 Creating your clone...</b>")
     try:
-        vj = Client(bot_token, API_ID, API_HASH, bot_token=bot_token, plugins={"root": "clone_plugins"})
+        # Do not use Pyrogram's plugin loader for clones. We register every
+        # handler explicitly on this instance, which avoids silent plugin-load failures.
+        vj = Client(bot_token, API_ID, API_HASH, bot_token=bot_token, plugins={})
         await vj.start()
+        register_clone_handlers(vj)
         bot = await vj.get_me()
         mongo_db.bots.update_one({"bot_id": bot.id}, {"$set": {
             "bot_id": bot.id, "is_bot": True, "user_id": message.from_user.id,
@@ -67,10 +73,11 @@ async def clone(client, message):
             "force_channels": [], "custom_caption": None, "custom_buttons": [], "protect_content": False
         }}, upsert=True)
         await set_clone_menu(vj, message.from_user.id)
-        await msg.edit_text(f"<b>✅ Successfully cloned: @{bot.username}</b>")
+        await msg.edit_text(f"<b>✅ Successfully cloned: @{bot.username}</b>\n\nAll command handlers loaded.")
     except BaseException as e:
         logging.exception("Clone creation failed")
         await msg.edit_text(f"⚠️ <b>Bot Error:</b>\n\n<code>{e}</code>")
+
 
 @Client.on_message(filters.command("deletecloned") & filters.private)
 async def delete_cloned_bot(client, message):
@@ -85,13 +92,16 @@ async def delete_cloned_bot(client, message):
     else:
         await message.reply_text("<b>⚠️ Token is not in the cloned list.</b>")
 
+
 async def restart_bots():
     if mongo_db is None:
         return
     for bot in list(mongo_db.bots.find()):
         try:
-            vj = Client(bot["token"], API_ID, API_HASH, bot_token=bot["token"], plugins={"root": "clone_plugins"})
+            vj = Client(bot["token"], API_ID, API_HASH, bot_token=bot["token"], plugins={})
             await vj.start()
+            register_clone_handlers(vj)
             await set_clone_menu(vj, bot.get("user_id"))
+            logging.info("Clone started with all handlers: @%s", bot.get("username"))
         except Exception:
             logging.exception("Unable to restart clone")
