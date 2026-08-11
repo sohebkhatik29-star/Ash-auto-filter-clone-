@@ -1,5 +1,4 @@
 # ASH FILE STORE & CLONE MANAGER
-# Telegram: @movies_1780
 
 import asyncio
 import random
@@ -103,7 +102,7 @@ async def start(client, message):
     if not await clonedb.is_user_exist(me.id, message.from_user.id):
         await clonedb.add_user(me.id, message.from_user.id)
     if len(message.command) != 2:
-        buttons = [[InlineKeyboardButton("💝 YouTube", url="https://www.youtube.com/@tech_as_0")], [InlineKeyboardButton("🤖 Create Clone", url=f"https://t.me/{BOT_USERNAME}?start=clone")], [InlineKeyboardButton("💁 Help", callback_data="help"), InlineKeyboardButton("About 🔻", callback_data="about")]]
+        buttons = [[InlineKeyboardButton("🤖 Create Clone", url=f"https://t.me/{BOT_USERNAME}?start=clone")], [InlineKeyboardButton("💁 Help", callback_data="help"), InlineKeyboardButton("About 🔻", callback_data="about")]]
         return await message.reply_photo(photo=random.choice(PICS), caption=script.CLONE_START_TXT.format(message.from_user.mention, me.mention), reply_markup=InlineKeyboardMarkup(buttons))
 
     data = message.command[1]
@@ -122,6 +121,37 @@ async def start(client, message):
         await deliver_file(client, message.from_user.id, file_id, protected=(prefix == "filep" or bot_record(client).get("protect_content", False)))
     except Exception as e:
         await message.reply(f"❌ Unable to deliver this file: <code>{e}</code>")
+
+
+@Client.on_message(filters.command("help") & filters.private)
+async def help_command(client, message):
+    text = (
+        "📚 <b>Help Menu</b>\n\n"
+        "<b>File Commands</b>\n"
+        "• /link — Create a shareable file link\n"
+        "• /genlink — Same as /link\n"
+        "• /batch N — Create links for consecutive files\n"
+        "• /custom_batch — Custom batch flow\n"
+        "• /special_link — Special/protected link flow\n"
+        "• /universal_link — Universal link flow\n\n"
+        "<b>Shortener</b>\n"
+        "• /shortener — View shortener settings\n"
+        "• /api KEY — Set shortener API\n"
+        "• /base_site example.com — Set shortener site\n\n"
+        "<b>Owner Commands</b>\n"
+        "• /settings — Clone settings\n"
+        "• /force_sub @channel — Force join\n"
+        "• /caption TEXT — Custom caption\n"
+        "• /button Text - https://example.com — Custom button\n"
+        "• /protect on|off — Protect content\n"
+        "• /admin — Owner panel\n"
+        "• /stats — User statistics\n"
+        "• /broadcast — Broadcast a replied message\n"
+        "• /ban USER_ID — Ban user\n"
+        "• /unban USER_ID — Unban user\n\n"
+        "• /clone — Create your own clone bot"
+    )
+    await message.reply(text)
 
 
 @Client.on_message(filters.command(["link", "genlink"]) & filters.private)
@@ -212,7 +242,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             pass
         return await client.send_message(query.from_user.id, "<b>✅ Verification successful. Open your file link again.</b>")
     if query.data == "start":
-        buttons = [[InlineKeyboardButton("💝 YouTube", url="https://www.youtube.com/@tech_as_0")], [InlineKeyboardButton("🤖 Create Clone", url=f"https://t.me/{BOT_USERNAME}?start=clone")], [InlineKeyboardButton("💁 Help", callback_data="help"), InlineKeyboardButton("About 🔻", callback_data="about")]]
+        buttons = [[InlineKeyboardButton("🤖 Create Clone", url=f"https://t.me/{BOT_USERNAME}?start=clone")], [InlineKeyboardButton("💁 Help", callback_data="help"), InlineKeyboardButton("About 🔻", callback_data="about")]]
         text = script.CLONE_START_TXT.format(query.from_user.mention, me.mention)
         if query.message.photo:
             return await query.message.edit_caption(text, reply_markup=InlineKeyboardMarkup(buttons))
