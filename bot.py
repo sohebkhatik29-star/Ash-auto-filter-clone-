@@ -21,48 +21,53 @@ logging.getLogger().setLevel(logging.INFO)
 logging.getLogger("pyrogram").setLevel(logging.ERROR)
 loop = asyncio.get_event_loop()
 
+
 async def setup_main_menu():
     user_commands = [
-        BotCommand("start", "Start the bot"),
-        BotCommand("help", "Show all commands"),
-        BotCommand("link", "Create a shareable file link"),
-        BotCommand("genlink", "Generate a file link"),
-        BotCommand("batch", "Create a batch link"),
-        BotCommand("custom_batch", "Create a custom batch"),
-        BotCommand("special_link", "Create a special link"),
-        BotCommand("universal_link", "Create a universal link"),
-        BotCommand("shortener", "Shortener settings"),
-        BotCommand("settings", "View settings"),
-        BotCommand("api", "Set or view shortener API"),
-        BotCommand("base_site", "Set or view shortener site"),
+        BotCommand("start", "Start the bot"), BotCommand("help", "Show all commands"),
+        BotCommand("link", "Create a shareable file link"), BotCommand("genlink", "Generate a file link"),
+        BotCommand("batch", "Create a batch link"), BotCommand("custom_batch", "Create a custom batch"),
+        BotCommand("special_link", "Create a special link"), BotCommand("universal_link", "Create a universal link"),
+        BotCommand("shortener", "Shortener settings"), BotCommand("settings", "View settings"),
+        BotCommand("api", "Set or view shortener API"), BotCommand("base_site", "Set or view shortener site"),
         BotCommand("clone", "Create your own clone bot"),
     ]
     admin_commands = user_commands + [
-        BotCommand("admin", "Open admin panel"),
-        BotCommand("stats", "Show statistics"),
-        BotCommand("broadcast", "Broadcast a message"),
-        BotCommand("ban", "Ban a user"),
-        BotCommand("unban", "Unban a user"),
-        BotCommand("deletecloned", "Remove a cloned bot record"),
+        BotCommand("admin", "Open admin panel"), BotCommand("stats", "Show statistics"),
+        BotCommand("broadcast", "Broadcast a message"), BotCommand("ban", "Ban a user"),
+        BotCommand("unban", "Unban a user"), BotCommand("deletecloned", "Remove a cloned bot record"),
+        BotCommand("force_sub", "Set Force Subscribe"), BotCommand("caption", "Set Custom Caption"),
+        BotCommand("button", "Add Custom Button"), BotCommand("protect", "Protect Content on/off"),
     ]
     try:
         await StreamBot.set_bot_commands(user_commands)
         for admin in ADMINS:
             try:
-                await StreamBot.set_bot_commands(
-                    admin_commands,
-                    scope=BotCommandScopeChat(chat_id=int(admin)),
-                )
+                await StreamBot.set_bot_commands(admin_commands, scope=BotCommandScopeChat(chat_id=int(admin)))
             except Exception:
                 logging.exception("Unable to set admin menu for %s", admin)
     except Exception:
         logging.exception("Unable to set main command menu")
+
 
 async def start():
     print("\nInitializing ASH FILE STORE & CLONE MANAGER BOT")
     await StreamBot.start()
     bot_info = await StreamBot.get_me()
     StreamBot.username = bot_info.username
+
+    # Register the complete command set directly on the master Client.
+    # This is independent of Pyrogram's plugin discovery and fixes commands
+    # that were visible in the menu but had no handler.
+    try:
+        from clone_plugins.commands import register as register_commands
+        from clone_plugins.advanced import register as register_advanced
+        register_commands(StreamBot)
+        register_advanced(StreamBot)
+        logging.info("ASH master command handlers loaded successfully")
+    except Exception:
+        logging.exception("Unable to load ASH master command handlers")
+
     await setup_main_menu()
     await initialize_clients()
     if ON_HEROKU:
@@ -82,6 +87,7 @@ async def start():
         await restart_bots()
     print("Bot Started - ASH FILE STORE & CLONE MANAGER")
     await idle()
+
 
 if __name__ == '__main__':
     try:
