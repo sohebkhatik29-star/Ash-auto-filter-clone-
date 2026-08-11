@@ -7,7 +7,7 @@ import base64
 from pyrogram import Client, filters, enums
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, CallbackQuery
 from clone_plugins.dbusers import clonedb
-from clone_plugins.users_api import get_user, update_user_info, get_short_link
+from clone_plugins.users_api import get_user, update_user_info
 from plugins.clone import mongo_db
 from config import BOT_USERNAME, PICS, CUSTOM_FILE_CAPTION, AUTO_DELETE_TIME, AUTO_DELETE
 from Script import script
@@ -25,7 +25,7 @@ def get_size(size):
 
 
 def bot_record(client):
-    return mongo_db.bots.find_one({"bot_id": client.me.id})
+    return mongo_db.bots.find_one({"bot_id": client.me.id}) or {}
 
 
 def is_clone_owner(client, user_id):
@@ -34,17 +34,16 @@ def is_clone_owner(client, user_id):
 
 
 async def force_channels(client):
-    record = bot_record(client)
-    return (record or {}).get("force_channels", [])
+    return bot_record(client).get("force_channels", [])
 
 
 async def force_markup(client, user_id, payload):
-    channels = await force_channels(client)
     missing = []
-    for channel in channels:
+    for channel in await force_channels(client):
         try:
             member = await client.get_chat_member(channel, user_id)
-            if member.status in (enums.ChatMemberStatus.LEFT, enums.ChatMemberStatus.BANNED, enums.ChatMemberStatus.RESTRICTED):
+            status = str(member.status).lower()
+            if status.endswith("left") or status.endswith("banned") or status.endswith("restricted"):
                 missing.append(channel)
         except Exception:
             missing.append(channel)
@@ -63,23 +62,52 @@ async def force_markup(client, user_id, payload):
     return InlineKeyboardMarkup(rows)
 
 
+async def deliver_file(client, user_id, file_id, protected=False):
+    msg = await client.send_cached_media(chat_id=user_id, file_id=file_id, protect_content=protected)
+    media = getattr(msg, msg.media.value, None)
+    size = get_size(media.file_size) if media and getattr(media, "file_size", None) else "Unknown"
+    name = getattr(media, "file_name", None) if media else None
+    name = name or "File"
+    settings = bot_record(client)
+    caption = settings.get("custom_caption") or CUSTOM_FILE_CAPTION or f"<code>{name}</code>\n<code>Size: {size}</code>"
+    try:
+        caption = caption.format(file_name=name, file_size=size, file_caption=getattr(media, "caption", "") if media else "")
+    except Exception:
+        pass
+    try:
+        await msg.edit_caption(caption)
+    except Exception:
+        pass
+    buttons = settings.get("custom_buttons", [])
+    if buttons:
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton(b["text"], url=b["url"])] for b in buttons if b.get("text") and b.get("url")])
+        try:
+            await msg.edit_reply_markup(markup)
+        except Exception:
+            pass
+    if AUTO_DELETE:
+        warning = await msg.reply(f"<b>⚠️ This file will be deleted in {AUTO_DELETE} minutes.</b>")
+        await asyncio.sleep(AUTO_DELETE_TIME)
+        await msg.delete()
+        try:
+            await warning.edit_text("<b>Your file has been deleted.</b>")
+        except Exception:
+            pass
+    return msg
+
+
 @Client.on_message(filters.command("start") & filters.incoming)
 async def start(client, message):
     me = await client.get_me()
     if not await clonedb.is_user_exist(me.id, message.from_user.id):
         await clonedb.add_user(me.id, message.from_user.id)
-
     if len(message.command) != 2:
         buttons = [
             [InlineKeyboardButton("💝 YouTube", url="https://www.youtube.com/@tech_as_0")],
             [InlineKeyboardButton("🤖 Create Clone", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
             [InlineKeyboardButton("💁 Help", callback_data="help"), InlineKeyboardButton("About 🔻", callback_data="about")],
         ]
-        return await message.reply_photo(
-            photo=random.choice(PICS),
-            caption=script.CLONE_START_TXT.format(message.from_user.mention, me.mention),
-            reply_markup=InlineKeyboardMarkup(buttons),
-        )
+        return await message.reply_photo(photo=random.choice(PICS), caption=script.CLONE_START_TXT.format(message.from_user.mention, me.mention), reply_markup=InlineKeyboardMarkup(buttons))
 
     data = message.command[1]
     try:
@@ -91,34 +119,8 @@ async def start(client, message):
     markup = await force_markup(client, message.from_user.id, data)
     if markup:
         return await message.reply("<b>🔐 Join the required channel(s) first.</b>", reply_markup=markup)
-
     try:
-        msg = await client.send_cached_media(
-            chat_id=message.from_user.id,
-            file_id=file_id,
-            protect_content=(prefix == "filep"),
-        )
-        media = getattr(msg, msg.media.value, None)
-        size = get_size(media.file_size) if media and getattr(media, "file_size", None) else "Unknown"
-        name = getattr(media, "file_name", None) if media else None
-        name = name or "File"
-        caption = f"<code>{name}</code>\n<code>Size: {size}</code>"
-        if CUSTOM_FILE_CAPTION:
-            try:
-                caption = CUSTOM_FILE_CAPTION.format(file_name=name, file_size=size, file_caption=getattr(media, "caption", "") or "")
-            except Exception:
-                pass
-        try:
-            await msg.edit_caption(caption)
-        except Exception:
-            pass
-        warning = await msg.reply(f"<b>⚠️ This file will be deleted in {AUTO_DELETE} minutes.</b>")
-        await asyncio.sleep(AUTO_DELETE_TIME)
-        await msg.delete()
-        try:
-            await warning.edit_text("<b>Your file has been deleted.</b>")
-        except Exception:
-            pass
+        await deliver_file(client, message.from_user.id, file_id, protected=(prefix == "filep" or bot_record(client).get("protect_content", False)))
     except Exception as e:
         await message.reply(f"❌ Unable to deliver this file: <code>{e}</code>")
 
@@ -168,11 +170,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             pass
         return await client.send_message(query.from_user.id, "<b>✅ Verification successful. Open your file link again.</b>")
     if query.data == "start":
-        buttons = [
-            [InlineKeyboardButton("💝 YouTube", url="https://www.youtube.com/@tech_as_0")],
-            [InlineKeyboardButton("🤖 Create Clone", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
-            [InlineKeyboardButton("💁 Help", callback_data="help"), InlineKeyboardButton("About 🔻", callback_data="about")],
-        ]
+        buttons = [[InlineKeyboardButton("💝 YouTube", url="https://www.youtube.com/@tech_as_0")], [InlineKeyboardButton("🤖 Create Clone", url=f"https://t.me/{BOT_USERNAME}?start=clone")], [InlineKeyboardButton("💁 Help", callback_data="help"), InlineKeyboardButton("About 🔻", callback_data="about")]]
         text = script.CLONE_START_TXT.format(query.from_user.mention, me.mention)
         if query.message.photo:
             return await query.message.edit_caption(text, reply_markup=InlineKeyboardMarkup(buttons))
