@@ -35,15 +35,13 @@ async def force_sub(client, message):
     if len(message.command) < 2: return await message.reply("Usage: <code>/force_sub @channel</code> or <code>/force_sub off</code>")
     if message.command[1].lower() == "off":
         save(client, {"force_channels": []}); return await message.reply("✅ Force Subscribe disabled.")
-    channel = message.command[1]
     try:
-        chat = await client.get_chat(channel)
-        await client.get_chat_member(chat.id, client.me.id)
+        chat = await client.get_chat(message.command[1])
         channels = list(bot_record(client).get("force_channels", []))
         if chat.id not in channels: channels.append(chat.id)
         save(client, {"force_channels": channels})
         await message.reply("✅ Force Subscribe added. Make the bot admin in that channel.")
-    except Exception as e:
+    except Exception:
         await message.reply("❌ Cannot access that channel. Make the bot admin first.")
 
 
@@ -62,28 +60,22 @@ async def button(client, message):
     if len(message.command) < 2 or message.command[1].lower() == "off":
         save(client, {"custom_buttons": []}); return await message.reply("✅ Custom buttons cleared.")
     raw = message.text.split(None, 1)[1]
-    if " - " not in raw:
-        return await message.reply("Usage: <code>/button Text - https://example.com</code>")
+    if " - " not in raw: return await message.reply("Usage: <code>/button Text - https://example.com</code>")
     text, url = [x.strip() for x in raw.split(" - ", 1)]
-    if not (url.startswith("https://") or url.startswith("http://")):
-        return await message.reply("❌ Button URL must start with http:// or https://")
-    buttons = list(bot_record(client).get("custom_buttons", []))
-    buttons.append({"text": text[:64], "url": url})
-    save(client, {"custom_buttons": buttons})
-    await message.reply("✅ Custom button added.")
+    if not (url.startswith("https://") or url.startswith("http://")): return await message.reply("❌ Button URL must start with http:// or https://")
+    buttons = list(bot_record(client).get("custom_buttons", [])); buttons.append({"text": text[:64], "url": url})
+    save(client, {"custom_buttons": buttons}); await message.reply("✅ Custom button added.")
 
 
 @Client.on_message(filters.command("protect") & filters.private)
 async def protect(client, message):
     if not owner_only(client, message.from_user.id): return await message.reply("❌ Owner only.")
     value = len(message.command) > 1 and message.command[1].lower() in ("on", "1", "yes", "true")
-    save(client, {"protect_content": value})
-    await message.reply("🔐 Protect Content: <b>%s</b>" % ("ON" if value else "OFF"))
+    save(client, {"protect_content": value}); await message.reply("🔐 Protect Content: <b>%s</b>" % ("ON" if value else "OFF"))
 
 
 @Client.on_message(filters.command("shortener") & filters.private)
 async def shortener_settings(client, message):
-    if not owner_only(client, message.from_user.id): return await message.reply("❌ Owner only.")
     user = await get_user(message.from_user.id)
     await message.reply("🔗 <b>Shortener</b>\nAPI: <code>%s</code>\nSite: <code>%s</code>\n\nUse /api KEY and /base_site example.com" % (user.get("shortener_api") or "Not set", user.get("base_site") or "Not set"))
 
