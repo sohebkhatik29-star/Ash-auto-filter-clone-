@@ -84,8 +84,10 @@ async def start():
     bot_info = await StreamBot.get_me()
     StreamBot.username = bot_info.username
     try:
+        from plugins.master_settings import register as register_master_settings
         from clone_plugins.commands import register as register_commands
         from clone_plugins.advanced import register as register_advanced
+        register_master_settings(StreamBot)
         register_commands(StreamBot)
         register_advanced(StreamBot)
         logging.info('ASH master command handlers loaded successfully')
