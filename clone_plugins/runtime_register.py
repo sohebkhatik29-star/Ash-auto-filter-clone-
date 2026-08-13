@@ -4,6 +4,7 @@ from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from clone_plugins import commands as cmd
 from clone_plugins import advanced as adv
 from clone_plugins import clone_settings_ui as cset
+from clone_plugins import single_link
 
 
 def register_clone_handlers(client):
@@ -11,6 +12,10 @@ def register_clone_handlers(client):
     # /settings command and cset:* callbacks are not swallowed by the generic
     # command/callback handlers.
     cset.register(client)
+
+    # Single-link flow is group 0: /genlink prompts for the next message/file,
+    # and /start <payload> can deliver the stored message before generic start.
+    single_link.register(client)
 
     command_map = {
         "start": cmd.start,
