@@ -2,10 +2,9 @@ import asyncio
 import secrets
 import time
 
-from pyrogram import filters
+from pyrogram import filters, StopPropagation
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from pyrogram.handlers import StopPropagation
 
 from clone_plugins import commands as cmd
 from clone_plugins.users_api import get_user, get_short_link
@@ -68,7 +67,6 @@ async def custom_batch(client, message):
     if mongo_db is None:
         return await message.reply("❌ Database is not configured.")
 
-    # Remove an older active session for this user on this bot.
     mongo_db.custom_batch_sessions.delete_many({"bot_id": client.me.id, "user_id": int(message.from_user.id)})
     session_id = secrets.token_urlsafe(10)
     doc = {
@@ -118,9 +116,6 @@ async def capture_media(client, message):
         {"$set": {"file_ids": files, "updated_at": now}},
     )
 
-    # Update the same control message at every 100 files, without stopping
-    # collection. This means a Telegram multi-select forward of 1000 files
-    # can keep arriving; the owner can generate at any time.
     if len(files) % CHUNK_SIZE == 0:
         try:
             await client.edit_message_text(
@@ -137,12 +132,12 @@ async def _generate(client, query, session):
     files = list(session.get("file_ids", []))
     if not files:
         return await query.answer("Send or forward at least one file first.", show_alert=True)
-    if len(files) > MAX_FILES:
-        files = files[:MAX_FILES]
+    files = files[:MAX_FILES]
 
     username = (await client.get_me()).username
     token = secrets.token_urlsafe(18)
-    protected = bool(cmd.bot_record(client).get("protect_content", False)) or bool(cmd.bot_record(client).get("no_forward", False))
+    rec = cmd.bot_record(client)
+    protected = bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
     links = _links(client)
     if links is None:
         return await query.answer("Database is not configured.", show_alert=True)
