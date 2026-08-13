@@ -9,7 +9,7 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from clone_plugins.users_api import get_user, get_short_link
 from plugins.clone import mongo_db
-from clone_plugins.commands import bot_record, force_markup, access_verification, is_owner_or_mod
+from clone_plugins.commands import bot_record, force_markup, access_verification
 
 _PENDING = {}
 
@@ -30,10 +30,11 @@ def _decode(payload: str):
 
 
 async def genlink_prompt(client, message):
-    # Keep the command user-friendly: the next message/file becomes the link target.
+    """Start interactive single-link mode for ANY private user."""
     _PENDING[(client.me.id, message.from_user.id)] = int(time.time())
     await message.reply(
         "📩 <b>Send a message or file now.</b>\n\n"
+        "You can send or forward it directly here.\n"
         "I will create a shareable link for that single message/file.\n\n"
         "/cancel - cancel"
     )
@@ -73,12 +74,11 @@ async def capture_single(client, message):
     short = await get_short_link(await get_user(owner), original)
     link = short or original
 
-    markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔗 SHARE URL", url=link)]
-    ])
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔗 SHARE URL", url=link)]])
     await message.reply(
-        "✅ <b>Your shareable link is ready!</b>\n\n"
-        f"🔗 <code>{link}</code>",
+        "✅ <b>HERE IS YOUR LINK:</b>\n\n"
+        f"🔗 <b>ORIGINAL LINK:</b> {original}\n\n"
+        f"🔗 <b>SHARE LINK:</b> {link}",
         reply_markup=markup,
         disable_web_page_preview=True,
     )
@@ -119,7 +119,9 @@ async def open_single(client, message):
 
 def register(client):
     private = filters.private
-    client.add_handler(MessageHandler(genlink_prompt, filters.command("genlink") & private), group=0)
-    client.add_handler(MessageHandler(capture_single, private), group=0)
-    client.add_handler(MessageHandler(open_single, filters.command("start") & private), group=0)
+    # Use a negative group so this handler wins over the legacy /genlink
+    # implementation that may already be attached by an older plugin.
+    client.add_handler(MessageHandler(genlink_prompt, filters.command("genlink") & private), group=-10)
+    client.add_handler(MessageHandler(capture_single, private), group=-9)
+    client.add_handler(MessageHandler(open_single, filters.command("start") & private), group=-8)
     return client
