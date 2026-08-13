@@ -150,7 +150,8 @@ async def capture_interactive(client, message):
 async def open_interactive(client, message):
     if len(message.command) != 2:
         return
-    token = _decode(message.command[1])
+    payload = message.command[1]
+    token = _decode(payload)
     if not token:
         return
     db = _db()
@@ -161,21 +162,37 @@ async def open_interactive(client, message):
         await message.reply("❌ This link is invalid or expired.")
         raise StopPropagation
 
-    # Use the existing access-token system, but replace its shortener URL
-    # with a direct Telegram verification URL so the button opens reliably.
+    # Access-token verification is generated directly here. We do not pass
+    # the verification URL through the shortener, which fixes VERIFY & CONTINUE.
     try:
-        from clone_plugins.commands import access_verification, force_markup
-        access = await access_verification(client, message.from_user.id, message.command[1])
-        if access:
+        from clone_plugins.commands import bot_record, force_markup, is_owner_or_mod
+        rec = bot_record(client)
+        user_id = int(message.from_user.id)
+
+        if rec.get("access_token_enabled", True) and not is_owner_or_mod(client, user_id):
+            now = int(time.time())
             valid = db.access_tokens.find_one({
                 "bot_id": client.me.id,
-                "user_id": int(message.from_user.id),
-                "payload": message.command[1],
-                "expires_at": {"$gt": int(time.time())},
+                "user_id": user_id,
+                "payload": payload,
+                "expires_at": {"$gt": now},
             })
-            if valid:
+            if not valid:
+                access_token = secrets.token_urlsafe(18)
+                hours = max(1, int(rec.get("access_token_hours", 1)))
+                db.access_tokens.update_one(
+                    {"bot_id": client.me.id, "user_id": user_id},
+                    {"$set": {
+                        "bot_id": client.me.id,
+                        "user_id": user_id,
+                        "token": access_token,
+                        "payload": payload,
+                        "expires_at": now + hours * 3600,
+                    }},
+                    upsert=True,
+                )
                 verify_payload = base64.urlsafe_b64encode(
-                    f"verify_{valid['token']}".encode()
+                    f"verify_{access_token}".encode()
                 ).decode().rstrip("=")
                 username = (await client.get_me()).username
                 verify_url = f"https://t.me/{username}?start={verify_payload}"
@@ -187,7 +204,8 @@ async def open_interactive(client, message):
                     reply_markup=markup,
                 )
                 raise StopPropagation
-        force = await force_markup(client, message.from_user.id, message.command[1])
+
+        force = await force_markup(client, user_id, payload)
         if force:
             await message.reply(
                 "<b>🔐 Please join the required channel(s) first.</b>",
