@@ -30,7 +30,6 @@ def _decode(payload: str):
 
 
 async def genlink_prompt(client, message):
-    """Start interactive single-link mode for any private user."""
     _PENDING[(client.me.id, message.from_user.id)] = int(time.time())
     await message.reply(
         "📩 <b>Send or forward the message/file now.</b>\n\n"
@@ -48,36 +47,24 @@ async def capture_single(client, message):
     if message.text and message.text.strip().lower() == "/cancel":
         await message.reply("❌ Cancelled.")
         raise StopPropagation
-
     if mongo_db is None:
         await message.reply("❌ Database is not configured.")
         raise StopPropagation
-
     token = secrets.token_urlsafe(18)
     mongo_db.share_links.update_one(
         {"bot_id": client.me.id, "token": token},
-        {"$set": {
-            "bot_id": client.me.id,
-            "token": token,
-            "source_chat_id": int(message.chat.id),
-            "source_message_id": int(message.id),
-            "owner_id": int(message.from_user.id),
-            "created_at": int(time.time()),
-        }},
+        {"$set": {"bot_id": client.me.id, "token": token, "source_chat_id": int(message.chat.id), "source_message_id": int(message.id), "owner_id": int(message.from_user.id), "created_at": int(time.time())}},
         upsert=True,
     )
-
     username = (await client.get_me()).username
     original = f"https://t.me/{username}?start={_payload(token)}"
     owner = int(bot_record(client).get("user_id", 0)) or message.from_user.id
     short = await get_short_link(await get_user(owner), original)
     link = short or original
-
     markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔗 SHARE URL", url=link)]])
     await message.reply(
         "✅ <b>HERE IS YOUR LINK:</b>\n\n"
-        f"🔗 <b>ORIGINAL LINK:</b> {original}\n\n"
-        f"🔗 <b>SHARE LINK:</b> {link}",
+        f"🔗 <b>LINK:</b> {link}",
         reply_markup=markup,
         disable_web_page_preview=True,
     )
@@ -94,7 +81,6 @@ async def open_single(client, message):
     if not record:
         await message.reply("❌ This link is invalid or expired.")
         raise StopPropagation
-
     payload = message.command[1]
     access = await access_verification(client, message.from_user.id, payload)
     if access:
@@ -104,13 +90,8 @@ async def open_single(client, message):
     if force:
         await message.reply("<b>🔐 Please join the required channel(s) first.</b>", reply_markup=force)
         raise StopPropagation
-
     try:
-        await client.copy_message(
-            chat_id=message.from_user.id,
-            from_chat_id=int(record["source_chat_id"]),
-            message_id=int(record["source_message_id"]),
-        )
+        await client.copy_message(chat_id=message.from_user.id, from_chat_id=int(record["source_chat_id"]), message_id=int(record["source_message_id"]))
     except Exception:
         await message.reply("❌ Unable to deliver this message. The original message may no longer be available.")
     raise StopPropagation
@@ -118,9 +99,11 @@ async def open_single(client, message):
 
 def register(client):
     private = filters.private
-    # Highest priority: /genlink and /getlink must never fall through to the
-    # legacy reply-to-message /link handler.
     client.add_handler(MessageHandler(genlink_prompt, filters.command(["genlink", "getlink"]) & private), group=-100)
     client.add_handler(MessageHandler(capture_single, private), group=-99)
     client.add_handler(MessageHandler(open_single, filters.command("start") & private), group=-98)
+    # Also register the interactive multi-message collector. This keeps the
+    # clone runtime compatible without needing a second registration module.
+    from clone_plugins import multi_batch
+    multi_batch.register(client)
     return client
