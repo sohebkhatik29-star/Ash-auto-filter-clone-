@@ -10,7 +10,6 @@ from clone_plugins import commands as cmd
 from clone_plugins.users_api import get_user, get_short_link
 from plugins.clone import mongo_db
 
-
 CHUNK_SIZE = 100
 MAX_FILES = 5000
 
@@ -45,17 +44,17 @@ def _text(count, paused=False):
     if count == 0:
         return (
             "📦 <b>CUSTOM BATCH</b>\n\n"
-            "Send or forward as many messages as you want.\n"
-            "You can select multiple messages in Telegram and forward them together; I will save every supported file automatically.\n\n"
+            "Forward or send as many messages/files as you want.\n"
+            "You can select multiple Telegram messages and forward them together. "
+            "Every incoming message will be collected automatically.\n\n"
             "When finished, tap 🔗 <b>GENERATE LINK</b>."
         )
-    extra = "\n\n📦 <b>%d files collected.</b>" % count
+    extra = f"\n\n📦 <b>{count} messages collected.</b>"
     if count % CHUNK_SIZE == 0:
         extra += "\n\nIf you want to forward more messages, tap ▶️ <b>CONTINUE</b>."
     return (
         "📦 <b>CUSTOM BATCH</b>\n\n"
-        "Send or forward as many messages as you want.\n"
-        "Multiple forwarded messages are saved automatically."
+        "Keep forwarding/sending messages. Multiple messages are collected automatically."
         + extra
         + "\n\nWhen finished, tap 🔗 <b>GENERATE LINK</b>."
     )
@@ -73,7 +72,7 @@ async def custom_batch(client, message):
         "session_id": session_id,
         "bot_id": client.me.id,
         "user_id": int(message.from_user.id),
-        "file_ids": [],
+        "messages": [],
         "active": True,
         "paused": False,
         "created_at": int(time.time()),
@@ -88,40 +87,48 @@ async def custom_batch(client, message):
     raise StopPropagation
 
 
-async def capture_media(client, message):
+async def capture_message(client, message):
+    """Collect every incoming message in an active batch, not only media/file IDs.
+
+    Storing the bot-chat message_id makes multi-select forwarding reliable: Telegram
+    delivers each selected message as its own update, and we keep every update by
+    reference instead of depending on the forwarded media's file_id/from_user.
+    """
     if mongo_db is None or not message.from_user:
         return
+    if not message.chat or message.chat.type.value != "private":
+        return
+    if message.text and message.text.startswith("/"):
+        return
+
     session = _session(client, message.from_user.id)
     if not session or not session.get("active") or session.get("paused"):
         return
-    if not message.media:
+
+    messages = list(session.get("messages", []))
+    if len(messages) >= MAX_FILES:
         return
 
-    media = getattr(message, message.media.value, None)
-    file_id = getattr(media, "file_id", None)
-    if not file_id:
+    item = {"chat_id": int(message.chat.id), "message_id": int(message.id)}
+    # Prevent accidental duplicate updates.
+    if any(x.get("chat_id") == item["chat_id"] and x.get("message_id") == item["message_id"] for x in messages):
         return
+    messages.append(item)
 
-    files = list(session.get("file_ids", []))
-    if len(files) >= MAX_FILES:
-        try:
-            await client.send_message(message.chat.id, f"⚠️ Maximum {MAX_FILES} files reached. Tap 🔗 GENERATE LINK.")
-        except Exception:
-            pass
-        return
-    files.append(file_id)
     now = int(time.time())
     mongo_db.custom_batch_sessions.update_one(
         {"_id": session["_id"]},
-        {"$set": {"file_ids": files, "updated_at": now}},
+        {"$set": {"messages": messages, "updated_at": now}},
     )
 
-    if len(files) % CHUNK_SIZE == 0:
+    # Update the control message at useful milestones rather than editing it for
+    # every incoming forwarded message.
+    if len(messages) % CHUNK_SIZE == 0:
         try:
             await client.edit_message_text(
                 message.chat.id,
                 session.get("control_message_id"),
-                _text(len(files)),
+                _text(len(messages)),
                 reply_markup=_controls(session["session_id"], chunk_ready=True),
             )
         except Exception:
@@ -129,9 +136,9 @@ async def capture_media(client, message):
 
 
 async def _generate(client, query, session):
-    files = list(session.get("file_ids", []))[:MAX_FILES]
-    if not files:
-        return await query.answer("Send or forward at least one file first.", show_alert=True)
+    messages = list(session.get("messages", []))[:MAX_FILES]
+    if not messages:
+        return await query.answer("Forward or send at least one message first.", show_alert=True)
 
     username = (await client.get_me()).username
     token = secrets.token_urlsafe(18)
@@ -145,7 +152,7 @@ async def _generate(client, query, session):
         "token": token,
         "bot_id": client.me.id,
         "owner_id": int(session["user_id"]),
-        "file_ids": files,
+        "messages": messages,
         "protected": protected,
         "created_at": int(time.time()),
     })
@@ -161,7 +168,7 @@ async def _generate(client, query, session):
     shown = short if short != url else url
     text = (
         "✅ <b>CUSTOM BATCH LINK GENERATED</b>\n\n"
-        f"📦 <b>Files:</b> {len(files)}\n\n"
+        f"📦 <b>Messages:</b> {len(messages)}\n\n"
         f"🔗 <b>Link:</b>\n{shown}"
     )
     try:
@@ -185,12 +192,12 @@ async def callback(client, query):
 
     if action == "continue":
         mongo_db.custom_batch_sessions.update_one({"_id": session["_id"]}, {"$set": {"paused": False, "active": True}})
-        count = len(session.get("file_ids", []))
+        count = len(session.get("messages", []))
         await query.message.edit_text(_text(count), reply_markup=_controls(session_id, paused=False))
         await query.answer("You can forward more messages now.")
     elif action == "pause":
         mongo_db.custom_batch_sessions.update_one({"_id": session["_id"]}, {"$set": {"paused": True, "active": True}})
-        count = len(session.get("file_ids", []))
+        count = len(session.get("messages", []))
         await query.message.edit_text(_text(count, paused=True), reply_markup=_controls(session_id, paused=True))
         await query.answer("Batch collection paused.")
     elif action == "generate":
@@ -224,15 +231,32 @@ async def batch_start(client, message):
         await message.reply("<b>🔐 Please join the required channel(s) first.</b>", reply_markup=force)
         raise StopPropagation
 
-    files = list(record.get("file_ids", []))
-    if not files:
-        await message.reply("❌ This batch contains no files.")
+    messages = list(record.get("messages", []))
+    if not messages:
+        # Backward compatibility for batches created by the previous version.
+        old_files = list(record.get("file_ids", []))
+        if old_files:
+            await message.reply(f"📦 <b>Sending {len(old_files)} files...</b>")
+            for file_id in old_files:
+                try:
+                    await cmd.deliver_file(client, message.from_user.id, file_id, protected=bool(record.get("protected", False)))
+                    await asyncio.sleep(0.05)
+                except Exception:
+                    continue
+            await message.reply("✅ <b>Batch delivery completed.</b>")
+        else:
+            await message.reply("❌ This batch contains no messages.")
         raise StopPropagation
 
-    await message.reply(f"📦 <b>Sending {len(files)} files...</b>")
-    for file_id in files:
+    await message.reply(f"📦 <b>Sending {len(messages)} messages...</b>")
+    for item in messages:
         try:
-            await cmd.deliver_file(client, message.from_user.id, file_id, protected=bool(record.get("protected", False)))
+            await client.copy_message(
+                chat_id=message.from_user.id,
+                from_chat_id=int(item["chat_id"]),
+                message_id=int(item["message_id"]),
+                protect_content=bool(record.get("protected", False)),
+            )
             await asyncio.sleep(0.05)
         except Exception:
             continue
@@ -244,6 +268,6 @@ def register(client, base_group=-1):
     private = filters.private
     client.add_handler(MessageHandler(batch_start, filters.command("start") & private), group=base_group)
     client.add_handler(MessageHandler(custom_batch, filters.command("custom_batch") & private), group=base_group)
-    client.add_handler(MessageHandler(capture_media, private & filters.media), group=base_group + 1)
+    client.add_handler(MessageHandler(capture_message, private), group=base_group + 1)
     client.add_handler(CallbackQueryHandler(callback, filters.regex(r"^cb_(continue|pause|generate|cancel)_[A-Za-z0-9_-]+$")), group=base_group)
     return client
