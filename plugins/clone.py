@@ -18,13 +18,8 @@ def clone_commands(include_owner=False):
     commands = [
         BotCommand("start", "Check bot / open stored link"),
         BotCommand("help", "Show all commands"),
-        BotCommand("link", "Create a shareable file link"),
-        BotCommand("genlink", "Create a single shareable link"),
         BotCommand("getlink", "Create a single shareable link"),
-        BotCommand("batch", "Create batch links"),
         BotCommand("custom_batch", "Create custom batch links"),
-        BotCommand("special_link", "Create a special link"),
-        BotCommand("universal_link", "Create a universal link"),
         BotCommand("shortener", "View link shortener"),
         BotCommand("settings", "Customize your clone"),
         BotCommand("api", "Set or view shortener API"),
