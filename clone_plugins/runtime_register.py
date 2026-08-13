@@ -8,28 +8,22 @@ from clone_plugins import single_link
 
 
 def register_clone_handlers(client):
-    # Clone-owner settings first.
     cset.register(client)
-
-    # IMPORTANT: /genlink and its next-message/file flow are owned entirely by
-    # single_link. Do not also register cmd.genlink below, otherwise the old
-    # reply-to-file implementation can answer /genlink.
     single_link.register(client)
 
+    # Requested public commands: only single-link and custom-batch link flows.
     command_map = {
         "start": cmd.start,
         "help": cmd.help_command,
-        # /link keeps the legacy reply-to-file behaviour for compatibility.
-        "link": cmd.genlink,
-        # /genlink is intentionally NOT here; single_link.register() owns it.
-        "batch": cmd.batch,
+        "getlink": single_link.genlink_prompt,
         "custom_batch": cmd.custom_batch,
-        "special_link": cmd.special_link,
-        "universal_link": cmd.universal_link,
         "shortener": cmd.shortener,
         "api": cmd.api_handler,
         "base_site": cmd.base_site_handler,
     }
+
+    # Removed from the public command menu/handlers:
+    # /link, /genlink, /batch, /special_link, /universal_link.
     advanced_commands = {
         "admin": "admin_panel", "stats": "stats", "broadcast": "broadcast",
         "ban": "ban", "unban": "unban", "force_sub": "force_sub",
@@ -44,6 +38,7 @@ def register_clone_handlers(client):
         fn = getattr(adv, name, None)
         if callable(fn):
             command_map[command] = fn
+
     for command, handler in command_map.items():
         client.add_handler(MessageHandler(handler, filters.command(command) & filters.private), group=1)
 
