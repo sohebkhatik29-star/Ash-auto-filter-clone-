@@ -1,13 +1,13 @@
-"""Shareable link generators for clone bots.
+"""Single-message share link generator for clone bots.
 
-/genlink is intentionally interactive: after the command, the next message or
-file sent/forwarded to the bot becomes the single link target.
+/getlink starts an interactive flow: send/forward one message or file directly
+and the bot creates exactly one shareable link.
 """
 import base64
 import secrets
 import time
 
-from pyrogram import Client, filters, StopPropagation, enums
+from pyrogram import Client, filters, StopPropagation
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -45,14 +45,18 @@ def _bot_owner(client, fallback):
     return fallback
 
 
-async def interactive_genlink(client, message):
+async def interactive_getlink(client, message):
     _PENDING[(client.me.id, message.from_user.id)] = int(time.time())
     await message.reply(
-        "📩 <b>Send a message or file now.</b>\n\n"
-        "You can send or forward it directly here.\n"
-        "I will create a shareable link for that single message/file.\n\n"
+        "📩 <b>Send or forward the message/file now.</b>\n\n"
+        "I will create one shareable link automatically.\n\n"
         "/cancel - cancel"
     )
+    raise StopPropagation
+
+
+async def disabled_old_link_commands(client, message):
+    await message.reply("❌ This command is disabled. Use /getlink.")
     raise StopPropagation
 
 
@@ -66,7 +70,7 @@ async def capture_interactive(client, message):
         await message.reply("❌ Cancelled.")
         raise StopPropagation
     if message.text and message.text.startswith("/"):
-        await message.reply("❌ Single-link mode is waiting for a message or file. Use /cancel first if you want to stop.")
+        await message.reply("❌ Send/forward the message or file, or use /cancel.")
         _PENDING[key] = int(time.time())
         raise StopPropagation
 
@@ -94,12 +98,15 @@ async def capture_interactive(client, message):
     owner = _bot_owner(client, message.from_user.id)
     short = await get_short_link(await get_user(owner), original)
     link = short or original
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔗 SHARE URL", url=link)]])
+
+    # Only one link is shown. No duplicate Original/Share Link block.
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔗 SHARE URL", url=link)]
+    ])
 
     await message.reply(
-        "⭕ <b>HERE IS YOUR LINK:</b>\n\n"
-        f"🔗 <b>ORIGINAL LINK:</b> {original}\n\n"
-        f"🔗 <b>SHARE LINK:</b> {link}",
+        "✅ <b>HERE IS YOUR LINK:</b>\n\n"
+        f"🔗 <b>LINK:</b> {link}",
         reply_markup=markup,
         disable_web_page_preview=True,
     )
@@ -120,15 +127,38 @@ async def open_interactive(client, message):
         await message.reply("❌ This link is invalid or expired.")
         raise StopPropagation
 
+    # Use the existing access-token system, but replace its shortener URL
+    # with a direct Telegram verification URL so the button opens reliably.
     try:
         from clone_plugins.commands import access_verification, force_markup
         access = await access_verification(client, message.from_user.id, message.command[1])
         if access:
-            await message.reply("<b>🔐 Please verify first to access this file.</b>", reply_markup=access)
-            raise StopPropagation
+            valid = db.access_tokens.find_one({
+                "bot_id": client.me.id,
+                "user_id": int(message.from_user.id),
+                "payload": message.command[1],
+                "expires_at": {"$gt": int(time.time())},
+            })
+            if valid:
+                verify_payload = base64.urlsafe_b64encode(
+                    f"verify_{valid['token']}".encode()
+                ).decode().rstrip("=")
+                username = (await client.get_me()).username
+                verify_url = f"https://t.me/{username}?start={verify_payload}"
+                markup = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔐 VERIFY & CONTINUE", url=verify_url)]
+                ])
+                await message.reply(
+                    "<b>🔐 Please verify first to access this file.</b>",
+                    reply_markup=markup,
+                )
+                raise StopPropagation
         force = await force_markup(client, message.from_user.id, message.command[1])
         if force:
-            await message.reply("<b>🔐 Please join the required channel(s) first.</b>", reply_markup=force)
+            await message.reply(
+                "<b>🔐 Please join the required channel(s) first.</b>",
+                reply_markup=force,
+            )
             raise StopPropagation
     except StopPropagation:
         raise
@@ -142,54 +172,35 @@ async def open_interactive(client, message):
             message_id=int(record["source_message_id"]),
         )
     except Exception:
-        await message.reply("❌ Unable to deliver this message. The original message may no longer be available.")
+        await message.reply(
+            "❌ Unable to deliver this message. The original message may no longer be available."
+        )
     raise StopPropagation
-
-
-async def legacy_batch(client, message):
-    replied = message.reply_to_message
-    if not replied:
-        return await message.reply("Reply to the first file and use <code>/batch N</code>.")
-    try:
-        count = int(message.command[1]) if len(message.command) > 1 else 1
-        if not 1 <= count <= 20:
-            raise ValueError
-    except ValueError:
-        return await message.reply("Usage: <code>/batch 5</code> (1-20 files)")
-
-    username = (await client.get_me()).username
-    links = []
-    for msg_id in range(replied.id, replied.id + count):
-        try:
-            msg = await client.get_messages(replied.chat.id, msg_id)
-            if not msg or msg.empty or not msg.media:
-                continue
-            media = getattr(msg, msg.media.value, None)
-            file_id = getattr(media, "file_id", None)
-            if not file_id:
-                continue
-            payload = base64.urlsafe_b64encode(("file_" + file_id).encode()).decode().rstrip("=")
-            links.append(f"https://t.me/{username}?start={payload}")
-        except Exception:
-            continue
-    if not links:
-        return await message.reply("❌ No supported files were found in that range.")
-    await message.reply("📦 <b>Batch Links</b>\n\n" + "\n".join(f"{i}. {x}" for i, x in enumerate(links, 1)))
 
 
 def register(client):
     private = filters.private
-    client.add_handler(MessageHandler(interactive_genlink, filters.command("genlink") & private), group=-10)
-    client.add_handler(MessageHandler(capture_interactive, private), group=-9)
-    client.add_handler(MessageHandler(open_interactive, filters.command("start") & private), group=-8)
+    # New command: only /getlink.
+    client.add_handler(
+        MessageHandler(interactive_getlink, filters.command("getlink") & private),
+        group=-20,
+    )
+    # Stop the old link commands from reaching the legacy handler.
+    client.add_handler(
+        MessageHandler(
+            disabled_old_link_commands,
+            filters.command(["link", "genlink"]) & private,
+        ),
+        group=-21,
+    )
+    client.add_handler(MessageHandler(capture_interactive, private), group=-19)
+    client.add_handler(
+        MessageHandler(open_interactive, filters.command("start") & private),
+        group=-18,
+    )
     return client
 
 
-@Client.on_message(filters.command("genlink") & filters.private)
-async def genlink_fallback(client, message):
-    await interactive_genlink(client, message)
-
-
-@Client.on_message(filters.command("batch") & filters.private)
-async def batch_link(client, message):
-    await legacy_batch(client, message)
+@Client.on_message(filters.command("getlink") & filters.private)
+async def getlink_fallback(client, message):
+    await interactive_getlink(client, message)
