@@ -19,7 +19,8 @@ def clone_commands(include_owner=False):
         BotCommand("start", "Check bot / open stored link"),
         BotCommand("help", "Show all commands"),
         BotCommand("link", "Create a shareable file link"),
-        BotCommand("genlink", "Create a shareable file link"),
+        BotCommand("genlink", "Create a single shareable link"),
+        BotCommand("getlink", "Create a single shareable link"),
         BotCommand("batch", "Create batch links"),
         BotCommand("custom_batch", "Create custom batch links"),
         BotCommand("special_link", "Create a special link"),
@@ -54,6 +55,7 @@ async def set_clone_menu(client, owner_id=None):
             await client.set_bot_commands(clone_commands(True), scope=BotCommandScopeChat(chat_id=int(owner_id)))
         except Exception:
             logging.exception("Unable to set owner command menu")
+
 
 
 def register_clone_handlers(client):
