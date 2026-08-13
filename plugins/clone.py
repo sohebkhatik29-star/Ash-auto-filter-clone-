@@ -57,10 +57,7 @@ async def set_clone_menu(client, owner_id=None):
             logging.exception("Unable to set owner command menu")
 
 
-
 def register_clone_handlers(client):
-    # Clone clients are created with plugins disabled, so handlers must be
-    # attached directly to each dynamically-created Client instance.
     from clone_plugins.runtime_register import register_clone_handlers as _register
     _register(client)
 
@@ -118,11 +115,15 @@ async def restart_bots():
     if mongo_db is None:
         return
     for bot in list(mongo_db.bots.find()):
+        token = bot.get("token") or bot.get("bot_token")
+        if not token:
+            logging.warning("Skipping clone %s: database record has no token field", bot.get("bot_id") or bot.get("username") or "unknown")
+            continue
         try:
-            vj = Client(bot["token"], API_ID, API_HASH, bot_token=bot["token"], plugins={})
+            vj = Client(token, API_ID, API_HASH, bot_token=token, plugins={})
             await vj.start()
             register_clone_handlers(vj)
             await set_clone_menu(vj, bot.get("user_id"))
             logging.info("Clone started: @%s", bot.get("username"))
         except Exception:
-            logging.exception("Unable to restart clone")
+            logging.exception("Unable to restart clone @%s", bot.get("username"))
