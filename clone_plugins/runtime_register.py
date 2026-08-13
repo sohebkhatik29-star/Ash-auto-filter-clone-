@@ -1,20 +1,48 @@
 """Register handlers on dynamically-created Pyrogram clone clients."""
 from pyrogram import filters
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins import commands as cmd
 from clone_plugins import advanced as adv
 from clone_plugins import clone_settings_ui as cset
 from clone_plugins import single_link
 
 
+async def clean_help(client, message):
+    text = (
+        "📚 <b>ASH FILE STORE — HELP</b>\n\n"
+        "👤 <b>User Commands</b>\n"
+        "• /start — Check bot / open file link\n"
+        "• /help — Open this help\n"
+        "• /getlink — Create a single shareable file link\n"
+        "• /custom_batch — Create custom batch links\n"
+        "• /shortener — Shortener settings\n"
+        "• /settings — Customize bot\n"
+        "• /api KEY — Set shortener API\n"
+        "• /base_site SITE — Set shortener site\n"
+        "• /clone — Create your own clone\n\n"
+        "👑 <b>Owner / Moderator</b>\n"
+        "• /admin • /stats • /broadcast\n"
+        "• /ban • /unban • /force_sub\n"
+        "• /caption • /button • /protect\n"
+        "• /auto_delete • /no_forward • /moderator\n"
+        "• /access_token • /transfer_db • /deactivate\n"
+        "• /mode • /restart • /delete • /start_msg\n\n"
+        "⚙️ Owner features are also available from <b>Settings → My Clone Bot</b>."
+    )
+    await message.reply(text, reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings")]
+    ]))
+
+
 def register_clone_handlers(client):
     cset.register(client)
     single_link.register(client)
 
-    # Requested public commands: only single-link and custom-batch link flows.
+    # Public clone commands: keep only the requested single-link and custom-batch flows.
     command_map = {
         "start": cmd.start,
-        "help": cmd.help_command,
+        "help": clean_help,
         "getlink": single_link.genlink_prompt,
         "custom_batch": cmd.custom_batch,
         "shortener": cmd.shortener,
@@ -22,8 +50,7 @@ def register_clone_handlers(client):
         "base_site": cmd.base_site_handler,
     }
 
-    # Removed from the public command menu/handlers:
-    # /link, /genlink, /batch, /special_link, /universal_link.
+    # Legacy public link/batch commands are intentionally not registered.
     advanced_commands = {
         "admin": "admin_panel", "stats": "stats", "broadcast": "broadcast",
         "ban": "ban", "unban": "unban", "force_sub": "force_sub",
