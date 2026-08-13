@@ -10,7 +10,7 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins.dbusers import clonedb
 from clone_plugins.users_api import get_user, update_user_info, get_short_link
 from plugins.clone import mongo_db
-from config import BOT_USERNAME, PICS, CUSTOM_FILE_CAPTION
+from config import BOT_USERNAME, PICS, CUSTOM_FILE_CAPTION, ADMINS
 from Script import script
 from validators import domain
 
@@ -33,9 +33,18 @@ def owner_id(client): return int(bot_record(client).get("user_id", 0))
 
 
 def is_owner_or_mod(client, user_id):
+    uid = int(user_id)
+    # The master bot does not need a bots collection record to authorize
+    # its configured administrators. Clones continue to use their own owner
+    # and moderator list from the bots collection.
+    try:
+        if uid in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]:
+            return True
+    except Exception:
+        pass
     rec = bot_record(client)
-    if int(rec.get("user_id", 0)) == int(user_id): return True
-    return int(user_id) in [int(x) for x in rec.get("moderators", []) if str(x).isdigit()]
+    if int(rec.get("user_id", 0)) == uid: return True
+    return uid in [int(x) for x in rec.get("moderators", []) if str(x).isdigit()]
 
 
 def force_channels(client): return bot_record(client).get("force_channels", [])
@@ -155,7 +164,7 @@ async def start(client, message):
 
 
 async def help_command(client, message):
-    text=("📚 <b>ASH FILE STORE — HELP</b>\n\n👤 <b>User Commands</b>\n• /start — Check bot / open file link\n• /help — Open this help\n• /link — Create a shareable file link\n• /genlink — Create a file link\n• /batch N — Create batch links\n• /custom_batch N — Custom batch links\n• /special_link — Special link\n• /universal_link — Universal link\n• /shortener — Shortener settings\n• /settings — Customize bot\n• /api KEY — Set shortener API\n• /base_site SITE — Set shortener site\n• /clone — Create your own clone\n\n👑 <b>Owner / Moderator</b>\n• /admin • /stats • /broadcast\n• /ban • /unban • /force_sub\n• /caption • /button • /protect\n• /auto_delete • /no_forward • /moderator\n• /access_token • /transfer_db • /deactivate\n• /mode • /restart • /delete • /start_msg\n\n⚙️ Owner features are also available from <b>Settings → My Clone Bot</b>.")
+    text=("📚 <b>ASH FILE STORE — HELP</b>\n\n👤 <b>User Commands</b>\n• /start — Check bot / open file link\n• /help — Open this help\n• /custom_batch N — Custom batch links\n• /special_link — Special link\n• /universal_link — Universal link\n• /shortener — Shortener settings\n• /settings — Customize bot\n• /api KEY — Set shortener API\n• /base_site SITE — Set shortener site\n• /clone — Create your own clone\n\n👑 <b>Owner / Moderator</b>\n• /admin • /stats • /broadcast\n• /ban • /unban • /force_sub\n• /caption • /button • /protect\n• /auto_delete • /no_forward • /moderator\n• /access_token • /transfer_db • /deactivate\n• /mode • /restart • /delete • /start_msg\n\n⚙️ Owner features are also available from <b>Settings → My Clone Bot</b>.")
     await message.reply(text,reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⚙️ SETTINGS",callback_data="settings")]]))
 
 
