@@ -26,6 +26,7 @@ def all_commands():
         BotCommand('help', 'Show all commands'),
         BotCommand('link', 'Create a shareable file link'),
         BotCommand('genlink', 'Generate a file link'),
+        BotCommand('getlink', 'Generate a file link'),
         BotCommand('batch', 'Create batch links'),
         BotCommand('custom_batch', 'Create custom batch links'),
         BotCommand('special_link', 'Create a special link'),
@@ -34,7 +35,7 @@ def all_commands():
         BotCommand('settings', 'Customize settings'),
         BotCommand('api', 'Set or view shortener API'),
         BotCommand('base_site', 'Set or view shortener site'),
-        BotCommand('clone', 'Create your own clone bot'),
+        BotCommand('clone', 'Create your own clone'),
     ]
 
 
@@ -87,9 +88,14 @@ async def start():
         from plugins.master_settings import register as register_master_settings
         from clone_plugins.commands import register as register_commands
         from clone_plugins.advanced import register as register_advanced
+        from clone_plugins.single_link import register as register_single_link
         register_master_settings(StreamBot)
         register_commands(StreamBot)
         register_advanced(StreamBot)
+        # The master bot also supports the same interactive single-link flow.
+        # It is registered with its own high-priority handlers so /genlink and
+        # /getlink do not fall through to the legacy reply-to-message /link flow.
+        register_single_link(StreamBot)
         logging.info('ASH master command handlers loaded successfully')
     except Exception:
         logging.exception('Unable to load ASH master command handlers')
