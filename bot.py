@@ -89,13 +89,15 @@ async def start():
         from clone_plugins.commands import register as register_commands
         from clone_plugins.advanced import register as register_advanced
         from clone_plugins.single_link import register as register_single_link
+        from clone_plugins.custom_batch import register as register_custom_batch
         register_master_settings(StreamBot)
         register_commands(StreamBot)
         register_advanced(StreamBot)
         # The master bot also supports the same interactive single-link flow.
-        # It is registered with its own high-priority handlers so /genlink and
-        # /getlink do not fall through to the legacy reply-to-message /link flow.
         register_single_link(StreamBot)
+        # Custom batch runs at a higher-priority handler group so the legacy
+        # /custom_batch implementation cannot intercept the new workflow.
+        register_custom_batch(StreamBot, base_group=-1)
         logging.info('ASH master command handlers loaded successfully')
     except Exception:
         logging.exception('Unable to load ASH master command handlers')
