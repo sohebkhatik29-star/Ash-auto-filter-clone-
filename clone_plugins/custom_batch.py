@@ -30,9 +30,9 @@ def _session(client, user_id):
     return col.find_one({"bot_id": client.me.id, "user_id": int(user_id), "active": True})
 
 
-def _controls(session_id, paused=False):
+def _controls(session_id, paused=False, chunk_ready=False):
     rows = []
-    if paused:
+    if paused or chunk_ready:
         rows.append([InlineKeyboardButton("▶️ CONTINUE", callback_data=f"cb_continue_{session_id}")])
     else:
         rows.append([InlineKeyboardButton("⏸ PAUSE", callback_data=f"cb_pause_{session_id}")])
@@ -51,7 +51,7 @@ def _text(count, paused=False):
         )
     extra = "\n\n📦 <b>%d files collected.</b>" % count
     if count % CHUNK_SIZE == 0:
-        extra += "\n\nIf you want to forward more messages, tap ▶️ <b>CONTINUE</b> or keep forwarding."
+        extra += "\n\nIf you want to forward more messages, tap ▶️ <b>CONTINUE</b>."
     return (
         "📦 <b>CUSTOM BATCH</b>\n\n"
         "Send or forward as many messages as you want.\n"
@@ -122,17 +122,16 @@ async def capture_media(client, message):
                 message.chat.id,
                 session.get("control_message_id"),
                 _text(len(files)),
-                reply_markup=_controls(session["session_id"], paused=False),
+                reply_markup=_controls(session["session_id"], chunk_ready=True),
             )
         except Exception:
             pass
 
 
 async def _generate(client, query, session):
-    files = list(session.get("file_ids", []))
+    files = list(session.get("file_ids", []))[:MAX_FILES]
     if not files:
         return await query.answer("Send or forward at least one file first.", show_alert=True)
-    files = files[:MAX_FILES]
 
     username = (await client.get_me()).username
     token = secrets.token_urlsafe(18)
@@ -190,7 +189,7 @@ async def callback(client, query):
         await query.message.edit_text(_text(count), reply_markup=_controls(session_id, paused=False))
         await query.answer("You can forward more messages now.")
     elif action == "pause":
-        mongo_db.custom_batch_sessions.update_one({"_id": session["_id"]}, {"$set": {"paused": True}})
+        mongo_db.custom_batch_sessions.update_one({"_id": session["_id"]}, {"$set": {"paused": True, "active": True}})
         count = len(session.get("file_ids", []))
         await query.message.edit_text(_text(count, paused=True), reply_markup=_controls(session_id, paused=True))
         await query.answer("Batch collection paused.")
