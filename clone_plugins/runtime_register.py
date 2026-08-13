@@ -8,26 +8,25 @@ from clone_plugins import single_link
 
 
 def register_clone_handlers(client):
-    # The clone-owner settings UI is intentionally registered first so its
-    # /settings command and cset:* callbacks are not swallowed by the generic
-    # command/callback handlers.
+    # Clone-owner settings first.
     cset.register(client)
 
-    # Single-link flow is group 0: /genlink prompts for the next message/file,
-    # and /start <payload> can deliver the stored message before generic start.
+    # IMPORTANT: /genlink and its next-message/file flow are owned entirely by
+    # single_link. Do not also register cmd.genlink below, otherwise the old
+    # reply-to-file implementation can answer /genlink.
     single_link.register(client)
 
     command_map = {
         "start": cmd.start,
         "help": cmd.help_command,
+        # /link keeps the legacy reply-to-file behaviour for compatibility.
         "link": cmd.genlink,
-        "genlink": cmd.genlink,
+        # /genlink is intentionally NOT here; single_link.register() owns it.
         "batch": cmd.batch,
         "custom_batch": cmd.custom_batch,
         "special_link": cmd.special_link,
         "universal_link": cmd.universal_link,
         "shortener": cmd.shortener,
-        # settings is handled by clone_settings_ui.register()
         "api": cmd.api_handler,
         "base_site": cmd.base_site_handler,
     }
