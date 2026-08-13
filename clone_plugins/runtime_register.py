@@ -6,6 +6,7 @@ from clone_plugins import commands as cmd
 from clone_plugins import advanced as adv
 from clone_plugins import clone_settings_ui as cset
 from clone_plugins import single_link
+from clone_plugins import custom_batch as cbatch
 
 
 async def clean_help(client, message):
@@ -18,8 +19,8 @@ async def clean_help(client, message):
         "• /custom_batch — Create custom batch links\n"
         "• /shortener — Shortener settings\n"
         "• /settings — Customize bot\n"
-        "• /api KEY — Set shortener API\n"
-        "• /base_site SITE — Set shortener site\n"
+        "• /api KEY — Set or view shortener API\n"
+        "• /base_site SITE — Set or view shortener site\n"
         "• /clone — Create your own clone\n\n"
         "👑 <b>Owner / Moderator</b>\n"
         "• /admin • /stats • /broadcast\n"
@@ -38,19 +39,18 @@ async def clean_help(client, message):
 def register_clone_handlers(client):
     cset.register(client)
     single_link.register(client)
+    cbatch.register(client, base_group=-1)
 
     # Public clone commands: keep only the requested single-link and custom-batch flows.
     command_map = {
         "start": cmd.start,
         "help": clean_help,
         "getlink": single_link.genlink_prompt,
-        "custom_batch": cmd.custom_batch,
         "shortener": cmd.shortener,
         "api": cmd.api_handler,
         "base_site": cmd.base_site_handler,
     }
 
-    # Legacy public link/batch commands are intentionally not registered.
     advanced_commands = {
         "admin": "admin_panel", "stats": "stats", "broadcast": "broadcast",
         "ban": "ban", "unban": "unban", "force_sub": "force_sub",
