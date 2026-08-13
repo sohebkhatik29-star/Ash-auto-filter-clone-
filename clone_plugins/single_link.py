@@ -30,12 +30,11 @@ def _decode(payload: str):
 
 
 async def genlink_prompt(client, message):
-    """Start interactive single-link mode for ANY private user."""
+    """Start interactive single-link mode for any private user."""
     _PENDING[(client.me.id, message.from_user.id)] = int(time.time())
     await message.reply(
-        "📩 <b>Send a message or file now.</b>\n\n"
-        "You can send or forward it directly here.\n"
-        "I will create a shareable link for that single message/file.\n\n"
+        "📩 <b>Send or forward the message/file now.</b>\n\n"
+        "No reply command is needed. I will automatically create the single shareable link.\n\n"
         "/cancel - cancel"
     )
     raise StopPropagation
@@ -119,9 +118,9 @@ async def open_single(client, message):
 
 def register(client):
     private = filters.private
-    # Use a negative group so this handler wins over the legacy /genlink
-    # implementation that may already be attached by an older plugin.
-    client.add_handler(MessageHandler(genlink_prompt, filters.command("genlink") & private), group=-10)
-    client.add_handler(MessageHandler(capture_single, private), group=-9)
-    client.add_handler(MessageHandler(open_single, filters.command("start") & private), group=-8)
+    # Highest priority: /genlink and /getlink must never fall through to the
+    # legacy reply-to-message /link handler.
+    client.add_handler(MessageHandler(genlink_prompt, filters.command(["genlink", "getlink"]) & private), group=-100)
+    client.add_handler(MessageHandler(capture_single, private), group=-99)
+    client.add_handler(MessageHandler(open_single, filters.command("start") & private), group=-98)
     return client
