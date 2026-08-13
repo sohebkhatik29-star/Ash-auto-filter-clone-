@@ -34,9 +34,6 @@ def owner_id(client): return int(bot_record(client).get("user_id", 0))
 
 def is_owner_or_mod(client, user_id):
     uid = int(user_id)
-    # The master bot does not need a bots collection record to authorize
-    # its configured administrators. Clones continue to use their own owner
-    # and moderator list from the bots collection.
     try:
         if uid in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]:
             return True
@@ -164,7 +161,7 @@ async def start(client, message):
 
 
 async def help_command(client, message):
-    text=("📚 <b>ASH FILE STORE — HELP</b>\n\n👤 <b>User Commands</b>\n• /start — Check bot / open file link\n• /help — Open this help\n• /custom_batch N — Custom batch links\n• /special_link — Special link\n• /universal_link — Universal link\n• /shortener — Shortener settings\n• /settings — Customize bot\n• /api KEY — Set shortener API\n• /base_site SITE — Set shortener site\n• /clone — Create your own clone\n\n👑 <b>Owner / Moderator</b>\n• /admin • /stats • /broadcast\n• /ban • /unban • /force_sub\n• /caption • /button • /protect\n• /auto_delete • /no_forward • /moderator\n• /access_token • /transfer_db • /deactivate\n• /mode • /restart • /delete • /start_msg\n\n⚙️ Owner features are also available from <b>Settings → My Clone Bot</b>.")
+    text=("📚 <b>ASH FILE STORE — HELP</b>\n\n👤 <b>User Commands</b>\n• /start — Check bot / open file link\n• /help — Open this help\n• /getlink — Create a single shareable file link\n• /custom_batch — Create custom batch links\n• /shortener — Shortener settings\n• /settings — Customize bot\n• /api KEY — Set shortener API\n• /base_site SITE — Set shortener site\n• /clone — Create your own clone\n\n👑 <b>Owner / Moderator</b>\n• /admin • /stats • /broadcast\n• /ban • /unban • /force_sub\n• /caption • /button • /protect\n• /auto_delete • /no_forward • /moderator\n• /access_token • /transfer_db • /deactivate\n• /mode • /restart • /delete • /start_msg\n\n⚙️ Owner features are also available from <b>Settings → My Clone Bot</b>.")
     await message.reply(text,reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⚙️ SETTINGS",callback_data="settings")]]))
 
 
@@ -266,7 +263,9 @@ def register(client):
     client.add_handler(MessageHandler(help_command,filters.command("help")&private),group=0)
     client.add_handler(MessageHandler(genlink,filters.command(["link","genlink"])&private),group=1)
     client.add_handler(MessageHandler(batch,filters.command("batch")&private),group=1)
-    client.add_handler(MessageHandler(custom_batch,filters.command("custom_batch")&private),group=1)
+    # /custom_batch is registered exclusively by clone_plugins.custom_batch.
+    # Keeping the legacy handler here caused two handlers to create/replace
+    # sessions and produced multiple "Stored Messages" panels.
     client.add_handler(MessageHandler(special_link,filters.command("special_link")&private),group=1)
     client.add_handler(MessageHandler(universal_link,filters.command("universal_link")&private),group=1)
     client.add_handler(MessageHandler(api_handler,filters.command("api")&private),group=1)
