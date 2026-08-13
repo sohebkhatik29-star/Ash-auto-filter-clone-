@@ -60,6 +60,40 @@ async def disabled_old_link_commands(client, message):
     raise StopPropagation
 
 
+async def clean_help(client, message):
+    text = (
+        "📚 <b>ASH FILE STORE — HELP</b>\n\n"
+        "👤 <b>User Commands</b>\n"
+        "• /start — Check bot / open file link\n"
+        "• /help — Open this help\n"
+        "• /getlink — Create a single shareable link\n"
+        "• /batch N — Create batch links\n"
+        "• /custom_batch N — Custom batch links\n"
+        "• /special_link — Special link\n"
+        "• /universal_link — Universal link\n"
+        "• /shortener — Shortener settings\n"
+        "• /settings — Customize bot\n"
+        "• /api KEY — Set shortener API\n"
+        "• /base_site SITE — Set shortener site\n"
+        "• /clone — Create your own clone\n\n"
+        "👑 <b>Owner / Moderator</b>\n"
+        "• /admin • /stats • /broadcast\n"
+        "• /ban • /unban • /force_sub\n"
+        "• /caption • /button • /protect\n"
+        "• /auto_delete • /no_forward • /moderator\n"
+        "• /access_token • /transfer_db • /deactivate\n"
+        "• /mode • /restart • /delete • /start_msg\n\n"
+        "⚙️ Owner features are also available from <b>Settings → My Clone Bot</b>."
+    )
+    await message.reply(
+        text,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings")]
+        ]),
+    )
+    raise StopPropagation
+
+
 async def capture_interactive(client, message):
     key = (client.me.id, message.from_user.id)
     if key not in _PENDING:
@@ -184,6 +218,11 @@ def register(client):
     client.add_handler(
         MessageHandler(interactive_getlink, filters.command("getlink") & private),
         group=-20,
+    )
+    # Clean help before the legacy help handler runs.
+    client.add_handler(
+        MessageHandler(clean_help, filters.command("help") & private),
+        group=-22,
     )
     # Stop the old link commands from reaching the legacy handler.
     client.add_handler(
