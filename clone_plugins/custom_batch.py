@@ -29,18 +29,14 @@ def _session(client, user_id):
     return col.find_one({"bot_id": client.me.id, "user_id": int(user_id), "active": True})
 
 
-def _controls(session_id, paused=False, chunk_ready=False):
-    rows = []
-    if paused or chunk_ready:
-        rows.append([InlineKeyboardButton("▶️ CONTINUE", callback_data=f"cb_continue_{session_id}")])
-    else:
-        rows.append([InlineKeyboardButton("⏸ PAUSE", callback_data=f"cb_pause_{session_id}")])
-    rows.append([InlineKeyboardButton("🔗 GENERATE LINK", callback_data=f"cb_generate_{session_id}")])
-    rows.append([InlineKeyboardButton("❌ CANCEL", callback_data=f"cb_cancel_{session_id}")])
-    return InlineKeyboardMarkup(rows)
+def _controls(session_id):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔗 GENERATE LINK", callback_data=f"cb_generate_{session_id}")],
+        [InlineKeyboardButton("❌ CANCEL", callback_data=f"cb_cancel_{session_id}")],
+    ])
 
 
-def _text(count, paused=False):
+def _text(count):
     if count == 0:
         return (
             "📦 <b>CUSTOM BATCH</b>\n\n"
@@ -49,15 +45,32 @@ def _text(count, paused=False):
             "Every incoming message will be collected automatically.\n\n"
             "When finished, tap 🔗 <b>GENERATE LINK</b>."
         )
-    extra = f"\n\n📦 <b>{count} messages collected.</b>"
-    if count % CHUNK_SIZE == 0:
-        extra += "\n\nIf you want to forward more messages, tap ▶️ <b>CONTINUE</b>."
     return (
         "📦 <b>CUSTOM BATCH</b>\n\n"
-        "Keep forwarding/sending messages. Multiple messages are collected automatically."
-        + extra
-        + "\n\nWhen finished, tap 🔗 <b>GENERATE LINK</b>."
+        f"📥 <b>Stored Messages: {count}</b>\n\n"
+        "Keep forwarding/sending messages. Multiple messages are collected automatically.\n\n"
+        "If you want to add more, simply forward/send them here.\n"
+        "When finished, tap 🔗 <b>GENERATE LINK</b>."
     )
+
+
+async def _update_control(client, session, count):
+    """Update the single existing control message; never create another panel."""
+    chat_id = session.get("control_chat_id")
+    message_id = session.get("control_message_id")
+    if not chat_id or not message_id:
+        return
+    try:
+        await client.edit_message_text(
+            int(chat_id),
+            int(message_id),
+            _text(count),
+            reply_markup=_controls(session["session_id"]),
+        )
+    except Exception:
+        # The control message may have been deleted/edited manually. Do not
+        # create a replacement here, otherwise one batch can produce multiple panels.
+        pass
 
 
 async def custom_batch(client, message):
@@ -66,6 +79,7 @@ async def custom_batch(client, message):
     if mongo_db is None:
         return await message.reply("❌ Database is not configured.")
 
+    # One active session per user and one control message per session.
     mongo_db.custom_batch_sessions.delete_many({"bot_id": client.me.id, "user_id": int(message.from_user.id)})
     session_id = secrets.token_urlsafe(10)
     doc = {
@@ -88,12 +102,7 @@ async def custom_batch(client, message):
 
 
 async def capture_message(client, message):
-    """Collect every incoming message in an active batch, not only media/file IDs.
-
-    Storing the bot-chat message_id makes multi-select forwarding reliable: Telegram
-    delivers each selected message as its own update, and we keep every update by
-    reference instead of depending on the forwarded media's file_id/from_user.
-    """
+    """Collect every incoming private message into the active batch session."""
     if mongo_db is None or not message.from_user:
         return
     if not message.chat or message.chat.type.value != "private":
@@ -110,7 +119,6 @@ async def capture_message(client, message):
         return
 
     item = {"chat_id": int(message.chat.id), "message_id": int(message.id)}
-    # Prevent accidental duplicate updates.
     if any(x.get("chat_id") == item["chat_id"] and x.get("message_id") == item["message_id"] for x in messages):
         return
     messages.append(item)
@@ -121,18 +129,9 @@ async def capture_message(client, message):
         {"$set": {"messages": messages, "updated_at": now}},
     )
 
-    # Update the control message at useful milestones rather than editing it for
-    # every incoming forwarded message.
-    if len(messages) % CHUNK_SIZE == 0:
-        try:
-            await client.edit_message_text(
-                message.chat.id,
-                session.get("control_message_id"),
-                _text(len(messages)),
-                reply_markup=_controls(session["session_id"], chunk_ready=True),
-            )
-        except Exception:
-            pass
+    # IMPORTANT: always edit the original panel. Never send a new status message.
+    session["messages"] = messages
+    await _update_control(client, session, len(messages))
 
 
 async def _generate(client, query, session):
@@ -190,17 +189,7 @@ async def callback(client, query):
     if not session or int(session.get("user_id", 0)) != int(query.from_user.id):
         return await query.answer("This batch session is not yours or has expired.", show_alert=True)
 
-    if action == "continue":
-        mongo_db.custom_batch_sessions.update_one({"_id": session["_id"]}, {"$set": {"paused": False, "active": True}})
-        count = len(session.get("messages", []))
-        await query.message.edit_text(_text(count), reply_markup=_controls(session_id, paused=False))
-        await query.answer("You can forward more messages now.")
-    elif action == "pause":
-        mongo_db.custom_batch_sessions.update_one({"_id": session["_id"]}, {"$set": {"paused": True, "active": True}})
-        count = len(session.get("messages", []))
-        await query.message.edit_text(_text(count, paused=True), reply_markup=_controls(session_id, paused=True))
-        await query.answer("Batch collection paused.")
-    elif action == "generate":
+    if action == "generate":
         await _generate(client, query, session)
     elif action == "cancel":
         mongo_db.custom_batch_sessions.delete_one({"_id": session["_id"]})
@@ -233,7 +222,6 @@ async def batch_start(client, message):
 
     messages = list(record.get("messages", []))
     if not messages:
-        # Backward compatibility for batches created by the previous version.
         old_files = list(record.get("file_ids", []))
         if old_files:
             await message.reply(f"📦 <b>Sending {len(old_files)} files...</b>")
@@ -269,5 +257,5 @@ def register(client, base_group=-1):
     client.add_handler(MessageHandler(batch_start, filters.command("start") & private), group=base_group)
     client.add_handler(MessageHandler(custom_batch, filters.command("custom_batch") & private), group=base_group)
     client.add_handler(MessageHandler(capture_message, private), group=base_group + 1)
-    client.add_handler(CallbackQueryHandler(callback, filters.regex(r"^cb_(continue|pause|generate|cancel)_[A-Za-z0-9_-]+$")), group=base_group)
+    client.add_handler(CallbackQueryHandler(callback, filters.regex(r"^cb_(generate|cancel)_[A-Za-z0-9_-]+$")), group=base_group)
     return client
