@@ -1,7 +1,7 @@
-"""Single-message share link generator for clone bots.
+"""Single-file share-link flow for clone bots.
 
-/getlink starts an interactive flow: send/forward one message or file directly
-and the bot creates exactly one shareable link.
+The only single-file link command is /getlink.
+Usage: /getlink -> send/forward one message or file -> receive one link.
 """
 import base64
 import secrets
@@ -55,26 +55,14 @@ async def interactive_getlink(client, message):
     raise StopPropagation
 
 
-async def disabled_old_link_commands(client, message):
-    await message.reply("❌ This command is disabled. Use /getlink.")
-    raise StopPropagation
-
-
 async def clean_help(client, message):
     text = (
         "📚 <b>ASH FILE STORE — HELP</b>\n\n"
         "👤 <b>User Commands</b>\n"
         "• /start — Check bot / open file link\n"
         "• /help — Open this help\n"
-        "• /getlink — Create a single shareable link\n"
-        "• /batch N — Create batch links\n"
-        "• /custom_batch N — Custom batch links\n"
-        "• /special_link — Special link\n"
-        "• /universal_link — Universal link\n"
-        "• /shortener — Shortener settings\n"
+        "• /getlink — Create a single file/message link\n"
         "• /settings — Customize bot\n"
-        "• /api KEY — Set shortener API\n"
-        "• /base_site SITE — Set shortener site\n"
         "• /clone — Create your own clone\n\n"
         "👑 <b>Owner / Moderator</b>\n"
         "• /admin • /stats • /broadcast\n"
@@ -133,7 +121,8 @@ async def capture_interactive(client, message):
     short = await get_short_link(await get_user(owner), original)
     link = short or original
 
-    # Only one link is shown. No duplicate Original/Share Link block.
+    # Exactly one link is returned. There is no old /link reply flow and no
+    # duplicate Original Link block.
     markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔗 SHARE URL", url=link)]
     ])
@@ -162,8 +151,8 @@ async def open_interactive(client, message):
         await message.reply("❌ This link is invalid or expired.")
         raise StopPropagation
 
-    # Access-token verification is generated directly here. We do not pass
-    # the verification URL through the shortener, which fixes VERIFY & CONTINUE.
+    # Verification is generated directly inside Telegram so VERIFY & CONTINUE
+    # does not depend on an external shortener URL.
     try:
         from clone_plugins.commands import bot_record, force_markup, is_owner_or_mod
         rec = bot_record(client)
@@ -232,24 +221,20 @@ async def open_interactive(client, message):
 
 def register(client):
     private = filters.private
-    # New command: only /getlink.
+
+    # The ONLY single-file link command.
     client.add_handler(
         MessageHandler(interactive_getlink, filters.command("getlink") & private),
         group=-20,
     )
-    # Clean help before the legacy help handler runs.
+
+    # Keep help clean: no /link, /genlink, /batch or other link-generation
+    # commands are advertised here.
     client.add_handler(
         MessageHandler(clean_help, filters.command("help") & private),
         group=-22,
     )
-    # Stop the old link commands from reaching the legacy handler.
-    client.add_handler(
-        MessageHandler(
-            disabled_old_link_commands,
-            filters.command(["link", "genlink"]) & private,
-        ),
-        group=-21,
-    )
+
     client.add_handler(MessageHandler(capture_interactive, private), group=-19)
     client.add_handler(
         MessageHandler(open_interactive, filters.command("start") & private),
