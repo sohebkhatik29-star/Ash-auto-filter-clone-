@@ -1,17 +1,17 @@
 import asyncio
 import secrets
 import time
-
 from pyrogram import filters, StopPropagation
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-
 from clone_plugins import commands as cmd
 from clone_plugins.users_api import get_user, get_short_link
 from plugins.clone import mongo_db
 
 MAX_FILES = 5000
 _BATCH_LOCKS = {}
+_INDEX_TASKS = {}
+_LAST_MSG_TIME = {}
 
 
 def _lock(client, user_id):
@@ -27,30 +27,64 @@ def _session(client, user_id):
     return mongo_db.custom_batch_sessions.find_one({"bot_id": client.me.id, "user_id": int(user_id), "active": True})
 
 
-def _controls(session_id):
+def _controls_initial(session_id):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔗 GENERATE LINK", callback_data=f"cb_generate_{session_id}")],
         [InlineKeyboardButton("❌ CANCEL", callback_data=f"cb_cancel_{session_id}")],
     ])
 
 
-def _text(count):
+def _controls_indexing(session_id):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ CANCEL", callback_data=f"cb_cancel_{session_id}")],
+    ])
+
+
+def _controls_indexed(session_id):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("➕ CONTINUE", callback_data=f"cb_continue_{session_id}"),
+            InlineKeyboardButton("🔗 GENERATE LINK", callback_data=f"cb_generate_{session_id}"),
+        ],
+        [
+            InlineKeyboardButton("❌ CANCEL", callback_data=f"cb_cancel_{session_id}"),
+        ],
+    ])
+
+
+def _text_initial(count=0):
     if not count:
         return (
             "📦 <b>CUSTOM BATCH</b>\n\n"
             "Send or forward as many messages as you want.\n"
-            "You can select multiple Telegram messages and forward them together; "
-            "I will save every message automatically.\n\n"
+            "You can select multiple Telegram messages (e.g. 100+) and forward them together.\n"
+            "I will index and save every message automatically.\n\n"
             "When finished, tap 🔗 <b>GENERATE LINK</b>."
         )
     return (
-        "📦 <b>CUSTOM BATCH</b>\n\n"
-        f"📥 <b>Stored Messages: {count}</b>\n\n"
-        "Send/forward more messages, or tap 🔗 <b>GENERATE LINK</b>."
+        "📦 <b>CUSTOM BATCH (ACTIVE)</b>\n\n"
+        f"📥 <b>Stored Files: {count}</b>\n\n"
+        "Send or forward more files now. They will be added to this batch.\n"
+        "When finished, tap 🔗 <b>GENERATE LINK</b>."
     )
 
 
-async def _replace_panel(client, session, count):
+def _text_indexing():
+    return (
+        "⏳ <b>Index your file...</b>\n\n"
+        "📥 Processing incoming messages, please wait..."
+    )
+
+
+def _text_indexed(count):
+    return (
+        "✅ <b>Your files have been indexed!</b>\n\n"
+        f"📦 <b>Total Files: {count}</b>\n\n"
+        "Tap <b>CONTINUE</b> to add more files, or <b>GENERATE LINK</b> to create your shareable link."
+    )
+
+
+async def _replace_panel(client, session, text, reply_markup):
     """Delete the previous status panel and put exactly one fresh panel below it."""
     old_chat = session.get("control_chat_id")
     old_msg = session.get("control_message_id")
@@ -59,17 +93,54 @@ async def _replace_panel(client, session, count):
             await client.delete_messages(int(old_chat), int(old_msg))
         except Exception:
             pass
+    try:
+        sent = await client.send_message(
+            int(session["user_id"]),
+            text,
+            reply_markup=reply_markup,
+        )
+        mongo_db.custom_batch_sessions.update_one(
+            {"_id": session["_id"], "active": True},
+            {"$set": {"control_chat_id": int(sent.chat.id), "control_message_id": int(sent.id)}}
+        )
+        session["control_chat_id"] = int(sent.chat.id)
+        session["control_message_id"] = int(sent.id)
+        return sent
+    except Exception:
+        return None
 
-    sent = await client.send_message(
-        int(session["user_id"]),
-        _text(count),
-        reply_markup=_controls(session["session_id"]),
-    )
-    mongo_db.custom_batch_sessions.update_one(
-        {"_id": session["_id"], "active": True},
-        {"$set": {"control_chat_id": int(sent.chat.id), "control_message_id": int(sent.id)}}
-    )
-    return sent
+
+async def _debounce_indexer(client, bot_id, user_id, session_id):
+    """Wait until user stops forwarding files for 3 seconds, then show indexed panel."""
+    try:
+        # Debounce loop: keep waiting until no message arrived for at least 3 seconds
+        while True:
+            await asyncio.sleep(2.5)
+            last_time = _LAST_MSG_TIME.get((bot_id, user_id), 0)
+            if time.time() - last_time >= 2.5:
+                break
+
+        async with _lock(client, user_id):
+            session = mongo_db.custom_batch_sessions.find_one({"session_id": session_id, "active": True})
+            if not session:
+                return
+            count = len(session.get("messages", []))
+            mongo_db.custom_batch_sessions.update_one(
+                {"_id": session["_id"]},
+                {"$set": {"status": "indexed", "updated_at": int(time.time())}}
+            )
+            await _replace_panel(
+                client,
+                session,
+                _text_indexed(count),
+                _controls_indexed(session["session_id"]),
+            )
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        pass
+    finally:
+        _INDEX_TASKS.pop((bot_id, user_id), None)
 
 
 async def custom_batch(client, message):
@@ -79,9 +150,13 @@ async def custom_batch(client, message):
         return await message.reply("❌ Database is not configured.")
 
     async with _lock(client, message.from_user.id):
-        # Starting Custom Batch must cancel any stale /getlink or /genlink
-        # waiting state, otherwise forwarded files can also trigger the old
-        # single-link collector and create extra "HERE IS YOUR LINK" panels.
+        # Cancel any previous debounce task
+        key = (int(client.me.id), int(message.from_user.id))
+        old_task = _INDEX_TASKS.pop(key, None)
+        if old_task and not old_task.done():
+            old_task.cancel()
+
+        # Starting Custom Batch cancels stale single-link states
         try:
             from clone_plugins import single_link
             single_link._PENDING.pop((int(client.me.id), int(message.from_user.id)), None)
@@ -95,13 +170,14 @@ async def custom_batch(client, message):
             "bot_id": client.me.id,
             "user_id": int(message.from_user.id),
             "messages": [],
+            "status": "ready",
             "active": True,
             "created_at": int(time.time()),
             "updated_at": int(time.time()),
         }
         result = mongo_db.custom_batch_sessions.insert_one(doc)
         session = mongo_db.custom_batch_sessions.find_one({"_id": result.inserted_id})
-        await _replace_panel(client, session, 0)
+        await _replace_panel(client, session, _text_initial(0), _controls_initial(session_id))
     raise StopPropagation
 
 
@@ -113,6 +189,9 @@ async def capture_message(client, message):
     if message.text and message.text.startswith("/"):
         return
 
+    key = (int(client.me.id), int(message.from_user.id))
+    _LAST_MSG_TIME[key] = time.time()
+
     async with _lock(client, message.from_user.id):
         session = _session(client, message.from_user.id)
         if not session or not session.get("active"):
@@ -120,26 +199,37 @@ async def capture_message(client, message):
 
         messages = list(session.get("messages", []))
         if len(messages) >= MAX_FILES:
-            # The active custom-batch session owns this message. Do not let
-            # lower-priority single-link handlers process it.
             raise StopPropagation
 
         item = {"chat_id": int(message.chat.id), "message_id": int(message.id)}
         if any(x.get("chat_id") == item["chat_id"] and x.get("message_id") == item["message_id"] for x in messages):
-            # Duplicate is still owned by the active batch session.
             raise StopPropagation
-        messages.append(item)
 
-        mongo_db.custom_batch_sessions.update_one(
-            {"_id": session["_id"], "active": True},
-            {"$set": {"messages": messages, "updated_at": int(time.time())}}
-        )
+        messages.append(item)
         session["messages"] = messages
 
-        await _replace_panel(client, session, len(messages))
+        # If we haven't shown "Indexing your files..." panel yet, show it once
+        is_indexing = (session.get("status") == "indexing")
+        if not is_indexing:
+            mongo_db.custom_batch_sessions.update_one(
+                {"_id": session["_id"], "active": True},
+                {"$set": {"messages": messages, "status": "indexing", "updated_at": int(time.time())}}
+            )
+            session["status"] = "indexing"
+            await _replace_panel(client, session, _text_indexing(), _controls_indexing(session["session_id"]))
+        else:
+            mongo_db.custom_batch_sessions.update_one(
+                {"_id": session["_id"], "active": True},
+                {"$set": {"messages": messages, "updated_at": int(time.time())}}
+            )
 
-        # MAIN FIX: the custom batch handler must consume the message so the
-        # single-link collector never creates an extra "HERE IS YOUR LINK".
+        # Schedule/renew debounce timer
+        curr_task = _INDEX_TASKS.get(key)
+        if not curr_task or curr_task.done():
+            _INDEX_TASKS[key] = asyncio.create_task(
+                _debounce_indexer(client, int(client.me.id), int(message.from_user.id), session["session_id"])
+            )
+
         raise StopPropagation
 
 
@@ -184,6 +274,10 @@ async def _generate(client, query, session):
     )
     await client.send_message(int(session["user_id"]), text)
     mongo_db.custom_batch_sessions.delete_one({"_id": session["_id"]})
+    key = (int(client.me.id), int(session["user_id"]))
+    task = _INDEX_TASKS.pop(key, None)
+    if task and not task.done():
+        task.cancel()
     await query.answer("Link generated successfully.")
 
 
@@ -200,9 +294,32 @@ async def callback(client, query):
         session = mongo_db.custom_batch_sessions.find_one({"session_id": session_id})
         if not session or int(session.get("user_id", 0)) != int(query.from_user.id):
             return await query.answer("This batch session is not yours or has expired.", show_alert=True)
+
         if action == "generate":
             await _generate(client, query, session)
+        elif action == "continue":
+            key = (int(client.me.id), int(query.from_user.id))
+            task = _INDEX_TASKS.pop(key, None)
+            if task and not task.done():
+                task.cancel()
+            count = len(session.get("messages", []))
+            mongo_db.custom_batch_sessions.update_one(
+                {"_id": session["_id"]},
+                {"$set": {"status": "ready", "updated_at": int(time.time())}}
+            )
+            await _replace_panel(
+                client,
+                session,
+                _text_initial(count),
+                _controls_initial(session_id),
+            )
+            await query.answer("Ready! Send or forward more files now.")
         elif action == "cancel":
+            key = (int(client.me.id), int(query.from_user.id))
+            task = _INDEX_TASKS.pop(key, None)
+            if task and not task.done():
+                task.cancel()
+
             old_chat = session.get("control_chat_id")
             old_msg = session.get("control_message_id")
             if old_chat and old_msg:
@@ -211,6 +328,7 @@ async def callback(client, query):
                 except Exception:
                     pass
             mongo_db.custom_batch_sessions.delete_one({"_id": session["_id"]})
+            await client.send_message(int(query.from_user.id), "❌ <b>Batch session cancelled. All temporary stored files cleared.</b>")
             await query.answer("Cancelled.")
     raise StopPropagation
 
@@ -221,11 +339,13 @@ async def batch_start(client, message):
     if mongo_db is None:
         await message.reply("❌ Database is not configured.")
         raise StopPropagation
+
     token = message.command[1][6:]
     record = mongo_db.custom_batch_links.find_one({"bot_id": client.me.id, "token": token})
     if not record:
         await message.reply("❌ Invalid or expired batch link.")
         raise StopPropagation
+
     payload = message.command[1]
     access = await cmd.access_verification(client, message.from_user.id, payload)
     if access:
@@ -264,5 +384,5 @@ def register(client, base_group=-101):
     # capture_message runs at base_group + 1, i.e. -100. This is BEFORE
     # single_link.capture_single at -99, so an active batch owns every message.
     client.add_handler(MessageHandler(capture_message, private), group=base_group + 1)
-    client.add_handler(CallbackQueryHandler(callback, filters.regex(r"^cb_(generate|cancel)_[A-Za-z0-9_-]+$")), group=base_group)
+    client.add_handler(CallbackQueryHandler(callback, filters.regex(r"^cb_(generate|cancel|continue)_[A-Za-z0-9_-]+$")), group=base_group)
     return client
