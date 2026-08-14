@@ -9,6 +9,7 @@ from clone_plugins import clone_settings_ui as cset
 from clone_plugins import single_link
 from clone_plugins import custom_batch as cbatch
 from clone_plugins import channel_batch as chbatch
+from clone_plugins import special_link as spl_mod
 
 
 async def clean_help(client, message):
@@ -20,6 +21,7 @@ async def clean_help(client, message):
         "• /getlink — Create a single shareable file link\n"
         "• /batch — Store multiple messages from a channel\n"
         "• /custom_batch — Create custom batch links\n"
+        "• /special_link — Create editable special links\n"
         "• /shortener — Shortener settings\n"
         "• /settings — Customize bot\n"
         "• /api KEY — Set or view shortener API\n"
@@ -44,6 +46,7 @@ def register_clone_handlers(client):
     single_link.register(client)
     cbatch.register(client, base_group=-1)
     chbatch.register(client, base_group=-3)
+    spl_mod.register(client, base_group=-4)
 
     # Public clone commands
     command_map = {

@@ -244,11 +244,7 @@ def register(client):
     client.add_handler(MessageHandler(start,filters.command("start")&private),group=0)
     client.add_handler(MessageHandler(help_command,filters.command("help")&private),group=0)
     client.add_handler(MessageHandler(genlink,filters.command(["link","genlink"])&private),group=1)
-    # /batch and /custom_batch are handled exclusively by channel_batch and custom_batch modules.
-    # /custom_batch is registered exclusively by clone_plugins.custom_batch.
-    # Keeping the legacy handler here caused two handlers to create/replace
-    # sessions and produced multiple "Stored Messages" panels.
-    client.add_handler(MessageHandler(special_link,filters.command("special_link")&private),group=1)
+    # /batch, /custom_batch, and /special_link are handled exclusively by their dedicated modules.
     client.add_handler(MessageHandler(universal_link,filters.command("universal_link")&private),group=1)
     client.add_handler(MessageHandler(api_handler,filters.command("api")&private),group=1)
     client.add_handler(MessageHandler(base_site_handler,filters.command("base_site")&private),group=1)

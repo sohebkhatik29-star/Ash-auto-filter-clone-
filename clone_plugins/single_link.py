@@ -30,7 +30,13 @@ def _decode(payload: str):
 
 
 def _batch_active(client, user_id):
-    """Return True while this user is collecting a custom batch or channel batch."""
+    """Return True while this user is collecting a custom batch, channel batch, or special link."""
+    try:
+        from clone_plugins.special_link import is_special_link_active
+        if is_special_link_active(client.me.id, user_id):
+            return True
+    except Exception:
+        pass
     try:
         from clone_plugins.channel_batch import is_channel_batch_active
         if is_channel_batch_active(client.me.id, user_id):
