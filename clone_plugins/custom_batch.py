@@ -120,11 +120,14 @@ async def capture_message(client, message):
 
         messages = list(session.get("messages", []))
         if len(messages) >= MAX_FILES:
-            return
+            # The active custom-batch session owns this message. Do not let
+            # lower-priority single-link handlers process it.
+            raise StopPropagation
 
         item = {"chat_id": int(message.chat.id), "message_id": int(message.id)}
         if any(x.get("chat_id") == item["chat_id"] and x.get("message_id") == item["message_id"] for x in messages):
-            return
+            # Duplicate is still owned by the active batch session.
+            raise StopPropagation
         messages.append(item)
 
         mongo_db.custom_batch_sessions.update_one(
@@ -134,6 +137,10 @@ async def capture_message(client, message):
         session["messages"] = messages
 
         await _replace_panel(client, session, len(messages))
+
+        # MAIN FIX: the custom batch handler must consume the message so the
+        # single-link collector never creates an extra "HERE IS YOUR LINK".
+        raise StopPropagation
 
 
 async def _generate(client, query, session):
@@ -250,10 +257,12 @@ async def batch_start(client, message):
     raise StopPropagation
 
 
-def register(client, base_group=-1):
+def register(client, base_group=-101):
     private = filters.private
     client.add_handler(MessageHandler(batch_start, filters.command("start") & private), group=base_group)
     client.add_handler(MessageHandler(custom_batch, filters.command("custom_batch") & private), group=base_group)
+    # capture_message runs at base_group + 1, i.e. -100. This is BEFORE
+    # single_link.capture_single at -99, so an active batch owns every message.
     client.add_handler(MessageHandler(capture_message, private), group=base_group + 1)
     client.add_handler(CallbackQueryHandler(callback, filters.regex(r"^cb_(generate|cancel)_[A-Za-z0-9_-]+$")), group=base_group)
     return client
