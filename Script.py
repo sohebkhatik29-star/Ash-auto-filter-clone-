@@ -38,16 +38,14 @@ If You Want To Remove Api Then Copy This And Send To Bot - `/api None`"""
 ▶️ ʏᴏᴜᴛᴜʙᴇ: <a href=https://www.youtube.com/@tech_as_0>Tech AS</a></b>
 """
 
-    CABOUT_TXT = """<b>ʜɪ ɪ ᴀᴍ ᴀ ᴘᴇʀᴍᴀɴᴇɴᴛ ғɪʟᴇ sᴛᴏʀᴇ ʙᴏᴛ ᴡɪᴛʜ ᴄʟᴏɴᴇ ғᴇᴀᴛᴜʀᴇ + ᴄᴜsᴛᴏᴍ ᴜʀʟ sʜᴏʀᴛᴇɴᴇʀ + ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ.
+    CABOUT_TXT = """<b>✨ <u>ABOUT ME</u>
 
-🤖 ᴍʏ ɴᴀᴍᴇ: {}
-
-📝 ʟᴀɴɢᴜᴀɢᴇ: <a href=https://www.python.org>𝐏𝐲𝐭𝐡ᴏɴ𝟑</a>
-
-📚 ʟɪʙʀᴀʀʏ: <a href=https://docs.pyrogram.org>𝐏ʏʀᴏɢʀᴀᴍ</a>
-
-🧑🏻‍💻 ᴅᴇᴠᴇʟᴏᴘᴇʀ: <a href=tg://user?id={}>ᴅᴇᴠᴇʟᴏᴘᴇʀ</a></b>
-"""
+☆ MY NAME: {}
+☆ CLONE OF: <a href=https://t.me/{}>{}</a>
+☆ MY OWNER: <a href=tg://user?id={}>{}</a>
+☆ UPDATES: <a href=https://t.me/MoviesGroupG3>MD BOTZ</a>
+☆ SUPPORT: <a href=https://t.me/ash_movie_j>MD GROUP</a>
+☆ VERSION: 0.7.19 [V1.6]</b>"""
 
     CLONE_TXT = """<b>ʜᴇʟʟᴏ {} 👋
 

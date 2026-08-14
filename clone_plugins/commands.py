@@ -220,7 +220,33 @@ async def callbacks(client,query):
         except Exception: pass
         return await client.send_message(query.from_user.id,"<b>✅ Verification successful. Open your file link again.</b>")
     if data=="help": return await help_command(client,query.message)
-    if data=="about": return await query.answer("ASH FILE STORE & CLONE MANAGER",show_alert=True)
+    if data=="about":
+        me = client.me or (await client.get_me())
+        owner_id_val = owner_id(client) or query.from_user.id
+        owner_name = "Ash"
+        try:
+            owner_user = await client.get_users(owner_id_val)
+            owner_name = owner_user.first_name or "Owner"
+        except Exception:
+            pass
+        about_text = script.CABOUT_TXT.format(
+            me.first_name,
+            BOT_USERNAME,
+            "MD File Store Bot",
+            owner_id_val,
+            owner_name
+        )
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="start_back")]])
+        if query.message.photo:
+            return await query.message.edit_caption(caption=about_text, reply_markup=markup)
+        return await query.message.edit_text(about_text, reply_markup=markup)
+    if data=="start_back":
+        me = client.me or (await client.get_me())
+        buttons = [[InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],[InlineKeyboardButton("🤖 CREATE MY OWN CLONE", url=f"https://t.me/{BOT_USERNAME}?start=clone")],[InlineKeyboardButton("📢 UPDATE CHANNEL", url="https://t.me/")]]
+        caption = script.CLONE_START_TXT.format(query.from_user.mention, me.mention)
+        if query.message.photo:
+            return await query.message.edit_caption(caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
+        return await query.message.edit_text(caption, reply_markup=InlineKeyboardMarkup(buttons))
     if data in ("settings","settings_back"): return await query.message.edit_text("⚙️ <b>Settings</b>\nCustomize your settings as your need.",reply_markup=settings_menu())
     if data=="my_clone": return await query.message.edit_text(f"🛠 <b>Customize Clone</b>\n\n➜ <b>Name:</b> {client.me.first_name}\n\nConfigure Your Clone Settings Using Given Buttons",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("START MSG",callback_data="clone_startmsg"),InlineKeyboardButton("FORCE SUB",callback_data="clone_force")],[InlineKeyboardButton("MODERATORS",callback_data="clone_mods"),InlineKeyboardButton("AUTO DELETE",callback_data="clone_autodelete")],[InlineKeyboardButton("NO FORWARD",callback_data="clone_noforward"),InlineKeyboardButton("ACCESS TOKEN",callback_data="clone_access")],[InlineKeyboardButton("TRANSFER DB",callback_data="clone_transfer"),InlineKeyboardButton("DEACTIVATE",callback_data="clone_deactivate")],[InlineKeyboardButton("MODE",callback_data="clone_mode"),InlineKeyboardButton("RESTART",callback_data="clone_restart")],[InlineKeyboardButton("STATS",callback_data="clone_stats"),InlineKeyboardButton("DELETE",callback_data="clone_delete")],[InlineKeyboardButton("‹ BACK",callback_data="settings")]]))
     if data=="google_backup": return await query.message.edit_text("☁️ <b>Google Backup</b>\n\nGoogle Drive backup is not configured in this deployment. Your clone data is stored in MongoDB.",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK",callback_data="settings")]]))
@@ -250,5 +276,5 @@ def register(client):
     client.add_handler(MessageHandler(base_site_handler,filters.command("base_site")&private),group=1)
     client.add_handler(MessageHandler(shortener,filters.command("shortener")&private),group=1)
     client.add_handler(MessageHandler(settings_command,filters.command("settings")&private),group=1)
-    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|settings|settings_back|my_clone|google_backup|link_shortener|custom_caption|custom_button|protect_menu|protect_on|protect_off)$")),group=0)
+    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|settings|settings_back|my_clone|google_backup|link_shortener|custom_caption|custom_button|protect_menu|protect_on|protect_off)$")),group=0)
     return client
