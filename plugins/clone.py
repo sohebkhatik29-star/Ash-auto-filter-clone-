@@ -21,6 +21,8 @@ def clone_commands(include_owner=False):
         BotCommand("getlink", "Create a single shareable link"),
         BotCommand("batch", "Store multiple messages from a channel"),
         BotCommand("custom_batch", "Create custom batch links"),
+        BotCommand("special_link", "Create a special link"),
+        BotCommand("universal_link", "Create a universal link"),
         BotCommand("shortener", "View link shortener"),
         BotCommand("settings", "Customize your clone"),
         BotCommand("api", "Set or view shortener API"),

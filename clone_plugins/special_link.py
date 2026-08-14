@@ -405,8 +405,16 @@ async def special_link_callbacks(client, query):
     if len(parts) < 3:
         return
 
-    action, token = parts[1], parts[2]
+    action, rest = parts[1], parts[2]
+    token = rest
+    extra_arg = None
+    if action == "exptime":
+        if "_" in rest:
+            token, extra_arg = rest.rsplit("_", 1)
+
     record = mongo_db.special_links.find_one({"bot_id": client.me.id, "token": token})
+    if not record:
+        record = mongo_db.special_links.find_one({"bot_id": client.me.id, "$or": [{"token": token}, {"short_token": token}]})
     if not record:
         return await query.answer("Special link not found or expired.", show_alert=True)
 
@@ -531,8 +539,13 @@ async def special_link_callbacks(client, query):
     elif action == "expire":
         exp = record.get("expire_at")
         if exp and exp > time.time():
-            rem_min = int((exp - time.time()) / 60)
-            status_str = f"Expires in {rem_min} min"
+            rem_sec = int(exp - time.time())
+            if rem_sec >= 86400:
+                status_str = f"Expires in {int(rem_sec / 86400)} day(s)"
+            elif rem_sec >= 3600:
+                status_str = f"Expires in {int(rem_sec / 3600)} hour(s)"
+            else:
+                status_str = f"Expires in {max(1, int(rem_sec / 60))} min"
         else:
             status_str = "Lifetime access"
 
@@ -572,19 +585,50 @@ async def special_link_callbacks(client, query):
         return await query.answer()
 
     elif action == "exptime":
-        subparts = token.split("_")
-        real_token, sec_str = subparts[0], subparts[1]
-        seconds = int(sec_str)
+        seconds = int(extra_arg) if extra_arg and extra_arg.isdigit() else 600
         exp_time = int(time.time()) + seconds
-        mongo_db.special_links.update_one({"bot_id": client.me.id, "token": real_token}, {"$set": {"expire_at": exp_time}})
+        mongo_db.special_links.update_one({"_id": record["_id"]}, {"$set": {"expire_at": exp_time}})
         await query.answer("Expiry time set!", show_alert=True)
-        # Return to panel
-        return await special_link_callbacks(client, type("Q", (), {"data": f"spl_expire_{real_token}", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
+        rem_sec = seconds
+        if rem_sec >= 86400:
+            status_str = f"Expires in {int(rem_sec / 86400)} day(s)"
+        elif rem_sec >= 3600:
+            status_str = f"Expires in {int(rem_sec / 3600)} hour(s)"
+        else:
+            status_str = f"Expires in {max(1, int(rem_sec / 60))} min"
+
+        text = (
+            "Auto Expire\n\n"
+            "you can set an expiry time so the link deletes itself after a certain period. Once its gone, Nobody can access it (Including you)\n\n"
+            f"- Status: {status_str}"
+        )
+        markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Set", callback_data=f"spl_setexp_{token}"),
+                InlineKeyboardButton("remove", callback_data=f"spl_remexp_{token}"),
+            ],
+            [InlineKeyboardButton("back", callback_data=f"spl_panel_{token}")],
+        ])
+        await query.message.edit_text(text, reply_markup=markup)
+        return
 
     elif action == "remexp":
         mongo_db.special_links.update_one({"_id": record["_id"]}, {"$set": {"expire_at": None}})
         await query.answer("Expiry removed (Lifetime access).", show_alert=True)
-        return await special_link_callbacks(client, type("Q", (), {"data": f"spl_expire_{token}", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
+        text = (
+            "Auto Expire\n\n"
+            "you can set an expiry time so the link deletes itself after a certain period. Once its gone, Nobody can access it (Including you)\n\n"
+            "- Status: Lifetime access"
+        )
+        markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Set", callback_data=f"spl_setexp_{token}"),
+                InlineKeyboardButton("remove", callback_data=f"spl_remexp_{token}"),
+            ],
+            [InlineKeyboardButton("back", callback_data=f"spl_panel_{token}")],
+        ])
+        await query.message.edit_text(text, reply_markup=markup)
+        return
 
     elif action == "getlink":
         username = (await client.get_me()).username
