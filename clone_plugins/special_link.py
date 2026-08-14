@@ -15,6 +15,8 @@ MAX_FILES = 5000
 _SPL_LOCKS = {}
 _SPL_SESSIONS = {}  # (bot_id, user_id) -> session dict
 _SPL_WAIT_INPUT = {}  # (bot_id, user_id) -> state dict ("modify", "delete", "add_content")
+_SPL_UPDATE_TASKS = {}
+_SPL_LAST_MSG_TIME = {}
 
 LINK_REGEX = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me|telegram\.dog)/(?:[a-zA-Z0-9_]+)\?start=(?:spl_|special_)?([a-zA-Z0-9_-]+)")
 
@@ -111,6 +113,44 @@ async def special_link_cmd(client, message):
     raise StopPropagation
 
 
+async def _debounced_panel_updater(client, user_id, chat_id, key):
+    """Debounce updating or replacing control panel during heavy bulk forwarding."""
+    try:
+        await asyncio.sleep(0.5)
+        session = _SPL_SESSIONS.get(key)
+        if not session or session.get("paused"):
+            return
+
+        count = len(session.get("messages", []))
+        text = f"Stored Messages: {count}\n\nWant to add another message? Just send it!"
+        markup = _session_controls(session["session_id"], paused=False)
+
+        ctrl_msg_id = session.get("control_msg_id")
+        if ctrl_msg_id:
+            try:
+                await client.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=ctrl_msg_id,
+                    text=text,
+                    reply_markup=markup,
+                )
+                return
+            except Exception:
+                try:
+                    await client.delete_messages(chat_id, ctrl_msg_id)
+                except Exception:
+                    pass
+
+        sent = await client.send_message(chat_id, text, reply_markup=markup)
+        session["control_msg_id"] = sent.id
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        pass
+    finally:
+        _SPL_UPDATE_TASKS.pop(key, None)
+
+
 # --- Capture Incoming Files / Forwarded Files ---
 async def capture_special_message(client, message):
     if mongo_db is None or not message.from_user or not message.chat or message.chat.type.value != "private":
@@ -118,7 +158,7 @@ async def capture_special_message(client, message):
 
     key = (int(client.me.id), int(message.from_user.id))
 
-    # 1. Check if waiting for link input for modify or delete
+    # 1. Check if waiting for link input for modify, delete, or add_content
     wait_state = _SPL_WAIT_INPUT.get(key)
     if wait_state:
         # Check cancel
@@ -168,13 +208,37 @@ async def capture_special_message(client, message):
                 await message.reply("❌ Special link record not found.")
                 raise StopPropagation
 
-            messages = list(record.get("messages", []))
-            item = {"chat_id": int(message.chat.id), "message_id": int(message.id)}
-            messages.append(item)
-            mongo_db.special_links.update_one({"_id": record["_id"]}, {"$set": {"messages": messages}})
-            await message.reply(f"✅ Added to special link! Total messages: {len(messages)}", reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ BACK TO SETTINGS", callback_data=f"spl_panel_{token}")]
-            ]))
+            async with _lock(client, message.from_user.id):
+                messages = list(record.get("messages", []))
+                item = {"chat_id": int(message.chat.id), "message_id": int(message.id)}
+                messages.append(item)
+                mongo_db.special_links.update_one({"_id": record["_id"]}, {"$set": {"messages": messages}})
+                added_count = wait_state.get("added_count", 0) + 1
+                wait_state["added_count"] = added_count
+
+                # Fast debounced reply
+                last_reply = wait_state.get("last_reply_id")
+                if last_reply:
+                    try:
+                        await client.edit_message_text(
+                            chat_id=message.chat.id,
+                            message_id=last_reply,
+                            text=f"✅ Added {added_count} message(s) to special link! Total messages: {len(messages)}",
+                            reply_markup=InlineKeyboardMarkup([
+                                [InlineKeyboardButton("⬅️ BACK TO SETTINGS", callback_data=f"spl_panel_{token}")]
+                            ])
+                        )
+                        raise StopPropagation
+                    except Exception:
+                        pass
+
+                sent = await message.reply(
+                    f"✅ Added to special link! Total messages: {len(messages)}",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("⬅️ BACK TO SETTINGS", callback_data=f"spl_panel_{token}")]
+                    ])
+                )
+                wait_state["last_reply_id"] = sent.id
             raise StopPropagation
 
     # 2. Check active creation session
@@ -203,39 +267,13 @@ async def capture_special_message(client, message):
         session["messages"] = messages
         count = len(messages)
 
-        # Update or send control panel
-        text = f"Stored Messages: {count}\n\nWant to add another message? Just send it!"
-        markup = _session_controls(session["session_id"], paused=False)
+        # Trigger smooth debounced update so bulk forward doesn't freeze or lag
+        if key in _SPL_UPDATE_TASKS:
+            _SPL_UPDATE_TASKS[key].cancel()
 
-        ctrl_msg_id = session.get("control_msg_id")
-        now = time.time()
-        last_panel_time = session.get("last_panel_time", 0)
-
-        # Smooth update: if panel exists and not flooded, edit; otherwise send fresh panel below
-        if ctrl_msg_id and (now - last_panel_time < 2.0 or count % 5 != 0):
-            try:
-                await client.edit_message_text(
-                    chat_id=message.chat.id,
-                    message_id=ctrl_msg_id,
-                    text=text,
-                    reply_markup=markup,
-                )
-                session["last_panel_time"] = now
-                raise StopPropagation
-            except Exception:
-                pass
-
-        try:
-            if ctrl_msg_id:
-                try:
-                    await client.delete_messages(message.chat.id, ctrl_msg_id)
-                except Exception:
-                    pass
-            sent = await message.reply(text, reply_markup=markup)
-            session["control_msg_id"] = sent.id
-            session["last_panel_time"] = now
-        except Exception:
-            pass
+        _SPL_UPDATE_TASKS[key] = asyncio.create_task(
+            _debounced_panel_updater(client, message.from_user.id, message.chat.id, key)
+        )
 
     raise StopPropagation
 
