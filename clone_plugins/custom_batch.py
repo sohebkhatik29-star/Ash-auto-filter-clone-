@@ -79,6 +79,15 @@ async def custom_batch(client, message):
         return await message.reply("❌ Database is not configured.")
 
     async with _lock(client, message.from_user.id):
+        # Starting Custom Batch must cancel any stale /getlink or /genlink
+        # waiting state, otherwise forwarded files can also trigger the old
+        # single-link collector and create extra "HERE IS YOUR LINK" panels.
+        try:
+            from clone_plugins import single_link
+            single_link._PENDING.pop((int(client.me.id), int(message.from_user.id)), None)
+        except Exception:
+            pass
+
         mongo_db.custom_batch_sessions.delete_many({"bot_id": client.me.id, "user_id": int(message.from_user.id)})
         session_id = secrets.token_urlsafe(10)
         doc = {
@@ -124,8 +133,6 @@ async def capture_message(client, message):
         )
         session["messages"] = messages
 
-        # Requested UI: remove the previous counter panel and put the refreshed
-        # counter panel underneath the newest forwarded message.
         await _replace_panel(client, session, len(messages))
 
 
@@ -155,7 +162,6 @@ async def _generate(client, query, session):
     except Exception:
         shown = url
 
-    # Remove the last counter panel and show only the generated link panel.
     old_chat = session.get("control_chat_id")
     old_msg = session.get("control_message_id")
     if old_chat and old_msg:
