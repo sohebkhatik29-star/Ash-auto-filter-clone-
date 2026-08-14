@@ -371,11 +371,97 @@ async def get_pic_cmd(client, message):
     await message.reply_text("ℹ️ <b>You are using default start photo.</b>")
 
 
+async def caption_cmd(client, message):
+    user_id = message.from_user.id
+    if len(message.command) == 1:
+        user = await get_user(user_id)
+        cap = user.get("custom_caption")
+        if cap:
+            return await message.reply_text(f"📝 <b>Your Custom Caption:</b>\n\n<code>{cap}</code>\n\nUse <code>/del_caption</code> to remove or <code>/caption [new text]</code> to change.")
+        return await message.reply_text("📝 <b>Custom Caption</b>\n\n<b>Usage:</b> <code>/caption Your custom caption {file_name} {file_size}</code>\n\n<b>Fillings:</b>\n• {file_name} : File Name\n• {file_size} : File Size\n• {caption} : Original Caption")
+    raw = message.text.split(None, 1)[1].strip()
+    if raw.lower() in ("off", "none", "delete", "clear"):
+        await update_user_info(user_id, {"custom_caption": None})
+        return await message.reply_text("✅ <b>Custom caption deleted successfully!</b>")
+    await update_user_info(user_id, {"custom_caption": raw})
+    await message.reply_text(f"✅ <b>Custom caption saved successfully!</b>\n\n<b>Preview:</b>\n{raw}")
+
+
+async def del_caption_cmd(client, message):
+    user_id = message.from_user.id
+    await update_user_info(user_id, {"custom_caption": None})
+    await message.reply_text("✅ <b>Custom caption deleted successfully!</b>")
+
+
+async def button_cmd(client, message):
+    user_id = message.from_user.id
+    if len(message.command) == 1:
+        user = await get_user(user_id)
+        btns = user.get("custom_buttons") or []
+        if btns:
+            btn_lines = "\n".join([f"• [{b.get('text')}]({b.get('url')})" for b in btns])
+            return await message.reply_text(f"➕ <b>Your Custom Buttons:</b>\n\n{btn_lines}\n\nUse <code>/button [Text] - [URL]</code> to add or <code>/del_button</code> to clear.", disable_web_page_preview=True)
+        return await message.reply_text("➕ <b>Custom Button</b>\n\n<b>Usage:</b> <code>/button Join Channel - https://t.me/channel</code>\nUse <code>/del_button</code> to remove.")
+    raw = message.text.split(None, 1)[1].strip()
+    if raw.lower() in ("off", "none", "delete", "clear"):
+        await update_user_info(user_id, {"custom_buttons": []})
+        return await message.reply_text("✅ <b>Custom buttons cleared!</b>")
+    if "-" not in raw:
+        return await message.reply_text("❌ <b>Invalid Format:</b>\nUse <code>/button Button Text - https://link.com</code>")
+    btn_text, btn_url = [x.strip() for x in raw.split("-", 1)]
+    if not (btn_url.startswith("http://") or btn_url.startswith("https://") or btn_url.startswith("tg://")):
+        return await message.reply_text("❌ URL must start with http://, https:// or tg://")
+    user = await get_user(user_id)
+    btns = list(user.get("custom_buttons") or [])
+    btns.append({"text": btn_text, "url": btn_url})
+    await update_user_info(user_id, {"custom_buttons": btns})
+    await message.reply_text(f"✅ <b>Custom button added:</b> [{btn_text}]({btn_url})", disable_web_page_preview=True)
+
+
+async def del_button_cmd(client, message):
+    user_id = message.from_user.id
+    await update_user_info(user_id, {"custom_buttons": []})
+    await message.reply_text("✅ <b>Custom buttons cleared!</b>")
+
+
+async def protect_cmd(client, message):
+    user_id = message.from_user.id
+    if len(message.command) == 1:
+        user = await get_user(user_id)
+        state = bool(user.get("protect_content", False))
+        return await message.reply_text(f"🛡️ <b>Protect Content:</b> <code>{'ENABLED ✅' if state else 'DISABLED ❌'}</code>\n\nUse <code>/protect on</code> or <code>/protect off</code> to toggle.")
+    arg = message.command[1].strip().lower()
+    val = arg in ("on", "enable", "1", "yes", "true")
+    await update_user_info(user_id, {"protect_content": val})
+    await message.reply_text(f"🛡️ <b>Protect Content has been {'ENABLED ✅' if val else 'DISABLED ❌'}</b>")
+
+
+async def shortener_cmd(client, message):
+    user_id = message.from_user.id
+    user = await get_user(user_id)
+    site = user.get("base_site") or "Not set"
+    api = user.get("shortener_api") or "Not set"
+    await message.reply_text(
+        f"🔗 <b>Link Shortener Settings</b>\n\n"
+        f"• <b>Base Site:</b> <code>{site}</code>\n"
+        f"• <b>API Key:</b> <code>{api}</code>\n\n"
+        f"<b>Commands to configure:</b>\n"
+        f"• <code>/base_site yoursite.com</code> (or <code>/base_site None</code> to remove)\n"
+        f"• <code>/api your_api_key</code>"
+    )
+
+
 def register(client):
     client.add_handler(MessageHandler(settings, filters.command("settings") & filters.private), group=-1)
     client.add_handler(MessageHandler(set_pic_cmd, filters.command(["set_pic", "setpic"]) & filters.private), group=-1)
     client.add_handler(MessageHandler(del_pic_cmd, filters.command(["del_pic", "delpic"]) & filters.private), group=-1)
     client.add_handler(MessageHandler(get_pic_cmd, filters.command(["get_pic", "getpic"]) & filters.private), group=-1)
+    client.add_handler(MessageHandler(caption_cmd, filters.command(["caption", "set_caption"]) & filters.private), group=-1)
+    client.add_handler(MessageHandler(del_caption_cmd, filters.command(["del_caption", "delcaption"]) & filters.private), group=-1)
+    client.add_handler(MessageHandler(button_cmd, filters.command(["button", "set_button"]) & filters.private), group=-1)
+    client.add_handler(MessageHandler(del_button_cmd, filters.command(["del_button", "delbutton"]) & filters.private), group=-1)
+    client.add_handler(MessageHandler(protect_cmd, filters.command(["protect", "protect_content"]) & filters.private), group=-1)
+    client.add_handler(MessageHandler(shortener_cmd, filters.command("shortener") & filters.private), group=-1)
     client.add_handler(
         CallbackQueryHandler(
             callbacks,

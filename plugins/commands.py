@@ -238,35 +238,54 @@ async def start(client, message):
         )
         return
     try:
+        user_info = await get_user(message.from_user.id)
         msg = await client.get_messages(LOG_CHANNEL, int(decode_file_id))
+        user_protect = bool(user_info.get("protect_content", False)) if user_info else False
         if msg.media:
             media = getattr(msg, msg.media.value)
-            title = formate_file_name(media.file_name)
-            size=get_size(media.file_size)
-            f_caption = f"@movies_1780 <code>{title}</code>"
-            if CUSTOM_FILE_CAPTION:
+            title = formate_file_name(getattr(media, "file_name", None) or "Media")
+            size = get_size(getattr(media, "file_size", 0))
+            raw_caption = getattr(msg, "caption", "") or ""
+            
+            cust_cap = user_info.get("custom_caption") if user_info else None
+            if cust_cap:
                 try:
-                    f_caption=CUSTOM_FILE_CAPTION.format(file_name= '' if title is None else title, file_size='' if size is None else size, file_caption='')
-                except:
-                    return
+                    f_caption = cust_cap.format(file_name=title or '', file_size=size or '', caption=raw_caption or '')
+                except Exception:
+                    f_caption = cust_cap
+            elif CUSTOM_FILE_CAPTION:
+                try:
+                    f_caption = CUSTOM_FILE_CAPTION.format(file_name='' if title is None else title, file_size='' if size is None else size, file_caption=raw_caption or '')
+                except Exception:
+                    f_caption = f"@movies_1780 <code>{title}</code>"
+            else:
+                f_caption = f"@movies_1780 <code>{title}</code>"
+
+            button = []
             if STREAM_MODE == True:
                 if msg.video or msg.document:
                     log_msg = msg
                     fileName = {quote_plus(get_name(log_msg))}
                     stream = f"{URL}watch/{str(log_msg.id)}/{quote_plus(get_name(log_msg))}?hash={get_hash(log_msg)}"
                     download = f"{URL}{str(log_msg.id)}/{quote_plus(get_name(log_msg))}?hash={get_hash(log_msg)}"
-                    button = [[
+                    button.append([
                         InlineKeyboardButton("• ᴅᴏᴡɴʟᴏᴀᴅ •", url=download),
                         InlineKeyboardButton('• ᴡᴀᴛᴄʜ •', url=stream)
-                    ],[
+                    ])
+                    button.append([
                         InlineKeyboardButton("• ᴡᴀᴛᴄʜ ɪɴ ᴡᴇʙ ᴀᴘᴘ •", web_app=WebAppInfo(url=stream))
-                    ]]
-                    reply_markup=InlineKeyboardMarkup(button)
-            else:
-                reply_markup = None
-            del_msg = await msg.copy(chat_id=message.from_user.id, caption=f_caption, reply_markup=reply_markup, protect_content=False)
+                    ])
+            
+            # Custom buttons from user settings
+            if user_info and user_info.get("custom_buttons"):
+                for b in user_info.get("custom_buttons"):
+                    if isinstance(b, dict) and b.get("text") and b.get("url"):
+                        button.append([InlineKeyboardButton(b["text"], url=b["url"])])
+
+            reply_markup = InlineKeyboardMarkup(button) if button else None
+            del_msg = await msg.copy(chat_id=message.from_user.id, caption=f_caption, reply_markup=reply_markup, protect_content=user_protect)
         else:
-            del_msg = await msg.copy(chat_id=message.from_user.id, protect_content=False)
+            del_msg = await msg.copy(chat_id=message.from_user.id, protect_content=user_protect)
         if AUTO_DELETE_MODE == True:
             k = await client.send_message(chat_id = message.from_user.id, text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nThis Movie File/Video will be deleted in <b><u>{AUTO_DELETE} minutes</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>")
             await asyncio.sleep(AUTO_DELETE_TIME)
