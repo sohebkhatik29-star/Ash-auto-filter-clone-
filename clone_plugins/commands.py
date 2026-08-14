@@ -10,7 +10,7 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins.dbusers import clonedb
 from clone_plugins.users_api import get_user, update_user_info, get_short_link
 from plugins.clone import mongo_db
-from config import BOT_USERNAME, PICS, CUSTOM_FILE_CAPTION, ADMINS
+from config import BOT_USERNAME, PICS, CUSTOM_FILE_CAPTION, ADMINS, UPDATE_CHANNEL, tg_link
 from Script import script
 from validators import domain
 
@@ -40,42 +40,47 @@ def is_owner_or_mod(client, user_id):
     except Exception:
         pass
     rec = bot_record(client)
-    if int(rec.get("user_id", 0)) == uid: return True
-    return uid in [int(x) for x in rec.get("moderators", []) if str(x).isdigit()]
+    if not rec:
+        return False
+    if int(rec.get("user_id", 0)) == uid:
+        return True
+    return uid in [int(x) for x in rec.get("moderators", [])]
 
 
-def force_channels(client): return bot_record(client).get("force_channels", [])
-
-
-def make_file_link(username, file_id, protected=False):
+def make_file_link(bot_username, file_id, protected=False):
     prefix = "filep" if protected else "file"
-    payload = base64.urlsafe_b64encode(f"{prefix}_{file_id}".encode()).decode().rstrip("=")
-    return f"https://t.me/{username}?start={payload}"
+    raw = f"{prefix}_{file_id}".encode()
+    payload = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    return f"https://t.me/{bot_username}?start={payload}"
 
 
-async def force_markup(client, user_id, payload):
+async def force_markup(client, user_id, original_payload):
+    channels = bot_record(client).get("force_channels", [])
+    if not channels: return None
     missing = []
-    for channel in force_channels(client):
+    for ch in channels:
         try:
-            member = await client.get_chat_member(channel, user_id)
-            status = str(member.status).lower()
-            if status.endswith(("left", "banned", "restricted", "kicked")): missing.append(channel)
-        except Exception: missing.append(channel)
+            member = await client.get_chat_member(ch, user_id)
+            if member.status in ("left", "kicked"): missing.append(ch)
+        except Exception:
+            missing.append(ch)
     if not missing: return None
-    rows = []
-    for channel in missing:
+    buttons = []
+    for ch in missing:
         try:
-            chat = await client.get_chat(channel)
-            url = chat.invite_link or (f"https://t.me/{chat.username}" if chat.username else None)
-            if url: rows.append([InlineKeyboardButton(f"📢 Join {chat.title[:24]}", url=url)])
-        except Exception: pass
-    rows.append([InlineKeyboardButton("✅ I Joined / Verify", callback_data=f"verify:{payload}")])
-    return InlineKeyboardMarkup(rows)
+            chat = await client.get_chat(ch)
+            link = chat.invite_link or f"https://t.me/{chat.username}"
+            title = chat.title or str(ch)
+            buttons.append([InlineKeyboardButton(f"📢 Join {title[:20]}", url=link)])
+        except Exception:
+            pass
+    buttons.append([InlineKeyboardButton("🔄 Try Again", callback_data=f"verify:{original_payload}")])
+    return InlineKeyboardMarkup(buttons)
 
 
 async def access_verification(client, user_id, original_payload):
     rec = bot_record(client)
-    if not rec.get("access_token_enabled", True) or is_owner_or_mod(client, user_id): return None
+    if not rec.get("access_token_enabled", False): return None
     if mongo_db is None: return None
     now = int(time.time())
     valid = mongo_db.access_tokens.find_one({"bot_id": client.me.id, "user_id": int(user_id), "expires_at": {"$gt": now}})
@@ -92,12 +97,12 @@ async def access_verification(client, user_id, original_payload):
 
 def settings_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🤖 MY CLONE BOT 🤖", callback_data="my_clone")],
-        [InlineKeyboardButton("☁️ GOOGLE BACKUP", callback_data="google_backup")],
-        [InlineKeyboardButton("🔗 LINK SHORTENER", callback_data="link_shortener")],
-        [InlineKeyboardButton("✏️ CUSTOM CAPTION", callback_data="custom_caption")],
-        [InlineKeyboardButton("🟢 CUSTOM BUTTON", callback_data="custom_button")],
-        [InlineKeyboardButton("🛡️ PROTECT CONTENT", callback_data="protect_menu")],
+        [InlineKeyboardButton("MY CLONE BOT 🤖", callback_data="my_clone")],
+        [InlineKeyboardButton("GOOGLE BACKUP 📁", callback_data="google_backup")],
+        [InlineKeyboardButton("LINK SHORTENER 📎", callback_data="link_shortener")],
+        [InlineKeyboardButton("CUSTOM CAPTION 🖌", callback_data="custom_caption")],
+        [InlineKeyboardButton("CUSTOM BUTTON ➕", callback_data="custom_button")],
+        [InlineKeyboardButton("PROTECT CONTENT ☂️", callback_data="protect_menu")],
         [InlineKeyboardButton("‹ BACK", callback_data="settings_back")],
     ])
 
@@ -136,11 +141,17 @@ async def start(client, message):
         if not await clonedb.is_user_exist(me.id, message.from_user.id): await clonedb.add_user(me.id, message.from_user.id)
     except Exception: pass
     if len(message.command) != 2:
-        buttons = [[InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],[InlineKeyboardButton("🤖 CREATE MY OWN CLONE", url=f"https://t.me/{BOT_USERNAME}?start=clone")],[InlineKeyboardButton("📢 UPDATE CHANNEL", url="https://t.me/")]]
+        buttons = [
+            [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
+            [InlineKeyboardButton("🤖 CREATE MY OWN CLONE", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
+            [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
+        ]
         caption = script.CLONE_START_TXT.format(message.from_user.mention, me.mention)
         try: return await message.reply_photo(photo=random.choice(PICS), caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
         except Exception: return await message.reply(caption, reply_markup=InlineKeyboardMarkup(buttons))
     data = message.command[1]
+    if data.lower() in ("clone", "settings"):
+        return await message.reply("⚙️ <b>Settings</b>\nCustomize your settings as your need.", reply_markup=settings_menu())
     try:
         decoded = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode("ascii")
         prefix, file_id = decoded.split("_", 1)
@@ -205,10 +216,6 @@ async def settings_command(client,message):
     await message.reply("⚙️ <b>Settings</b>\nCustomize your settings as your need.",reply_markup=settings_menu())
 
 
-def settings_menu():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🤖 MY CLONE BOT 🤖",callback_data="my_clone")],[InlineKeyboardButton("☁️ GOOGLE BACKUP",callback_data="google_backup")],[InlineKeyboardButton("🔗 LINK SHORTENER",callback_data="link_shortener")],[InlineKeyboardButton("✏️ CUSTOM CAPTION",callback_data="custom_caption")],[InlineKeyboardButton("🟢 CUSTOM BUTTON",callback_data="custom_button")],[InlineKeyboardButton("🛡️ PROTECT CONTENT",callback_data="protect_menu")],[InlineKeyboardButton("‹ BACK",callback_data="settings_back")]])
-
-
 async def callbacks(client,query):
     data=query.data
     if data=="close_data": return await query.message.delete()
@@ -242,26 +249,135 @@ async def callbacks(client,query):
         return await query.message.edit_text(about_text, reply_markup=markup)
     if data=="start_back":
         me = client.me or (await client.get_me())
-        buttons = [[InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],[InlineKeyboardButton("🤖 CREATE MY OWN CLONE", url=f"https://t.me/{BOT_USERNAME}?start=clone")],[InlineKeyboardButton("📢 UPDATE CHANNEL", url="https://t.me/")]]
+        buttons = [
+            [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
+            [InlineKeyboardButton("🤖 CREATE MY OWN CLONE", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
+            [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
+        ]
         caption = script.CLONE_START_TXT.format(query.from_user.mention, me.mention)
         if query.message.photo:
             return await query.message.edit_caption(caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
         return await query.message.edit_text(caption, reply_markup=InlineKeyboardMarkup(buttons))
-    if data in ("settings","settings_back"): return await query.message.edit_text("⚙️ <b>Settings</b>\nCustomize your settings as your need.",reply_markup=settings_menu())
-    if data=="my_clone": return await query.message.edit_text(f"🛠 <b>Customize Clone</b>\n\n➜ <b>Name:</b> {client.me.first_name}\n\nConfigure Your Clone Settings Using Given Buttons",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("START MSG",callback_data="clone_startmsg"),InlineKeyboardButton("FORCE SUB",callback_data="clone_force")],[InlineKeyboardButton("MODERATORS",callback_data="clone_mods"),InlineKeyboardButton("AUTO DELETE",callback_data="clone_autodelete")],[InlineKeyboardButton("NO FORWARD",callback_data="clone_noforward"),InlineKeyboardButton("ACCESS TOKEN",callback_data="clone_access")],[InlineKeyboardButton("TRANSFER DB",callback_data="clone_transfer"),InlineKeyboardButton("DEACTIVATE",callback_data="clone_deactivate")],[InlineKeyboardButton("MODE",callback_data="clone_mode"),InlineKeyboardButton("RESTART",callback_data="clone_restart")],[InlineKeyboardButton("STATS",callback_data="clone_stats"),InlineKeyboardButton("DELETE",callback_data="clone_delete")],[InlineKeyboardButton("‹ BACK",callback_data="settings")]]))
-    if data=="google_backup": return await query.message.edit_text("☁️ <b>Google Backup</b>\n\nGoogle Drive backup is not configured in this deployment. Your clone data is stored in MongoDB.",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK",callback_data="settings")]]))
+    if data in ("settings","settings_back"):
+        return await query.message.edit_text("⚙️ <b>Settings</b>\nCustomize your settings as your need.",reply_markup=settings_menu())
+    if data=="my_clone":
+        return await query.message.edit_text(f"🛠 <b>Customize Clone</b>\n\n➜ <b>Name:</b> {client.me.first_name}\n\nConfigure Your Clone Settings Using Given Buttons",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("START MSG",callback_data="clone_startmsg"),InlineKeyboardButton("FORCE SUB",callback_data="clone_force")],[InlineKeyboardButton("MODERATORS",callback_data="clone_mods"),InlineKeyboardButton("AUTO DELETE",callback_data="clone_autodelete")],[InlineKeyboardButton("NO FORWARD",callback_data="clone_noforward"),InlineKeyboardButton("ACCESS TOKEN",callback_data="clone_access")],[InlineKeyboardButton("TRANSFER DB",callback_data="clone_transfer"),InlineKeyboardButton("DEACTIVATE",callback_data="clone_deactivate")],[InlineKeyboardButton("MODE",callback_data="clone_mode"),InlineKeyboardButton("RESTART",callback_data="clone_restart")],[InlineKeyboardButton("STATS",callback_data="clone_stats"),InlineKeyboardButton("DELETE",callback_data="clone_delete")],[InlineKeyboardButton("‹ BACK",callback_data="settings")]]))
+    if data=="google_backup":
+        text = (
+            "<b>Clone Backup</b>\n\n"
+            "You can connect a google account to retrieve ownership and data of clones in this tg account, "
+            "if this account is deleted or you loose access to it, use /recover to restore them."
+        )
+        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Connect With Google", callback_data="google_connect")], [InlineKeyboardButton("‹ back", callback_data="settings")]]))
+    if data=="google_connect":
+        return await query.answer("Google Drive backup is stored securely in MongoDB database.", show_alert=True)
     if data=="link_shortener":
-        uid=owner_id(client) or query.from_user.id; u=await get_user(uid); return await query.message.edit_text(f"🔗 <b>Link Shortener</b>\n\nAPI: <code>{u.get('shortener_api') or 'Not set'}</code>\nSite: <code>{u.get('base_site') or 'Not set'}</code>\n\nSet with /api KEY and /base_site example.com",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK",callback_data="settings")]]))
+        uid=owner_id(client) or query.from_user.id; u=await get_user(uid)
+        site = u.get('base_site') or 'Not set'
+        api = u.get('shortener_api') or 'Not set'
+        text = (
+            "<b>Link Shortener</b>\n"
+            f"- Shortener: {site}\n"
+            f"- Shortener Api: {api}\n\n"
+            "You can now use the /shortener command to shorten any links."
+        )
+        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Delete shortener", callback_data="delete_shortener")], [InlineKeyboardButton("‹ back", callback_data="settings")]]))
+    if data=="delete_shortener":
+        uid=owner_id(client) or query.from_user.id
+        await update_user_info(uid, {"base_site": None, "shortener_api": None})
+        await query.answer("Shortener deleted.", show_alert=True)
+        text = (
+            "<b>Link Shortener</b>\n"
+            "- Shortener: Not set\n"
+            "- Shortener Api: Not set\n\n"
+            "You can now use the /shortener command to shorten any links."
+        )
+        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Delete shortener", callback_data="delete_shortener")], [InlineKeyboardButton("‹ back", callback_data="settings")]]))
     if data=="custom_caption":
-        rec=bot_record(client); return await query.message.edit_text("✏️ <b>Custom Caption</b>\n\nUse /caption Your caption.\n\n<code>{file_name}</code> = File Name\n<code>{file_size}</code> = File Size\n<code>{file_caption}</code> = Original Caption\n\nCurrent: <code>%s</code>"%(rec.get("custom_caption") or "Default"),reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK",callback_data="settings")]]))
+        rec=bot_record(client)
+        text = (
+            "<b>Custom Caption:</b>\n"
+            "You can add a custom caption to your media messages instead of its original caption\n\n"
+            "<b>Fillings:</b>\n"
+            "• {file_name} : File Name\n"
+            "• {file_size} : File Size\n"
+            "• {caption} : Orginal Caption"
+        )
+        cap = rec.get("custom_caption")
+        if cap:
+            text += f"\n\n<b>Current:</b> <code>{cap}</code>"
+        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Edit", callback_data="caption_edit"), InlineKeyboardButton("See", callback_data="caption_see"), InlineKeyboardButton("Delete", callback_data="caption_delete")],
+            [InlineKeyboardButton("‹ back", callback_data="settings")]
+        ]))
+    if data=="caption_see":
+        rec=bot_record(client)
+        cap = rec.get("custom_caption") or "Default caption"
+        return await query.answer(f"Caption:\n{cap}", show_alert=True)
+    if data=="caption_delete":
+        if mongo_db is not None:
+            mongo_db.bots.update_one({"bot_id": client.me.id}, {"$set": {"custom_caption": None}})
+        await query.answer("Custom caption deleted.", show_alert=True)
+        text = (
+            "<b>Custom Caption:</b>\n"
+            "You can add a custom caption to your media messages instead of its original caption\n\n"
+            "<b>Fillings:</b>\n"
+            "• {file_name} : File Name\n"
+            "• {file_size} : File Size\n"
+            "• {caption} : Orginal Caption"
+        )
+        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Edit", callback_data="caption_edit"), InlineKeyboardButton("See", callback_data="caption_see"), InlineKeyboardButton("Delete", callback_data="caption_delete")],
+            [InlineKeyboardButton("‹ back", callback_data="settings")]
+        ]))
+    if data=="caption_edit":
+        return await query.answer("Send /caption <Your Text> to update caption.", show_alert=True)
     if data=="custom_button":
-        rec=bot_record(client); return await query.message.edit_text("🟢 <b>Custom Button</b>\n\nUse /button Button Text - https://example.com\nUse /button off to clear all buttons.\n\nCurrent buttons: <code>%s</code>"%len(rec.get("custom_buttons",[])),reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK",callback_data="settings")]]))
+        text = "<b>Custom Button:</b>\nYou can add a custom button to your message"
+        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕", callback_data="button_add")],
+            [InlineKeyboardButton("‹ back", callback_data="settings"), InlineKeyboardButton("Delete", callback_data="button_delete")]
+        ]))
+    if data=="button_add":
+        return await query.answer("Send /button <Button Text> - <URL> to set custom button.", show_alert=True)
+    if data=="button_delete":
+        if mongo_db is not None:
+            mongo_db.bots.update_one({"bot_id": client.me.id}, {"$set": {"custom_buttons": []}})
+        await query.answer("Custom buttons deleted.", show_alert=True)
+        return await query.message.edit_text("<b>Custom Button:</b>\nYou can add a custom button to your message", reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕", callback_data="button_add")],
+            [InlineKeyboardButton("‹ back", callback_data="settings"), InlineKeyboardButton("Delete", callback_data="button_delete")]
+        ]))
     if data=="protect_menu":
-        rec=bot_record(client); status="Enabled ✅" if rec.get("protect_content") else "Disabled ❌"; return await query.message.edit_text(f"🛡️ <b>Protect Content</b>\n\nStatus: {status}",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("ON",callback_data="protect_on"),InlineKeyboardButton("OFF",callback_data="protect_off")],[InlineKeyboardButton("‹ BACK",callback_data="settings")]]))
+        rec=bot_record(client)
+        is_on = bool(rec.get("protect_content", False))
+        status_str = "ENABLED ✅" if is_on else "DISABLED ❌"
+        text = (
+            "<b>Protect Content</b>\n"
+            "Restrict other users from forwarding contents from your shareable link.\n\n"
+            "<b>Available Mode's:</b>\n"
+            "1) Enable: Forwarding is blocked. Once you create a link with this mode, the restriction remains even if you later disabled this feature.\n"
+            "2) Disable: Forwarding restrictions depend on whether the \"no forward\" feature is currently enabled in the bot. If enabled, no forward is restricted. This applies to all links, including those created before; if disabled, forwarding is allowed.\n\n"
+            f"- status: {status_str}"
+        )
+        btn = InlineKeyboardButton("Disable ❌", callback_data="protect_off") if is_on else InlineKeyboardButton("Enable ✅", callback_data="protect_on")
+        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([[btn], [InlineKeyboardButton("‹ back", callback_data="settings")]]))
     if data in ("protect_on","protect_off"):
         if not is_owner_or_mod(client,query.from_user.id): return await query.answer("Owner only.",show_alert=True)
-        if mongo_db is not None: mongo_db.bots.update_one({"bot_id":client.me.id},{"$set":{"protect_content":data=="protect_on"}},upsert=True)
-        return await query.message.edit_text(f"🛡️ Protect Content: <b>{'Enabled ✅' if data=='protect_on' else 'Disabled ❌'}</b>",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK",callback_data="settings")]]))
+        val = (data == "protect_on")
+        if mongo_db is not None:
+            mongo_db.bots.update_one({"bot_id":client.me.id},{"$set":{"protect_content":val}},upsert=True)
+        status_str = "ENABLED ✅" if val else "DISABLED ❌"
+        text = (
+            "<b>Protect Content</b>\n"
+            "Restrict other users from forwarding contents from your shareable link.\n\n"
+            "<b>Available Mode's:</b>\n"
+            "1) Enable: Forwarding is blocked. Once you create a link with this mode, the restriction remains even if you later disabled this feature.\n"
+            "2) Disable: Forwarding restrictions depend on whether the \"no forward\" feature is currently enabled in the bot. If enabled, no forward is restricted. This applies to all links, including those created before; if disabled, forwarding is allowed.\n\n"
+            f"- status: {status_str}"
+        )
+        btn = InlineKeyboardButton("Disable ❌", callback_data="protect_off") if val else InlineKeyboardButton("Enable ✅", callback_data="protect_on")
+        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([[btn], [InlineKeyboardButton("‹ back", callback_data="settings")]]))
     return await query.answer("Unknown option.",show_alert=True)
 
 
@@ -270,11 +386,10 @@ def register(client):
     client.add_handler(MessageHandler(start,filters.command("start")&private),group=0)
     client.add_handler(MessageHandler(help_command,filters.command("help")&private),group=0)
     client.add_handler(MessageHandler(genlink,filters.command(["link","genlink"])&private),group=1)
-    # /batch, /custom_batch, and /special_link are handled exclusively by their dedicated modules.
     client.add_handler(MessageHandler(universal_link,filters.command("universal_link")&private),group=1)
     client.add_handler(MessageHandler(api_handler,filters.command("api")&private),group=1)
     client.add_handler(MessageHandler(base_site_handler,filters.command("base_site")&private),group=1)
     client.add_handler(MessageHandler(shortener,filters.command("shortener")&private),group=1)
     client.add_handler(MessageHandler(settings_command,filters.command("settings")&private),group=1)
-    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|settings|settings_back|my_clone|google_backup|link_shortener|custom_caption|custom_button|protect_menu|protect_on|protect_off)$")),group=0)
+    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|settings|settings_back|my_clone|google_backup|google_connect|link_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_on|protect_off)$")),group=0)
     return client
