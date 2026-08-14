@@ -95,9 +95,10 @@ async def start():
         register_advanced(StreamBot)
         # The master bot also supports the same interactive single-link flow.
         register_single_link(StreamBot)
-        # Custom batch runs at a higher-priority handler group so the legacy
-        # /custom_batch implementation cannot intercept the new workflow.
-        register_custom_batch(StreamBot, base_group=-1)
+        # Custom batch must run before the single-link collector. Its active
+        # session owns forwarded messages and stops propagation so a batch file
+        # cannot also create an extra single-link panel.
+        register_custom_batch(StreamBot, base_group=-101)
         logging.info('ASH master command handlers loaded successfully')
     except Exception:
         logging.exception('Unable to load ASH master command handlers')
