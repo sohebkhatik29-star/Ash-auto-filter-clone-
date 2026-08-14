@@ -14,32 +14,17 @@ MAX_FILES = 5000
 _BATCH_LOCKS = {}
 
 
-def _sessions(client):
-    return mongo_db.custom_batch_sessions if mongo_db is not None else None
-
-
-def _links(client):
-    return mongo_db.custom_batch_links if mongo_db is not None else None
-
-
-def _lock_key(client, user_id):
-    return (int(client.me.id), int(user_id))
-
-
-def _get_lock(client, user_id):
-    key = _lock_key(client, user_id)
-    lock = _BATCH_LOCKS.get(key)
-    if lock is None:
-        lock = asyncio.Lock()
-        _BATCH_LOCKS[key] = lock
-    return lock
+def _lock(client, user_id):
+    key = (int(client.me.id), int(user_id))
+    if key not in _BATCH_LOCKS:
+        _BATCH_LOCKS[key] = asyncio.Lock()
+    return _BATCH_LOCKS[key]
 
 
 def _session(client, user_id):
-    col = _sessions(client)
-    if col is None:
+    if mongo_db is None:
         return None
-    return col.find_one({"bot_id": client.me.id, "user_id": int(user_id), "active": True})
+    return mongo_db.custom_batch_sessions.find_one({"bot_id": client.me.id, "user_id": int(user_id), "active": True})
 
 
 def _controls(session_id):
@@ -50,55 +35,16 @@ def _controls(session_id):
 
 
 def _text(count):
-    if count == 0:
-        return (
-            "📦 <b>CUSTOM BATCH</b>\n\n"
-            "Send or forward as many messages as you want.\n"
-            "You can select multiple Telegram messages and forward them together; "
-            "I will save every message automatically.\n\n"
-            "When finished, tap 🔗 <b>GENERATE LINK</b>."
-        )
     return (
         "📦 <b>CUSTOM BATCH</b>\n\n"
         f"📥 <b>Stored Messages: {count}</b>\n\n"
         "Send/forward more messages, or tap 🔗 <b>GENERATE LINK</b>."
-    )
-
-
-async def _replace_control(client, session, count):
-    """Keep exactly one visible control panel.
-
-    Some Telegram clients/forwarded-message updates can make an edit silently
-    fail. To guarantee one visible panel, remove the old panel first and create
-    one replacement, then atomically store its message id in the session.
-    """
-    chat_id = int(session.get("control_chat_id") or 0)
-    old_id = int(session.get("control_message_id") or 0)
-    if not chat_id:
-        return
-
-    if old_id:
-        try:
-            await client.delete_messages(chat_id, old_id)
-        except Exception:
-            pass
-
-    try:
-        sent = await client.send_message(
-            chat_id,
-            _text(count),
-            reply_markup=_controls(session["session_id"]),
-        )
-    except Exception:
-        return
-
-    mongo_db.custom_batch_sessions.update_one(
-        {"_id": session["_id"], "active": True},
-        {"$set": {
-            "control_chat_id": int(sent.chat.id),
-            "control_message_id": int(sent.id),
-            "updated_at": int(time.time()),
-        }},
+    ) if count else (
+        "📦 <b>CUSTOM BATCH</b>\n\n"
+        "Send or forward as many messages as you want.\n"
+        "You can select multiple Telegram messages and forward them together; "
+        "I will save every message automatically.\n\n"
+        "When finished, tap 🔗 <b>GENERATE LINK</b>."
     )
 
 
@@ -108,12 +54,8 @@ async def custom_batch(client, message):
     if mongo_db is None:
         return await message.reply("❌ Database is not configured.")
 
-    lock = _get_lock(client, message.from_user.id)
-    async with lock:
-        mongo_db.custom_batch_sessions.delete_many({
-            "bot_id": client.me.id,
-            "user_id": int(message.from_user.id),
-        })
+    async with _lock(client, message.from_user.id):
+        mongo_db.custom_batch_sessions.delete_many({"bot_id": client.me.id, "user_id": int(message.from_user.id)})
         session_id = secrets.token_urlsafe(10)
         doc = {
             "session_id": session_id,
@@ -121,7 +63,6 @@ async def custom_batch(client, message):
             "user_id": int(message.from_user.id),
             "messages": [],
             "active": True,
-            "paused": False,
             "created_at": int(time.time()),
             "updated_at": int(time.time()),
         }
@@ -129,24 +70,22 @@ async def custom_batch(client, message):
         sent = await message.reply(_text(0), reply_markup=_controls(session_id))
         mongo_db.custom_batch_sessions.update_one(
             {"session_id": session_id},
-            {"$set": {"control_chat_id": sent.chat.id, "control_message_id": sent.id}},
+            {"$set": {"control_chat_id": int(sent.chat.id), "control_message_id": int(sent.id)}}
         )
     raise StopPropagation
 
 
 async def capture_message(client, message):
-    """Collect private messages and keep only ONE status/control panel visible."""
-    if mongo_db is None or not message.from_user:
+    if mongo_db is None or not message.from_user or not message.chat:
         return
-    if not message.chat or message.chat.type.value != "private":
+    if message.chat.type.value != "private":
         return
     if message.text and message.text.startswith("/"):
         return
 
-    lock = _get_lock(client, message.from_user.id)
-    async with lock:
+    async with _lock(client, message.from_user.id):
         session = _session(client, message.from_user.id)
-        if not session or not session.get("active") or session.get("paused"):
+        if not session or not session.get("active"):
             return
 
         messages = list(session.get("messages", []))
@@ -158,13 +97,26 @@ async def capture_message(client, message):
             return
         messages.append(item)
 
-        now = int(time.time())
         mongo_db.custom_batch_sessions.update_one(
             {"_id": session["_id"], "active": True},
-            {"$set": {"messages": messages, "updated_at": now}},
+            {"$set": {"messages": messages, "updated_at": int(time.time())}}
         )
-        session["messages"] = messages
-        await _replace_control(client, session, len(messages))
+
+        # IMPORTANT: edit the original panel. Never delete/send a new panel.
+        control_chat_id = session.get("control_chat_id")
+        control_message_id = session.get("control_message_id")
+        if control_chat_id and control_message_id:
+            try:
+                await client.edit_message_text(
+                    int(control_chat_id),
+                    int(control_message_id),
+                    _text(len(messages)),
+                    reply_markup=_controls(session["session_id"]),
+                )
+            except Exception:
+                # Do not create a replacement panel here. The original panel
+                # remains the single source of truth for the session.
+                pass
 
 
 async def _generate(client, query, session):
@@ -172,14 +124,10 @@ async def _generate(client, query, session):
     if not messages:
         return await query.answer("Forward or send at least one message first.", show_alert=True)
 
-    username = (await client.get_me()).username
+    links = mongo_db.custom_batch_links
     token = secrets.token_urlsafe(18)
     rec = cmd.bot_record(client)
     protected = bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
-    links = _links(client)
-    if links is None:
-        return await query.answer("Database is not configured.", show_alert=True)
-
     links.insert_one({
         "token": token,
         "bot_id": client.me.id,
@@ -188,25 +136,21 @@ async def _generate(client, query, session):
         "protected": protected,
         "created_at": int(time.time()),
     })
-    payload = f"batch_{token}"
-    url = f"https://t.me/{username}?start={payload}"
+
+    username = (await client.get_me()).username
+    url = f"https://t.me/{username}?start=batch_{token}"
     owner = cmd.owner_id(client) or int(session["user_id"])
     try:
-        short = await get_short_link(await get_user(owner), url)
+        shown = await get_short_link(await get_user(owner), url)
     except Exception:
-        short = url
+        shown = url
 
     mongo_db.custom_batch_sessions.delete_one({"_id": session["_id"]})
-    shown = short if short != url else url
-    text = (
-        "✅ <b>CUSTOM BATCH LINK GENERATED</b>\n\n"
-        f"📦 <b>Messages:</b> {len(messages)}\n\n"
-        f"🔗 <b>Link:</b>\n{shown}"
-    )
+    text = "✅ <b>CUSTOM BATCH LINK GENERATED</b>\n\n" f"📦 <b>Messages:</b> {len(messages)}\n\n" f"🔗 <b>Link:</b>\n{shown}"
     try:
         await query.message.edit_text(text)
     except Exception:
-        await query.message.reply(text)
+        pass
     await query.answer("Link generated successfully.")
 
 
@@ -218,15 +162,11 @@ async def callback(client, query):
     action, session_id = parts[1], parts[2]
     if mongo_db is None:
         return await query.answer("Database is not configured.", show_alert=True)
-    session = mongo_db.custom_batch_sessions.find_one({"session_id": session_id})
-    if not session or int(session.get("user_id", 0)) != int(query.from_user.id):
-        return await query.answer("This batch session is not yours or has expired.", show_alert=True)
 
-    lock = _get_lock(client, query.from_user.id)
-    async with lock:
+    async with _lock(client, query.from_user.id):
         session = mongo_db.custom_batch_sessions.find_one({"session_id": session_id})
-        if not session:
-            return await query.answer("This batch session has expired.", show_alert=True)
+        if not session or int(session.get("user_id", 0)) != int(query.from_user.id):
+            return await query.answer("This batch session is not yours or has expired.", show_alert=True)
         if action == "generate":
             await _generate(client, query, session)
         elif action == "cancel":
@@ -250,7 +190,6 @@ async def batch_start(client, message):
     if not record:
         await message.reply("❌ Invalid or expired batch link.")
         raise StopPropagation
-
     payload = message.command[1]
     access = await cmd.access_verification(client, message.from_user.id, payload)
     if access:
@@ -263,18 +202,7 @@ async def batch_start(client, message):
 
     messages = list(record.get("messages", []))
     if not messages:
-        old_files = list(record.get("file_ids", []))
-        if old_files:
-            await message.reply(f"📦 <b>Sending {len(old_files)} files...</b>")
-            for file_id in old_files:
-                try:
-                    await cmd.deliver_file(client, message.from_user.id, file_id, protected=bool(record.get("protected", False)))
-                    await asyncio.sleep(0.05)
-                except Exception:
-                    continue
-            await message.reply("✅ <b>Batch delivery completed.</b>")
-        else:
-            await message.reply("❌ This batch contains no messages.")
+        await message.reply("❌ This batch contains no messages.")
         raise StopPropagation
 
     await message.reply(f"📦 <b>Sending {len(messages)} messages...</b>")
