@@ -19,6 +19,7 @@ def clone_commands(include_owner=False):
         BotCommand("start", "Check bot / open stored link"),
         BotCommand("help", "Show all commands"),
         BotCommand("getlink", "Create a single shareable link"),
+        BotCommand("batch", "Store multiple messages from a channel"),
         BotCommand("custom_batch", "Create custom batch links"),
         BotCommand("shortener", "View link shortener"),
         BotCommand("settings", "Customize your clone"),
@@ -61,16 +62,19 @@ def register_clone_handlers(client):
 async def clone(client, message):
     if not CLONE_MODE or mongo_db is None:
         return await message.reply_text("Clone mode is disabled or database is not configured.")
+
     prompt = "<b>1) Send <code>/newbot</code> to @BotFather\n2) Give a name.\n3) Give a username.\n4) Copy the bot token message.\n5) Forward it to me.\n\n/cancel - cancel.</b>"
     token_msg = await client.ask(message.chat.id, prompt)
     if (token_msg.text or "").strip() == "/cancel":
         return await message.reply_text("<b>Cancelled 🚫</b>")
     if not token_msg.forward_from or token_msg.forward_from.id != 93372553:
         return await message.reply_text("<b>Please forward the token message from BotFather.</b>")
+
     match = re.search(r"\b(\d+:[A-Za-z0-9_-]+)\b", token_msg.text or "")
     if not match:
         return await message.reply_text("<b>Could not read the bot token.</b>")
     bot_token = match.group(1)
+
     msg = await message.reply_text("<b>👨‍💻 Creating your clone...</b>")
     try:
         vj = Client(bot_token, API_ID, API_HASH, bot_token=bot_token, plugins={})

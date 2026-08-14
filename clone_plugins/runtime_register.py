@@ -1,4 +1,5 @@
 """Register handlers on dynamically-created Pyrogram clone clients."""
+
 from pyrogram import filters
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -7,6 +8,7 @@ from clone_plugins import advanced as adv
 from clone_plugins import clone_settings_ui as cset
 from clone_plugins import single_link
 from clone_plugins import custom_batch as cbatch
+from clone_plugins import channel_batch as chbatch
 
 
 async def clean_help(client, message):
@@ -16,6 +18,7 @@ async def clean_help(client, message):
         "• /start — Check bot / open file link\n"
         "• /help — Open this help\n"
         "• /getlink — Create a single shareable file link\n"
+        "• /batch — Store multiple messages from a channel\n"
         "• /custom_batch — Create custom batch links\n"
         "• /shortener — Shortener settings\n"
         "• /settings — Customize bot\n"
@@ -40,8 +43,9 @@ def register_clone_handlers(client):
     cset.register(client)
     single_link.register(client)
     cbatch.register(client, base_group=-1)
+    chbatch.register(client, base_group=-3)
 
-    # Public clone commands: keep only the requested single-link and custom-batch flows.
+    # Public clone commands
     command_map = {
         "start": cmd.start,
         "help": clean_help,
@@ -61,6 +65,7 @@ def register_clone_handlers(client):
         "mode": "mode", "restart": "restart", "delete": "delete",
         "start_msg": "start_msg",
     }
+
     for command, name in advanced_commands.items():
         fn = getattr(adv, name, None)
         if callable(fn):
@@ -72,7 +77,9 @@ def register_clone_handlers(client):
     callback = getattr(cmd, "callbacks", None)
     if callable(callback):
         client.add_handler(CallbackQueryHandler(callback), group=2)
+
     advanced_callback = getattr(adv, "callbacks", None)
     if callable(advanced_callback) and advanced_callback is not callback:
         client.add_handler(CallbackQueryHandler(advanced_callback), group=2)
+
     return client
