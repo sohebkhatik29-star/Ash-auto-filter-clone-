@@ -29,7 +29,25 @@ def _decode(payload: str):
     return None
 
 
+def _batch_active(client, user_id):
+    """Return True while this user is collecting a custom batch."""
+    try:
+        if mongo_db is None:
+            return False
+        return bool(mongo_db.custom_batch_sessions.find_one({
+            "bot_id": int(client.me.id),
+            "user_id": int(user_id),
+            "active": True,
+        }))
+    except Exception:
+        return False
+
+
 async def genlink_prompt(client, message):
+    # Do not start a single-link capture while Custom Batch is active.
+    if _batch_active(client, message.from_user.id):
+        await message.reply("⚠️ Custom Batch is active. Use 🔗 GENERATE LINK on the batch panel when finished.")
+        raise StopPropagation
     _PENDING[(client.me.id, message.from_user.id)] = int(time.time())
     await message.reply(
         "📩 <b>Send or forward the message/file now.</b>\n\n"
@@ -43,6 +61,13 @@ async def capture_single(client, message):
     key = (client.me.id, message.from_user.id)
     if key not in _PENDING:
         return
+
+    # CRITICAL: Custom Batch owns forwarded messages while its session is active.
+    # Never consume a batch message here and never emit HERE IS YOUR LINK.
+    if _batch_active(client, message.from_user.id):
+        _PENDING.pop(key, None)
+        return
+
     _PENDING.pop(key, None)
     if message.text and message.text.strip().lower() == "/cancel":
         await message.reply("❌ Cancelled.")
