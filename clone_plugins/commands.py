@@ -147,8 +147,12 @@ async def start(client, message):
             [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
         ]
         caption = script.CLONE_START_TXT.format(message.from_user.mention, me.mention)
-        try: return await message.reply_photo(photo=random.choice(PICS), caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
-        except Exception: return await message.reply(caption, reply_markup=InlineKeyboardMarkup(buttons))
+        rec = bot_record(client)
+        start_photo = rec.get("start_pic") or random.choice(PICS)
+        try: return await message.reply_photo(photo=start_photo, caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
+        except Exception:
+            try: return await message.reply_photo(photo=random.choice(PICS), caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
+            except Exception: return await message.reply(caption, reply_markup=InlineKeyboardMarkup(buttons))
     data = message.command[1]
     if data.lower() in ("clone", "settings"):
         return await message.reply("⚙️ <b>Settings</b>\nCustomize your settings as your need.", reply_markup=settings_menu())

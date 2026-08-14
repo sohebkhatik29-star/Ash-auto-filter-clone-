@@ -72,11 +72,20 @@ async def start(client, message):
             buttons.append([InlineKeyboardButton('🤖 ᴄʀᴇᴀᴛᴇ ʏᴏᴜʀ ᴏᴡɴ ᴄʟᴏɴᴇ ʙᴏᴛ', callback_data='settings')])
         reply_markup = InlineKeyboardMarkup(buttons)
         me = client.me
-        await message.reply_photo(
-            photo=random.choice(PICS),
-            caption=script.START_TXT.format(message.from_user.mention, me.mention),
-            reply_markup=reply_markup
-        )
+        u_info = await get_user(message.from_user.id)
+        start_photo = (u_info.get("start_pic") if u_info else None) or random.choice(PICS)
+        try:
+            await message.reply_photo(
+                photo=start_photo,
+                caption=script.START_TXT.format(message.from_user.mention, me.mention),
+                reply_markup=reply_markup
+            )
+        except Exception:
+            await message.reply_photo(
+                photo=random.choice(PICS),
+                caption=script.START_TXT.format(message.from_user.mention, me.mention),
+                reply_markup=reply_markup
+            )
         return
 
 # Don't Remove Credit Tg - @movies_1780

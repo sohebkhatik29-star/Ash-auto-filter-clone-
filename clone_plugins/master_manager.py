@@ -66,7 +66,7 @@ def manage_markup(bid):
         [InlineKeyboardButton("📊 STATS", callback_data=f"cm:{bid}:stats"), InlineKeyboardButton("🗑 DELETE", callback_data=f"cm:{bid}:delete")],
         [InlineKeyboardButton("🔗 LINK SHORTENER", callback_data=f"cm:{bid}:shortener")],
         [InlineKeyboardButton("📝 CUSTOM CAPTION", callback_data=f"cm:{bid}:caption"), InlineKeyboardButton("➕ CUSTOM BUTTON", callback_data=f"cm:{bid}:button")],
-        [InlineKeyboardButton("🛡️ PROTECT CONTENT", callback_data=f"cm:{bid}:protect")],
+        [InlineKeyboardButton("🖼️ START PHOTO", callback_data=f"cm:{bid}:startpic"), InlineKeyboardButton("🛡️ PROTECT CONTENT", callback_data=f"cm:{bid}:protect")],
         [InlineKeyboardButton("‹ BACK", callback_data="my_clones")]
     ])
 
@@ -100,7 +100,7 @@ async def manage_clone(client, query):
     await query.answer()
 
 
-@Client.on_callback_query(filters.regex(r"^cm:\d+:(startmsg|force|mods|autodelete|noforward|access|transfer|deactivate|mode|restart|stats|delete|shortener|caption|button|protect)$"))
+@Client.on_callback_query(filters.regex(r"^cm:\d+:(startmsg|force|mods|autodelete|noforward|access|transfer|deactivate|mode|restart|stats|delete|shortener|caption|button|startpic|protect)$"))
 async def clone_manage_action(client, query):
     _, raw, action = query.data.split(":")
     bid = int(raw)
@@ -237,6 +237,18 @@ async def clone_manage_action(client, query):
         site = site.replace("https://", "").replace("http://", "").rstrip("/")
         update_bot(bid, shortener_api=api, base_site=site)
         return await query.message.edit_text("🔗 <b>LINK SHORTENER</b>\n\nAPI and base site saved for this clone.", reply_markup=action_back(bid))
+
+    if action == "startpic":
+        await query.answer()
+        ans = await client.ask(query.from_user.id, "🖼️ Send image URL for the clone start photo. Send <code>off</code> to reset to default.", timeout=120)
+        text = (ans.text or "").strip()
+        if text.lower() == "off":
+            update_bot(bid, start_pic=None)
+            return await query.message.edit_text("🖼️ <b>START PHOTO</b>\n\nReset to default photo.", reply_markup=action_back(bid))
+        if not text.startswith(("http://", "https://")):
+            return await query.message.edit_text("❌ URL must start with http:// or https://", reply_markup=action_back(bid))
+        update_bot(bid, start_pic=text)
+        return await query.message.edit_text("🖼️ <b>START PHOTO</b>\n\nCustom start photo updated successfully.", reply_markup=action_back(bid))
 
     if action == "transfer":
         return await edit_setting(query, bid, "🔄 <b>TRANSFER DB</b>", "Ownership transfer requires an explicit target user ID. Use the master command workflow when this is needed.")

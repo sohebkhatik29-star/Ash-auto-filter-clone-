@@ -38,6 +38,7 @@ def menu():
         [InlineKeyboardButton("🔗 LINK SHORTENER", callback_data="cset:shortener")],
         [InlineKeyboardButton("📝 CUSTOM CAPTION", callback_data="cset:caption")],
         [InlineKeyboardButton("➕ CUSTOM BUTTON", callback_data="cset:button")],
+        [InlineKeyboardButton("🖼️ START PHOTO", callback_data="cset:startpic")],
         [InlineKeyboardButton("🛡️ PROTECT CONTENT", callback_data="cset:protect")],
     ])
 
@@ -107,8 +108,19 @@ async def callbacks(client, query):
         save(client, custom_buttons=buttons)
         return await query.message.edit_text("➕ <b>CUSTOM BUTTON</b>\n\nButton added successfully.", reply_markup=back)
 
+    if action == "startpic":
+        ans = await client.ask(query.from_user.id, "🖼️ Send image URL for start photo. Send <code>off</code> to reset to default.", timeout=120)
+        text = (ans.text or "").strip()
+        if text.lower() == "off":
+            save(client, start_pic=None)
+            return await query.message.edit_text("🖼️ <b>START PHOTO</b>\n\nReset to default photo.", reply_markup=back)
+        if not text.startswith(("http://", "https://")):
+            return await query.message.edit_text("❌ URL must start with http:// or https://", reply_markup=back)
+        save(client, start_pic=text)
+        return await query.message.edit_text("🖼️ <b>START PHOTO</b>\n\nCustom start photo saved successfully.", reply_markup=back)
+
 
 def register(client):
     client.add_handler(MessageHandler(settings, filters.command("settings") & filters.private), group=0)
-    client.add_handler(CallbackQueryHandler(callbacks, filters.regex(r"^cset:(home|shortener|caption|button|protect)$")), group=0)
+    client.add_handler(CallbackQueryHandler(callbacks, filters.regex(r"^cset:(home|shortener|caption|button|startpic|protect)$")), group=0)
     return client

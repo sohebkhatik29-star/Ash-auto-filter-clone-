@@ -16,6 +16,7 @@ def master_settings_markup():
         [InlineKeyboardButton("CUSTOM CAPTION 🖌", callback_data="custom_caption")],
         [InlineKeyboardButton("CUSTOM BUTTON ➕", callback_data="custom_button")],
         [InlineKeyboardButton("PROTECT CONTENT ☂️", callback_data="protect_menu")],
+        [InlineKeyboardButton("START PHOTO 🖼️", callback_data="start_photo_menu")],
         [InlineKeyboardButton("‹ BACK", callback_data="settings_back")],
     ])
 
@@ -243,6 +244,69 @@ async def callbacks(client, query):
         await query.answer()
         raise StopPropagation
 
+    if data == "start_photo_menu":
+        user = await get_user(query.from_user.id)
+        has_pic = bool(user.get("start_pic"))
+        status_str = "CUSTOM PHOTO SET ✅" if has_pic else "DEFAULT PHOTO 🖼️"
+        text = (
+            "<b>Start Message Photo:</b>\n"
+            "You can set a custom photo/banner that appears on /start command.\n\n"
+            f"• <b>Status:</b> {status_str}\n\n"
+            "• <b>Set/Edit:</b> Send <code>/set_pic https://example.com/image.jpg</code> or reply to a photo with <code>/set_pic</code>\n"
+            "• <b>See:</b> View your current start photo\n"
+            "• <b>Delete:</b> Reset to default photo"
+        )
+        markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Edit", callback_data="start_pic_edit"),
+                InlineKeyboardButton("See", callback_data="start_pic_see"),
+                InlineKeyboardButton("Delete", callback_data="start_pic_delete")
+            ],
+            [InlineKeyboardButton("‹ back", callback_data="master_settings")]
+        ])
+        await query.message.edit_text(text, reply_markup=markup)
+        await query.answer()
+        raise StopPropagation
+
+    if data == "start_pic_edit":
+        await query.answer("Send /set_pic <Image_URL> or reply to a photo with /set_pic", show_alert=True)
+        raise StopPropagation
+
+    if data == "start_pic_see":
+        user = await get_user(query.from_user.id)
+        pic = user.get("start_pic")
+        if pic:
+            try:
+                await client.send_photo(chat_id=query.from_user.id, photo=pic, caption="🖼️ <b>Your Custom Start Photo</b>")
+                await query.answer()
+            except Exception:
+                await query.answer(f"Photo URL:\n{pic}", show_alert=True)
+        else:
+            await query.answer("You are currently using the default start photo.", show_alert=True)
+        raise StopPropagation
+
+    if data == "start_pic_delete":
+        await update_user_info(query.from_user.id, {"start_pic": None})
+        await query.answer("Start photo reset to default.", show_alert=True)
+        text = (
+            "<b>Start Message Photo:</b>\n"
+            "You can set a custom photo/banner that appears on /start command.\n\n"
+            "• <b>Status:</b> DEFAULT PHOTO 🖼️\n\n"
+            "• <b>Set/Edit:</b> Send <code>/set_pic https://example.com/image.jpg</code> or reply to a photo with <code>/set_pic</code>\n"
+            "• <b>See:</b> View your current start photo\n"
+            "• <b>Delete:</b> Reset to default photo"
+        )
+        markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Edit", callback_data="start_pic_edit"),
+                InlineKeyboardButton("See", callback_data="start_pic_see"),
+                InlineKeyboardButton("Delete", callback_data="start_pic_delete")
+            ],
+            [InlineKeyboardButton("‹ back", callback_data="master_settings")]
+        ])
+        await query.message.edit_text(text, reply_markup=markup)
+        raise StopPropagation
+
     if data == "settings_back":
         buttons = [[
             InlineKeyboardButton('💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ', url='https://www.youtube.com/@tech_as_0')
@@ -276,12 +340,46 @@ async def callbacks(client, query):
         raise StopPropagation
 
 
+async def set_pic_cmd(client, message):
+    user_id = message.from_user.id
+    pic_url = None
+    if message.reply_to_message and message.reply_to_message.photo:
+        pic_url = message.reply_to_message.photo.file_id
+    elif len(message.command) > 1:
+        pic_url = message.command[1].strip()
+    if not pic_url:
+        return await message.reply_text("❌ <b>Usage:</b>\nSend <code>/set_pic https://example.com/image.jpg</code> or reply to a photo with <code>/set_pic</code>")
+    await update_user_info(user_id, {"start_pic": pic_url})
+    await message.reply_text("✅ <b>Custom start photo saved successfully!</b>")
+
+
+async def del_pic_cmd(client, message):
+    user_id = message.from_user.id
+    await update_user_info(user_id, {"start_pic": None})
+    await message.reply_text("✅ <b>Start photo reset to default.</b>")
+
+
+async def get_pic_cmd(client, message):
+    user_id = message.from_user.id
+    user = await get_user(user_id)
+    pic = user.get("start_pic")
+    if pic:
+        try:
+            return await message.reply_photo(photo=pic, caption="🖼️ <b>Your Custom Start Photo</b>")
+        except Exception:
+            return await message.reply_text(f"🖼️ <b>Your Custom Start Photo URL:</b>\n{pic}")
+    await message.reply_text("ℹ️ <b>You are using default start photo.</b>")
+
+
 def register(client):
     client.add_handler(MessageHandler(settings, filters.command("settings") & filters.private), group=-1)
+    client.add_handler(MessageHandler(set_pic_cmd, filters.command(["set_pic", "setpic"]) & filters.private), group=-1)
+    client.add_handler(MessageHandler(del_pic_cmd, filters.command(["del_pic", "delpic"]) & filters.private), group=-1)
+    client.add_handler(MessageHandler(get_pic_cmd, filters.command(["get_pic", "getpic"]) & filters.private), group=-1)
     client.add_handler(
         CallbackQueryHandler(
             callbacks,
-            filters.regex(r"^(settings|master_settings|settings_back|my_clone|my_clones|google_backup|master_google_backup|google_connect|link_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_toggle_on|protect_toggle_off|manage_clone:\d+|cm:\d+:[a-z_]+|cmdelete:\d+)$"),
+            filters.regex(r"^(settings|master_settings|settings_back|my_clone|my_clones|google_backup|master_google_backup|google_connect|link_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_toggle_on|protect_toggle_off|start_photo_menu|start_pic_edit|start_pic_see|start_pic_delete|manage_clone:\d+|cm:\d+:[a-z_]+|cmdelete:\d+)$"),
         ),
         group=-1,
     )
