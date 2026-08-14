@@ -35,17 +35,41 @@ def _controls(session_id):
 
 
 def _text(count):
+    if not count:
+        return (
+            "📦 <b>CUSTOM BATCH</b>\n\n"
+            "Send or forward as many messages as you want.\n"
+            "You can select multiple Telegram messages and forward them together; "
+            "I will save every message automatically.\n\n"
+            "When finished, tap 🔗 <b>GENERATE LINK</b>."
+        )
     return (
         "📦 <b>CUSTOM BATCH</b>\n\n"
         f"📥 <b>Stored Messages: {count}</b>\n\n"
         "Send/forward more messages, or tap 🔗 <b>GENERATE LINK</b>."
-    ) if count else (
-        "📦 <b>CUSTOM BATCH</b>\n\n"
-        "Send or forward as many messages as you want.\n"
-        "You can select multiple Telegram messages and forward them together; "
-        "I will save every message automatically.\n\n"
-        "When finished, tap 🔗 <b>GENERATE LINK</b>."
     )
+
+
+async def _replace_panel(client, session, count):
+    """Delete the previous status panel and put exactly one fresh panel below it."""
+    old_chat = session.get("control_chat_id")
+    old_msg = session.get("control_message_id")
+    if old_chat and old_msg:
+        try:
+            await client.delete_messages(int(old_chat), int(old_msg))
+        except Exception:
+            pass
+
+    sent = await client.send_message(
+        int(session["user_id"]),
+        _text(count),
+        reply_markup=_controls(session["session_id"]),
+    )
+    mongo_db.custom_batch_sessions.update_one(
+        {"_id": session["_id"], "active": True},
+        {"$set": {"control_chat_id": int(sent.chat.id), "control_message_id": int(sent.id)}}
+    )
+    return sent
 
 
 async def custom_batch(client, message):
@@ -66,12 +90,9 @@ async def custom_batch(client, message):
             "created_at": int(time.time()),
             "updated_at": int(time.time()),
         }
-        mongo_db.custom_batch_sessions.insert_one(doc)
-        sent = await message.reply(_text(0), reply_markup=_controls(session_id))
-        mongo_db.custom_batch_sessions.update_one(
-            {"session_id": session_id},
-            {"$set": {"control_chat_id": int(sent.chat.id), "control_message_id": int(sent.id)}}
-        )
+        result = mongo_db.custom_batch_sessions.insert_one(doc)
+        session = mongo_db.custom_batch_sessions.find_one({"_id": result.inserted_id})
+        await _replace_panel(client, session, 0)
     raise StopPropagation
 
 
@@ -101,22 +122,11 @@ async def capture_message(client, message):
             {"_id": session["_id"], "active": True},
             {"$set": {"messages": messages, "updated_at": int(time.time())}}
         )
+        session["messages"] = messages
 
-        # IMPORTANT: edit the original panel. Never delete/send a new panel.
-        control_chat_id = session.get("control_chat_id")
-        control_message_id = session.get("control_message_id")
-        if control_chat_id and control_message_id:
-            try:
-                await client.edit_message_text(
-                    int(control_chat_id),
-                    int(control_message_id),
-                    _text(len(messages)),
-                    reply_markup=_controls(session["session_id"]),
-                )
-            except Exception:
-                # Do not create a replacement panel here. The original panel
-                # remains the single source of truth for the session.
-                pass
+        # Requested UI: remove the previous counter panel and put the refreshed
+        # counter panel underneath the newest forwarded message.
+        await _replace_panel(client, session, len(messages))
 
 
 async def _generate(client, query, session):
@@ -145,12 +155,22 @@ async def _generate(client, query, session):
     except Exception:
         shown = url
 
+    # Remove the last counter panel and show only the generated link panel.
+    old_chat = session.get("control_chat_id")
+    old_msg = session.get("control_message_id")
+    if old_chat and old_msg:
+        try:
+            await client.delete_messages(int(old_chat), int(old_msg))
+        except Exception:
+            pass
+
+    text = (
+        "✅ <b>CUSTOM BATCH LINK GENERATED</b>\n\n"
+        f"📦 <b>Messages:</b> {len(messages)}\n\n"
+        f"🔗 <b>Link:</b>\n{shown}"
+    )
+    await client.send_message(int(session["user_id"]), text)
     mongo_db.custom_batch_sessions.delete_one({"_id": session["_id"]})
-    text = "✅ <b>CUSTOM BATCH LINK GENERATED</b>\n\n" f"📦 <b>Messages:</b> {len(messages)}\n\n" f"🔗 <b>Link:</b>\n{shown}"
-    try:
-        await query.message.edit_text(text)
-    except Exception:
-        pass
     await query.answer("Link generated successfully.")
 
 
@@ -170,11 +190,14 @@ async def callback(client, query):
         if action == "generate":
             await _generate(client, query, session)
         elif action == "cancel":
+            old_chat = session.get("control_chat_id")
+            old_msg = session.get("control_message_id")
+            if old_chat and old_msg:
+                try:
+                    await client.delete_messages(int(old_chat), int(old_msg))
+                except Exception:
+                    pass
             mongo_db.custom_batch_sessions.delete_one({"_id": session["_id"]})
-            try:
-                await query.message.edit_text("❌ <b>Custom batch cancelled.</b>")
-            except Exception:
-                pass
             await query.answer("Cancelled.")
     raise StopPropagation
 
