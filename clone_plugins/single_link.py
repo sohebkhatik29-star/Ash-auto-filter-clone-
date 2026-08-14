@@ -102,8 +102,7 @@ def register(client):
     client.add_handler(MessageHandler(genlink_prompt, filters.command(["genlink", "getlink"]) & private), group=-100)
     client.add_handler(MessageHandler(capture_single, private), group=-99)
     client.add_handler(MessageHandler(open_single, filters.command("start") & private), group=-98)
-    # Also register the interactive multi-message collector. This keeps the
-    # clone runtime compatible without needing a second registration module.
-    from clone_plugins import multi_batch
-    multi_batch.register(client)
+    # IMPORTANT: multi_batch is NOT registered here. It was creating a second
+    # custom-batch collector and replying with a new panel for every message.
+    # The sole batch collector is clone_plugins.custom_batch.
     return client
