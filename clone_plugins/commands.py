@@ -211,8 +211,30 @@ async def base_site_handler(client,message):
     await update_user_info(uid,{"base_site":site}); await message.reply("✅ Base site updated successfully.")
 
 
-async def shortener(client,message):
-    uid=owner_id(client) or message.from_user.id; user=await get_user(uid); await message.reply(f"🔗 <b>Link Shortener</b>\nAPI: <code>{user.get('shortener_api') or 'Not set'}</code>\nSite: <code>{user.get('base_site') or 'Not set'}</code>\n\nUse /api KEY and /base_site example.com to configure it.")
+async def shortener(client, message):
+    uid = owner_id(client) or message.from_user.id
+    user = await get_user(uid)
+    if not (user.get("base_site") and user.get("shortener_api")):
+        return await message.reply(
+            "<b>Link Shortener</b>\n\n"
+            "To shorten your links using your preferred provider, make sure to connect it with me first.\n\n"
+            "Use /settings to connect your shortener provider."
+        )
+    ans = await client.ask(message.chat.id, "Send your Link which you want to shorten", timeout=120)
+    link = (ans.text or "").strip()
+    if not link or link.startswith("/"):
+        return await message.reply("❌ Invalid link or cancelled.")
+    short_link = await get_short_link(user, link)
+    if not short_link or short_link == link:
+        return await message.reply("❌ Failed to shorten link. Please check your shortener API and site settings.")
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔗 SHARE SHORTENED LINK ↗️", url=f"https://t.me/share/url?url={short_link}")]
+    ])
+    await message.reply(
+        f"Here is your shortened link:\n\n{short_link}",
+        reply_markup=markup,
+        disable_web_page_preview=True
+    )
 
 
 async def settings_command(client,message):
@@ -277,53 +299,80 @@ async def callbacks(client,query):
         return await query.answer("Google Drive backup is stored securely in MongoDB database.", show_alert=True)
     if data=="link_shortener":
         uid=owner_id(client) or query.from_user.id; u=await get_user(uid)
-        site = u.get('base_site') or 'Not set'
-        api = u.get('shortener_api') or 'Not set'
+        site = u.get('base_site')
+        api = u.get('shortener_api')
+        if not (site and api):
+            text = (
+                "<b>Link Shortener</b>\n\n"
+                "To shorten your links using your preferred provider, make sure to connect it with me first."
+            )
+            return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("Add Shortener", callback_data="add_shortener")],
+                [InlineKeyboardButton("back", callback_data="settings")]
+            ]))
         text = (
-            "<b>Link Shortener</b>\n"
+            "<b>Link Shortener</b>\n\n"
             f"- Shortener: {site}\n"
             f"- Shortener Api: {api}\n\n"
             "You can now use the /shortener command to shorten any links."
         )
-        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Delete shortener", callback_data="delete_shortener")], [InlineKeyboardButton("‹ back", callback_data="settings")]]))
+        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Delete shortener", callback_data="delete_shortener")],
+            [InlineKeyboardButton("back", callback_data="settings")]
+        ]))
+    if data=="add_shortener":
+        await query.answer()
+        site_msg = await client.ask(query.from_user.id, "Send your shortener site url\n\neg: https://droplink.co", timeout=120)
+        site_raw = (site_msg.text or "").strip()
+        if not site_raw or site_raw.startswith("/"):
+            return await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]]))
+        site_clean = site_raw.replace("https://", "").replace("http://", "").split("/")[0].strip()
+        api_msg = await client.ask(query.from_user.id, f"Send your shortener ({site_clean}) api token, get it from <a href='https://{site_clean}/member/tools/api'>here</a>", timeout=120)
+        api_raw = (api_msg.text or "").strip()
+        if not api_raw or api_raw.startswith("/"):
+            return await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]]))
+        uid = owner_id(client) or query.from_user.id
+        await update_user_info(uid, {"base_site": site_clean, "shortener_api": api_raw})
+        if mongo_db is not None:
+            mongo_db.bots.update_one({"bot_id": client.me.id}, {"$set": {"base_site": site_clean, "shortener_api": api_raw}}, upsert=True)
+        return await query.message.edit_text(
+            f"✨ <b>Successfully {site_clean} added as your link shortener Provider</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]])
+        )
     if data=="delete_shortener":
         uid=owner_id(client) or query.from_user.id
         await update_user_info(uid, {"base_site": None, "shortener_api": None})
-        await query.answer("Shortener deleted.", show_alert=True)
-        text = (
-            "<b>Link Shortener</b>\n"
-            "- Shortener: Not set\n"
-            "- Shortener Api: Not set\n\n"
-            "You can now use the /shortener command to shorten any links."
+        if mongo_db is not None:
+            mongo_db.bots.update_one({"bot_id": client.me.id}, {"$set": {"base_site": None, "shortener_api": None}}, upsert=True)
+        await query.answer("✨ Successfully deleted your link shortener provider", show_alert=False)
+        return await query.message.edit_text(
+            "✨ <b>Successfully deleted your link shortener provider</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]])
         )
-        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Delete shortener", callback_data="delete_shortener")], [InlineKeyboardButton("‹ back", callback_data="settings")]]))
     if data=="custom_caption":
         rec=bot_record(client)
         text = (
-            "<b>Custom Caption:</b>\n"
+            "<b>Custom Caption:</b>\n\n"
             "You can add a custom caption to your media messages instead of its original caption\n\n"
             "<b>Fillings:</b>\n"
             "• {file_name} : File Name\n"
             "• {file_size} : File Size\n"
             "• {caption} : Orginal Caption"
         )
-        cap = rec.get("custom_caption")
-        if cap:
-            text += f"\n\n<b>Current:</b> <code>{cap}</code>"
         return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("Edit", callback_data="caption_edit"), InlineKeyboardButton("See", callback_data="caption_see"), InlineKeyboardButton("Delete", callback_data="caption_delete")],
-            [InlineKeyboardButton("‹ back", callback_data="settings")]
+            [InlineKeyboardButton("back", callback_data="settings")]
         ]))
     if data=="caption_see":
         rec=bot_record(client)
         cap = rec.get("custom_caption") or "Default caption"
-        return await query.answer(f"Caption:\n{cap}", show_alert=True)
+        return await query.answer(f"Custom Caption:\n\n{cap}", show_alert=True)
     if data=="caption_delete":
         if mongo_db is not None:
             mongo_db.bots.update_one({"bot_id": client.me.id}, {"$set": {"custom_caption": None}})
         await query.answer("Custom caption deleted.", show_alert=True)
         text = (
-            "<b>Custom Caption:</b>\n"
+            "<b>Custom Caption:</b>\n\n"
             "You can add a custom caption to your media messages instead of its original caption\n\n"
             "<b>Fillings:</b>\n"
             "• {file_name} : File Name\n"
@@ -332,36 +381,78 @@ async def callbacks(client,query):
         )
         return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("Edit", callback_data="caption_edit"), InlineKeyboardButton("See", callback_data="caption_see"), InlineKeyboardButton("Delete", callback_data="caption_delete")],
-            [InlineKeyboardButton("‹ back", callback_data="settings")]
+            [InlineKeyboardButton("back", callback_data="settings")]
         ]))
     if data=="caption_edit":
-        return await query.answer("Send /caption <Your Text> to update caption.", show_alert=True)
+        await query.answer()
+        ans = await client.ask(query.from_user.id, "Send Your New Custom Caption", timeout=180)
+        cap_text = (ans.text or "").strip()
+        if not cap_text or cap_text.startswith("/cancel"):
+            return await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="custom_caption")]]))
+        if mongo_db is not None:
+            mongo_db.bots.update_one({"bot_id": client.me.id}, {"$set": {"custom_caption": cap_text}}, upsert=True)
+        uid = owner_id(client) or query.from_user.id
+        await update_user_info(uid, {"custom_caption": cap_text})
+        return await query.message.edit_text(
+            "✨ <b>Successfully Saved Your Caption</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="custom_caption")]])
+        )
     if data=="custom_button":
-        text = "<b>Custom Button:</b>\nYou can add a custom button to your message"
-        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("➕", callback_data="button_add")],
-            [InlineKeyboardButton("‹ back", callback_data="settings"), InlineKeyboardButton("Delete", callback_data="button_delete")]
-        ]))
+        rec=bot_record(client)
+        buttons = rec.get("custom_buttons", [])
+        rows = []
+        for b in buttons:
+            if isinstance(b, dict) and b.get("text") and b.get("url"):
+                rows.append([InlineKeyboardButton(b["text"], url=b["url"]), InlineKeyboardButton("➕", callback_data="button_add")])
+        if not rows:
+            rows.append([InlineKeyboardButton("➕", callback_data="button_add")])
+        rows.append([InlineKeyboardButton("back", callback_data="settings"), InlineKeyboardButton("Delete", callback_data="button_delete")])
+        text = "<b>Custom Button:</b>\n\nYou can add a custom button to your message"
+        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(rows))
     if data=="button_add":
-        return await query.answer("Send /button <Button Text> - <URL> to set custom button.", show_alert=True)
+        await query.answer()
+        ans_txt = await client.ask(query.from_user.id, "Send text for button", timeout=120)
+        btn_txt = (ans_txt.text or "").strip()
+        if not btn_txt or btn_txt.startswith("/cancel"):
+            return await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="custom_button")]]))
+        ans_url = await client.ask(query.from_user.id, "Send url for button", timeout=120)
+        btn_url = (ans_url.text or "").strip()
+        if not (btn_url.startswith("http://") or btn_url.startswith("https://") or btn_url.startswith("tg://")):
+            return await query.message.edit_text("❌ URL must start with http://, https:// or tg://", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="custom_button")]]))
+        rec = bot_record(client)
+        btns = list(rec.get("custom_buttons", []))
+        btns.append({"text": btn_txt[:64], "url": btn_url})
+        if mongo_db is not None:
+            mongo_db.bots.update_one({"bot_id": client.me.id}, {"$set": {"custom_buttons": btns}}, upsert=True)
+        uid = owner_id(client) or query.from_user.id
+        await update_user_info(uid, {"custom_buttons": btns})
+        return await query.message.edit_text(
+            "✨ <b>Successfully Button Added</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="custom_button")]])
+        )
     if data=="button_delete":
         if mongo_db is not None:
             mongo_db.bots.update_one({"bot_id": client.me.id}, {"$set": {"custom_buttons": []}})
+        uid = owner_id(client) or query.from_user.id
+        await update_user_info(uid, {"custom_buttons": []})
         await query.answer("Custom buttons deleted.", show_alert=True)
-        return await query.message.edit_text("<b>Custom Button:</b>\nYou can add a custom button to your message", reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("➕", callback_data="button_add")],
-            [InlineKeyboardButton("‹ back", callback_data="settings"), InlineKeyboardButton("Delete", callback_data="button_delete")]
-        ]))
+        return await query.message.edit_text(
+            "<b>Custom Button:</b>\n\nYou can add a custom button to your message",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕", callback_data="button_add")],
+                [InlineKeyboardButton("back", callback_data="settings"), InlineKeyboardButton("Delete", callback_data="button_delete")]
+            ])
+        )
     if data=="protect_menu":
         rec=bot_record(client)
         is_on = bool(rec.get("protect_content", False))
-        status_str = "ENABLED ✅" if is_on else "DISABLED ❌"
+        status_str = "Enabled ✅" if is_on else "Disabled ❌"
         text = (
-            "<b>Protect Content</b>\n"
+            "<b>Protect Content</b>\n\n"
             "Restrict other users from forwarding contents from your shareable link.\n\n"
-            "<b>Available Mode's:</b>\n"
-            "1) Enable: Forwarding is blocked. Once you create a link with this mode, the restriction remains even if you later disabled this feature.\n"
-            "2) Disable: Forwarding restrictions depend on whether the \"no forward\" feature is currently enabled in the bot. If enabled, no forward is restricted. This applies to all links, including those created before; if disabled, forwarding is allowed.\n\n"
+            "<b>Available Mode's:</b>\n\n"
+            "1) <b>Enable</b>: Forwarding is blocked. Once you create a link with this mode, the restriction remains even if you later disabled this feature.\n\n"
+            "2) <b>Disable</b>: Forwarding restrictions depend on whether the \"no forward\" feature is currently enabled in the bot. If enabled, forwarding is restricted. This applies to all links, including those created before; if disabled, forwarding is allowed.\n\n"
             f"- status: {status_str}"
         )
         btn = InlineKeyboardButton("Disable ❌", callback_data="protect_off") if is_on else InlineKeyboardButton("Enable ✅", callback_data="protect_on")
@@ -371,17 +462,12 @@ async def callbacks(client,query):
         val = (data == "protect_on")
         if mongo_db is not None:
             mongo_db.bots.update_one({"bot_id":client.me.id},{"$set":{"protect_content":val}},upsert=True)
-        status_str = "ENABLED ✅" if val else "DISABLED ❌"
-        text = (
-            "<b>Protect Content</b>\n"
-            "Restrict other users from forwarding contents from your shareable link.\n\n"
-            "<b>Available Mode's:</b>\n"
-            "1) Enable: Forwarding is blocked. Once you create a link with this mode, the restriction remains even if you later disabled this feature.\n"
-            "2) Disable: Forwarding restrictions depend on whether the \"no forward\" feature is currently enabled in the bot. If enabled, no forward is restricted. This applies to all links, including those created before; if disabled, forwarding is allowed.\n\n"
-            f"- status: {status_str}"
+        uid = owner_id(client) or query.from_user.id
+        await update_user_info(uid, {"protect_content": val})
+        return await query.message.edit_text(
+            f"✨ <b>Successfully Protect Content {'Enable' if val else 'Disable'}</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="protect_menu")]])
         )
-        btn = InlineKeyboardButton("Disable ❌", callback_data="protect_off") if val else InlineKeyboardButton("Enable ✅", callback_data="protect_on")
-        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([[btn], [InlineKeyboardButton("‹ back", callback_data="settings")]]))
     return await query.answer("Unknown option.",show_alert=True)
 
 
@@ -395,5 +481,5 @@ def register(client):
     client.add_handler(MessageHandler(base_site_handler,filters.command("base_site")&private),group=1)
     client.add_handler(MessageHandler(shortener,filters.command("shortener")&private),group=1)
     client.add_handler(MessageHandler(settings_command,filters.command("settings")&private),group=1)
-    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|settings|settings_back|my_clone|google_backup|google_connect|link_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_on|protect_off)$")),group=0)
+    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|settings|settings_back|my_clone|google_backup|google_connect|link_shortener|add_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_on|protect_off)$")),group=0)
     return client

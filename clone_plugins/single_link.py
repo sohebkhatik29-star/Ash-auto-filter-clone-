@@ -128,8 +128,47 @@ async def open_single(client, message):
         await message.reply("<b>🔐 Please join the required channel(s) first.</b>", reply_markup=force)
         raise StopPropagation
     try:
-        await client.copy_message(chat_id=message.from_user.id, from_chat_id=int(record["source_chat_id"]), message_id=int(record["source_message_id"]))
-    except Exception:
+        rec = bot_record(client)
+        is_protect = bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
+        
+        # Determine caption
+        custom_cap = rec.get("custom_caption")
+        caption_to_use = None
+        if custom_cap:
+            caption_to_use = custom_cap
+        
+        # Determine buttons
+        custom_btns = rec.get("custom_buttons", [])
+        markup = None
+        if custom_btns:
+            rows = [[InlineKeyboardButton(b["text"], url=b["url"])] for b in custom_btns if isinstance(b, dict) and b.get("text") and b.get("url")]
+            if rows:
+                markup = InlineKeyboardMarkup(rows)
+
+        delivered = await client.copy_message(
+            chat_id=message.from_user.id,
+            from_chat_id=int(record["source_chat_id"]),
+            message_id=int(record["source_message_id"]),
+            caption=caption_to_use,
+            reply_markup=markup,
+            protect_content=is_protect,
+        )
+
+        if rec.get("auto_delete_enabled", True):
+            minutes = max(1, int(rec.get("auto_delete_minutes", 15)))
+            warning = await client.send_message(
+                chat_id=message.from_user.id,
+                text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nThis Movie File/Video will be deleted in <b><u>{minutes} minutes</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>"
+            )
+            import asyncio
+            async def _auto_del():
+                await asyncio.sleep(minutes * 60)
+                try: await delivered.delete()
+                except Exception: pass
+                try: await warning.delete()
+                except Exception: pass
+            asyncio.create_task(_auto_del())
+    except Exception as e:
         await message.reply("❌ Unable to deliver this message. The original message may no longer be available.")
     raise StopPropagation
 
