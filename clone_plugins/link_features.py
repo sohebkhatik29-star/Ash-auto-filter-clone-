@@ -46,21 +46,3 @@ async def make_single_link(client, message):
     link = await make_link(client, message.from_user.id, file_id)
     await message.reply_text(f"<b>Your file link:</b>\n{link}")
 
-
-@Client.on_message(filters.command("batch") & filters.private)
-async def make_batch_link(client, message):
-    if len(message.command) != 3:
-        return await message.reply_text(
-            "Usage: /batch <first_message_id> <last_message_id>\n"
-            "Example: /batch 25 30 (from the configured file-store channel)"
-        )
-    try:
-        first, last = int(message.command[1]), int(message.command[2])
-    except ValueError:
-        return await message.reply_text("Message IDs must be numbers.")
-    if first < 1 or last < first or last - first > 50:
-        return await message.reply_text("Use a valid range of 1-50 messages.")
-    bot = await client.get_me()
-    payload = encode_payload(f"batch_{first}_{last}")
-    link = f"https://t.me/{bot.username}?start={payload}"
-    await message.reply_text(f"<b>Batch link:</b>\n{link}")

@@ -90,15 +90,15 @@ async def start():
         from clone_plugins.advanced import register as register_advanced
         from clone_plugins.single_link import register as register_single_link
         from clone_plugins.custom_batch import register as register_custom_batch
+        from clone_plugins.channel_batch import register as register_channel_batch
         register_master_settings(StreamBot)
         register_commands(StreamBot)
         register_advanced(StreamBot)
         # The master bot also supports the same interactive single-link flow.
         register_single_link(StreamBot)
-        # Custom batch must run before the single-link collector. Its active
-        # session owns forwarded messages and stops propagation so a batch file
-        # cannot also create an extra single-link panel.
+        # Custom batch and channel batch must run with high priority and stop propagation
         register_custom_batch(StreamBot, base_group=-101)
+        register_channel_batch(StreamBot, base_group=-102)
         logging.info('ASH master command handlers loaded successfully')
     except Exception:
         logging.exception('Unable to load ASH master command handlers')

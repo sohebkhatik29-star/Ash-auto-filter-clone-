@@ -28,10 +28,3 @@ async def make_single_link(client, message):
     payload = encode_payload(f"file_{file_id}")
     await message.reply_text(f"<b>Your file link:</b>\nhttps://t.me/{bot.username}?start={payload}")
 
-
-@Client.on_message(filters.command("batch") & filters.private)
-async def batch_help(client, message):
-    await message.reply_text(
-        "<b>Batch link</b>\nReply to a supported file and use /link for a single-file link. "
-        "Multi-message batch generation will be enabled after the file-store channel is configured."
-    )

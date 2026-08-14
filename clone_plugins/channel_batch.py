@@ -8,11 +8,29 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins import commands as cmd
 from clone_plugins.users_api import get_user, get_short_link
 from plugins.clone import mongo_db
+from config import PUBLIC_FILE_STORE, ADMINS
 
 _CHANNEL_BATCH_SESSIONS = {}
 _ACTIVE_DELIVERIES = {}
 
 LINK_REGEX = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me|telegram\.dog)/(?:c/)?([a-zA-Z0-9_]+)/(\d+)")
+
+
+def is_channel_batch_active(bot_id: int, user_id: int) -> bool:
+    return (int(bot_id), int(user_id)) in _CHANNEL_BATCH_SESSIONS
+
+
+def is_allowed_batch(client, user_id: int) -> bool:
+    if PUBLIC_FILE_STORE:
+        return True
+    try:
+        if int(user_id) in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]:
+            return True
+    except Exception:
+        pass
+    if cmd.is_owner_or_mod(client, user_id):
+        return True
+    return cmd.bot_record(client).get("mode") == "public"
 
 
 def _extract_chat_and_msg_id(message):
@@ -42,7 +60,7 @@ def _extract_chat_and_msg_id(message):
 
 
 async def start_batch(client, message):
-    if not cmd.is_owner_or_mod(client, message.from_user.id) and cmd.bot_record(client).get("mode", "private") == "private":
+    if not is_allowed_batch(client, message.from_user.id):
         return await message.reply("❌ Batch generation is private. Only owner/moderators can use it.")
     if mongo_db is None:
         return await message.reply("❌ Database is not configured.")

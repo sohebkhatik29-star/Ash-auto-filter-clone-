@@ -175,25 +175,7 @@ async def genlink(client, message):
     await message.reply(f"🔗 <b>File Link:</b>\n{short if short!=link else link}"+(f"\n\n🔗 <b>Original:</b>\n{link}" if short!=link else ""))
 
 
-async def batch(client, message):
-    if not is_owner_or_mod(client,message.from_user.id) and bot_record(client).get("mode","private")=="private": return await message.reply("❌ Batch generation is private. Only owner/moderators can use it.")
-    replied=message.reply_to_message
-    if not replied: return await message.reply("Reply to the first file and use <code>/batch N</code>.")
-    try:
-        count=int(message.command[1]) if len(message.command)>1 else 1
-        if not 1<=count<=50: raise ValueError
-    except ValueError: return await message.reply("Usage: <code>/batch 5</code> (1-50)")
-    username=(await client.get_me()).username; rec=bot_record(client); protected=bool(rec.get("protect_content",False)) or bool(rec.get("no_forward",False)); links=[]
-    for msg_id in range(replied.id,replied.id+count):
-        try:
-            msg=await client.get_messages(replied.chat.id,msg_id); media=getattr(msg,msg.media.value,None) if msg and msg.media else None; fid=getattr(media,"file_id",None)
-            if fid: links.append(make_file_link(username,fid,protected))
-        except Exception: pass
-    if not links: return await message.reply("❌ No supported files found.")
-    await message.reply("📦 <b>Batch Links</b>\n\n"+"\n".join(f"{i}. {x}" for i,x in enumerate(links,1)))
-
-
-async def custom_batch(client,message): return await batch(client,message)
+async def custom_batch(client,message): return await message.reply("Use /custom_batch or /batch.")
 async def special_link(client,message): return await genlink(client,message)
 async def universal_link(client,message): return await genlink(client,message)
 
@@ -262,7 +244,7 @@ def register(client):
     client.add_handler(MessageHandler(start,filters.command("start")&private),group=0)
     client.add_handler(MessageHandler(help_command,filters.command("help")&private),group=0)
     client.add_handler(MessageHandler(genlink,filters.command(["link","genlink"])&private),group=1)
-    client.add_handler(MessageHandler(batch,filters.command("batch")&private),group=1)
+    # /batch and /custom_batch are handled exclusively by channel_batch and custom_batch modules.
     # /custom_batch is registered exclusively by clone_plugins.custom_batch.
     # Keeping the legacy handler here caused two handlers to create/replace
     # sessions and produced multiple "Stored Messages" panels.

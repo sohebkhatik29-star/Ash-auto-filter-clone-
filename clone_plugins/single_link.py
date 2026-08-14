@@ -30,7 +30,13 @@ def _decode(payload: str):
 
 
 def _batch_active(client, user_id):
-    """Return True while this user is collecting a custom batch."""
+    """Return True while this user is collecting a custom batch or channel batch."""
+    try:
+        from clone_plugins.channel_batch import is_channel_batch_active
+        if is_channel_batch_active(client.me.id, user_id):
+            return True
+    except Exception:
+        pass
     try:
         if mongo_db is None:
             return False

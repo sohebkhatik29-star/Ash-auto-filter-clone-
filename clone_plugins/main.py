@@ -146,53 +146,6 @@ async def clone_link(client, message):
     await send_share_result(client, message)
 
 
-@Client.on_message(filters.command("batch") & filters.private)
-async def clone_batch(client, message):
-    me = await client.get_me()
-    if not is_owner(message, me.id):
-        return await message.reply_text("<b>⛔ Owner/moderator only.</b>")
-    parts = message.text.split()
-    if len(parts) != 3:
-        return await message.reply_text("Use: /batch <first message link> <last message link>")
-    regex = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me)/(?:c/)?([\w-]+)/([0-9]+)$")
-    a, b = regex.match(parts[1]), regex.match(parts[2])
-    if not a or not b or a.group(1) != b.group(1):
-        return await message.reply_text("Invalid or mismatched Telegram message links.")
-    chat = a.group(1)
-    chat_id = int("-100" + chat) if chat.isdigit() else chat
-    first, last = int(a.group(2)), int(b.group(2))
-    if first > last:
-        first, last = last, first
-    try:
-        await client.get_chat(chat_id)
-    except Exception as e:
-        return await message.reply_text(f"I cannot access that chat. Make the bot an admin there.\n<code>{e}</code>")
-    data = []
-    async for m in client.iter_messages(chat_id, last, first):
-        if not m.empty and not m.service:
-            data.append({"channel_id": chat_id, "msg_id": m.id})
-    fd, path = tempfile.mkstemp(prefix="batch_", suffix=".json")
-    os.close(fd)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f)
-    try:
-        post = await client.send_document(LOG_CHANNEL, path, caption="Batch index")
-        token = base64.urlsafe_b64encode(str(post.id).encode()).decode().rstrip("=")
-        await message.reply_text(f"<b>✅ Batch generated</b>\nMessages: <code>{len(data)}</code>\nhttps://t.me/{me.username}?start=BATCH-{token}")
-    finally:
-        try: os.remove(path)
-        except OSError: pass
-
-
-@Client.on_message(filters.command(["custom_batch", "special_link", "universal_link"]) & filters.private)
-async def clone_extra_links(client, message):
-    me = await client.get_me()
-    if not is_owner(message, me.id):
-        return await message.reply_text("<b>⛔ Owner/moderator only.</b>")
-    link = await share_link(client, message)
-    if link:
-        await message.reply_text(f"<b>✅ Link created:</b>\n{link}")
-
 
 @Client.on_message(filters.command("api") & filters.private)
 async def clone_api(client, message):
