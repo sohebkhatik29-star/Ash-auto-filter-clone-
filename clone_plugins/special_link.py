@@ -114,9 +114,9 @@ async def special_link_cmd(client, message):
 
 
 async def _debounced_panel_updater(client, user_id, chat_id, key):
-    """Debounce updating or replacing control panel during heavy bulk forwarding."""
+    """Debounce updating or replacing control panel during heavy bulk forwarding so panel is always at the bottom."""
     try:
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.6)
         session = _SPL_SESSIONS.get(key)
         if not session or session.get("paused"):
             return
@@ -128,18 +128,9 @@ async def _debounced_panel_updater(client, user_id, chat_id, key):
         ctrl_msg_id = session.get("control_msg_id")
         if ctrl_msg_id:
             try:
-                await client.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=ctrl_msg_id,
-                    text=text,
-                    reply_markup=markup,
-                )
-                return
+                await client.delete_messages(chat_id, ctrl_msg_id)
             except Exception:
-                try:
-                    await client.delete_messages(chat_id, ctrl_msg_id)
-                except Exception:
-                    pass
+                pass
 
         sent = await client.send_message(chat_id, text, reply_markup=markup)
         session["control_msg_id"] = sent.id
