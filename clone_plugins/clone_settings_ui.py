@@ -57,7 +57,6 @@ async def callbacks(client, query):
         return await query.answer("❌ Clone owner only.", show_alert=True)
     action = data.split(":", 1)[1]
     r = record(client)
-    back = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="cset:home")]])
 
     if action == "home":
         await query.message.edit_text("⚙️ <b>CLONE SETTINGS</b>\n\nOnly your clone settings are shown here.", reply_markup=menu())
@@ -66,7 +65,7 @@ async def callbacks(client, query):
     if action == "protect":
         state = not bool(r.get("protect_content", False))
         save(client, protect_content=state)
-        return await query.message.edit_text(f"🛡️ <b>PROTECT CONTENT</b>\n\nStatus: <b>{'ON ✅' if state else 'OFF ❌'}</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 TOGGLE", callback_data="cset:protect")],[InlineKeyboardButton("‹ BACK", callback_data="cset:home")]]))
+        return await query.answer(f"🛡️ Protect Content: {'ON' if state else 'OFF'}", show_alert=True)
 
     await query.answer()
     if action == "shortener":
@@ -74,9 +73,13 @@ async def callbacks(client, query):
         text = (ans.text or "").strip()
         if text.lower() == "off":
             save(client, shortener_api=None, base_site=None)
-            return await query.message.edit_text("🔗 <b>LINK SHORTENER</b>\n\nDisabled.", reply_markup=back)
+            try:
+                await update_user_info(int(r.get("user_id")), {"shortener_api": None, "base_site": None})
+            except Exception:
+                pass
+            return await client.send_message(query.from_user.id, "✅ <b>Link shortener disabled.</b>")
         if "|" not in text:
-            return await query.message.edit_text("❌ Format: <code>API_KEY | vplink.in</code>", reply_markup=back)
+            return await client.send_message(query.from_user.id, "❌ <b>Format:</b> <code>API_KEY | BASE_SITE</code>\nExample: <code>cc32b72b56d7980dba4e49bf3ee466556955c0c6 | vplink.in</code>")
         api, site = [x.strip() for x in text.split("|", 1)]
         site = site.replace("https://", "").replace("http://", "").rstrip("/")
         save(client, shortener_api=api, base_site=site)
@@ -84,40 +87,47 @@ async def callbacks(client, query):
             await update_user_info(int(r.get("user_id")), {"shortener_api": api, "base_site": site})
         except Exception:
             pass
-        return await query.message.edit_text("🔗 <b>LINK SHORTENER</b>\n\nSaved successfully.", reply_markup=back)
+        return await client.send_message(query.from_user.id, f"✅ <b>Link shortener saved!</b>\n\n<b>Site:</b> <code>{site}</code>\n<b>API:</b> <code>{api}</code>")
 
     if action == "caption":
         ans = await client.ask(query.from_user.id, "📝 Send custom caption. Send <code>off</code> to disable.", timeout=120)
         text = (ans.text or "").strip()
-        save(client, custom_caption=None if text.lower() == "off" else text[:4000])
-        return await query.message.edit_text("📝 <b>CUSTOM CAPTION</b>\n\nSaved successfully.", reply_markup=back)
+        if text.lower() == "off":
+            save(client, custom_caption=None)
+            return await client.send_message(query.from_user.id, "✅ <b>Custom caption disabled.</b>")
+        save(client, custom_caption=text[:4000])
+        return await client.send_message(query.from_user.id, f"✅ <b>Custom caption saved!</b>\n\n<code>{text[:4000]}</code>")
 
     if action == "button":
         ans = await client.ask(query.from_user.id, "➕ Send <code>Button Text - https://example.com</code>. Send <code>off</code> to clear.", timeout=120)
         text = (ans.text or "").strip()
         if text.lower() == "off":
             save(client, custom_buttons=[])
-            return await query.message.edit_text("➕ <b>CUSTOM BUTTON</b>\n\nButtons cleared.", reply_markup=back)
-        if " - " not in text:
-            return await query.message.edit_text("❌ Format: <code>Button Text - https://example.com</code>", reply_markup=back)
-        label, url = [x.strip() for x in text.split(" - ", 1)]
-        if not url.startswith(("http://", "https://")):
-            return await query.message.edit_text("❌ URL must start with http:// or https://", reply_markup=back)
+            return await client.send_message(query.from_user.id, "✅ <b>Custom buttons cleared.</b>")
+        if " - " not in text and "-" in text:
+            parts = [x.strip() for x in text.split("-", 1)]
+        elif " - " in text:
+            parts = [x.strip() for x in text.split(" - ", 1)]
+        else:
+            return await client.send_message(query.from_user.id, "❌ <b>Format:</b> <code>Button Text - https://example.com</code>")
+        label, url = parts[0], parts[1]
+        if not url.startswith(("http://", "https://", "tg://")):
+            return await client.send_message(query.from_user.id, "❌ <b>URL must start with http://, https:// or tg://</b>")
         buttons = list(r.get("custom_buttons", []))
         buttons.append({"text": label[:64], "url": url})
         save(client, custom_buttons=buttons)
-        return await query.message.edit_text("➕ <b>CUSTOM BUTTON</b>\n\nButton added successfully.", reply_markup=back)
+        return await client.send_message(query.from_user.id, f"✅ <b>Custom button added:</b> [{label}]({url})", disable_web_page_preview=True)
 
     if action == "startpic":
         ans = await client.ask(query.from_user.id, "🖼️ Send image URL for start photo. Send <code>off</code> to reset to default.", timeout=120)
         text = (ans.text or "").strip()
         if text.lower() == "off":
             save(client, start_pic=None)
-            return await query.message.edit_text("🖼️ <b>START PHOTO</b>\n\nReset to default photo.", reply_markup=back)
+            return await client.send_message(query.from_user.id, "✅ <b>Reset to default start photo.</b>")
         if not text.startswith(("http://", "https://")):
-            return await query.message.edit_text("❌ URL must start with http:// or https://", reply_markup=back)
+            return await client.send_message(query.from_user.id, "❌ <b>URL must start with http:// or https://</b>")
         save(client, start_pic=text)
-        return await query.message.edit_text("🖼️ <b>START PHOTO</b>\n\nCustom start photo saved successfully.", reply_markup=back)
+        return await client.send_message(query.from_user.id, "✅ <b>Custom start photo saved!</b>")
 
 
 def register(client):

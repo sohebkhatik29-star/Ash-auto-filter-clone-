@@ -155,7 +155,8 @@ async def start(client, message):
             except Exception: return await message.reply(caption, reply_markup=InlineKeyboardMarkup(buttons))
     data = message.command[1]
     if data.lower() in ("clone", "settings"):
-        return await message.reply("⚙️ <b>Settings</b>\nCustomize your settings as your need.", reply_markup=settings_menu())
+        from clone_plugins import clone_settings_ui as cset
+        return await cset.settings(client, message)
     try:
         decoded = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode("ascii")
         prefix, file_id = decoded.split("_", 1)
@@ -238,8 +239,8 @@ async def shortener(client, message):
 
 
 async def settings_command(client,message):
-    if not is_owner_or_mod(client,message.from_user.id): return await message.reply("❌ Owner/moderator only.")
-    await message.reply("⚙️ <b>Settings</b>\nCustomize your settings as your need.",reply_markup=settings_menu())
+    from clone_plugins import clone_settings_ui as cset
+    return await cset.settings(client, message)
 
 
 async def callbacks(client,query):
@@ -285,7 +286,8 @@ async def callbacks(client,query):
             return await query.message.edit_caption(caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
         return await query.message.edit_text(caption, reply_markup=InlineKeyboardMarkup(buttons))
     if data in ("settings","settings_back"):
-        return await query.message.edit_text("⚙️ <b>Settings</b>\nCustomize your settings as your need.",reply_markup=settings_menu())
+        from clone_plugins import clone_settings_ui as cset
+        return await query.message.edit_text("⚙️ <b>CLONE SETTINGS</b>\n\nOnly your clone settings are shown here.", reply_markup=cset.menu())
     if data=="my_clone":
         return await query.message.edit_text(f"🛠 <b>Customize Clone</b>\n\n➜ <b>Name:</b> {client.me.first_name}\n\nConfigure Your Clone Settings Using Given Buttons",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("START MSG",callback_data="clone_startmsg"),InlineKeyboardButton("FORCE SUB",callback_data="clone_force")],[InlineKeyboardButton("MODERATORS",callback_data="clone_mods"),InlineKeyboardButton("AUTO DELETE",callback_data="clone_autodelete")],[InlineKeyboardButton("NO FORWARD",callback_data="clone_noforward"),InlineKeyboardButton("ACCESS TOKEN",callback_data="clone_access")],[InlineKeyboardButton("TRANSFER DB",callback_data="clone_transfer"),InlineKeyboardButton("DEACTIVATE",callback_data="clone_deactivate")],[InlineKeyboardButton("MODE",callback_data="clone_mode"),InlineKeyboardButton("RESTART",callback_data="clone_restart")],[InlineKeyboardButton("STATS",callback_data="clone_stats"),InlineKeyboardButton("DELETE",callback_data="clone_delete")],[InlineKeyboardButton("‹ BACK",callback_data="settings")]]))
     if data=="google_backup":
