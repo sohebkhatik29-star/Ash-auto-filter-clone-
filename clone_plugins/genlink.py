@@ -149,49 +149,7 @@ async def open_interactive(client, message):
         await message.reply("❌ This link is invalid or expired.")
         raise StopPropagation
 
-    # Verification is generated directly inside Telegram so VERIFY & CONTINUE
-    # does not depend on an external shortener URL.
-    try:
-        from clone_plugins.commands import bot_record, force_markup, is_owner_or_mod
-        rec = bot_record(client)
-        user_id = int(message.from_user.id)
-
-        if rec.get("access_token_enabled", True) and not is_owner_or_mod(client, user_id):
-            now = int(time.time())
-            valid = db.access_tokens.find_one({
-                "bot_id": client.me.id,
-                "user_id": user_id,
-                "payload": payload,
-                "expires_at": {"$gt": now},
-            })
-            if not valid:
-                access_token = secrets.token_urlsafe(18)
-                hours = max(1, int(rec.get("access_token_hours", 1)))
-                db.access_tokens.update_one(
-                    {"bot_id": client.me.id, "user_id": user_id},
-                    {"$set": {
-                        "bot_id": client.me.id,
-                        "user_id": user_id,
-                        "token": access_token,
-                        "payload": payload,
-                        "expires_at": now + hours * 3600,
-                    }},
-                    upsert=True,
-                )
-                verify_payload = base64.urlsafe_b64encode(
-                    f"verify_{access_token}".encode()
-                ).decode().rstrip("=")
-                username = (await client.get_me()).username
-                verify_url = f"https://t.me/{username}?start={verify_payload}"
-                markup = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔐 VERIFY & CONTINUE", url=verify_url)]
-                ])
-                await message.reply(
-                    "<b>🔐 Please verify first to access this file.</b>",
-                    reply_markup=markup,
-                )
-                raise StopPropagation
-
+        # Force subscription check only (verification disabled)
         force = await force_markup(client, user_id, payload)
         if force:
             await message.reply(

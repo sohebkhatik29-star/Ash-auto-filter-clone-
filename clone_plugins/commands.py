@@ -85,20 +85,7 @@ async def force_markup(client, user_id, original_payload):
 
 
 async def access_verification(client, user_id, original_payload):
-    rec = bot_record(client)
-    if not rec.get("access_token_enabled", False): return None
-    if mongo_db is None: return None
-    now = int(time.time())
-    valid = mongo_db.access_tokens.find_one({"bot_id": client.me.id, "user_id": int(user_id), "expires_at": {"$gt": now}})
-    if valid and valid.get("payload") == original_payload: return None
-    token = secrets.token_urlsafe(18)
-    hours = max(1, int(rec.get("access_token_hours", 1)))
-    mongo_db.access_tokens.update_one({"bot_id": client.me.id, "user_id": int(user_id)}, {"$set": {"bot_id": client.me.id, "user_id": int(user_id), "token": token, "payload": original_payload, "expires_at": now + hours * 3600}}, upsert=True)
-    verify_payload = base64.urlsafe_b64encode(f"verify_{token}".encode()).decode().rstrip("=")
-    verify_url = f"https://t.me/{(await client.get_me()).username}?start={verify_payload}"
-    owner = owner_id(client) or user_id
-    short = await get_short_link(await get_user(owner), verify_url)
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🔐 VERIFY & CONTINUE", url=short)]])
+    return None
 
 
 def settings_menu():

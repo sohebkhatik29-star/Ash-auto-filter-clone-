@@ -88,7 +88,7 @@ async def clone(client, message):
             "name": bot.first_name, "token": bot_token, "username": bot.username,
             "force_channels": [], "custom_caption": None, "custom_buttons": [],
             "protect_content": False, "no_forward": False, "auto_delete_enabled": False,
-            "auto_delete_minutes": 15, "access_token_enabled": True, "access_token_hours": 1,
+            "auto_delete_minutes": 15, "access_token_enabled": False, "access_token_hours": 1,
             "moderators": [], "mode": "private", "deactivated": False, "hide_owner": False
         }}, upsert=True)
         await set_clone_menu(vj, message.from_user.id)
