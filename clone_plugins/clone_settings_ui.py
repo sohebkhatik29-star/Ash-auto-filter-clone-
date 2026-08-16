@@ -1,10 +1,10 @@
-"""Owner-only settings UI exposed inside an individual clone.
-Only the four controls intended for a clone owner are shown here.
-"""
+# ASH FILE STORE & CLONE MANAGER - SETTINGS UI
+import asyncio
 from pyrogram import filters
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from clone_plugins.users_api import update_user_info
+from clone_plugins.users_api import get_user, update_user_info, get_short_link
+from config import ADMINS
 
 
 def db():
@@ -20,7 +20,6 @@ def record(client):
 
 
 def owner(client, uid):
-    from config import ADMINS
     try:
         if int(uid) in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]:
             return True
@@ -28,9 +27,13 @@ def owner(client, uid):
         pass
     r = record(client)
     try:
-        return int(r.get("user_id", 0)) == int(uid)
+        if int(r.get("user_id", 0)) == int(uid):
+            return True
+        if int(uid) in [int(x) for x in r.get("moderators", [])]:
+            return True
     except Exception:
-        return False
+        pass
+    return True
 
 
 def save(client, **data):
@@ -39,104 +42,212 @@ def save(client, **data):
         m.bots.update_one({"bot_id": client.me.id}, {"$set": data}, upsert=True)
 
 
-def menu():
+def settings_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔗 LINK SHORTENER", callback_data="cset:shortener")],
-        [InlineKeyboardButton("📝 CUSTOM CAPTION", callback_data="cset:caption")],
-        [InlineKeyboardButton("➕ CUSTOM BUTTON", callback_data="cset:button")],
-        [InlineKeyboardButton("🖼️ START PHOTO", callback_data="cset:startpic")],
-        [InlineKeyboardButton("🛡️ PROTECT CONTENT", callback_data="cset:protect")],
+        [InlineKeyboardButton("LINK SHORTENER 🔗", callback_data="link_shortener")],
+        [InlineKeyboardButton("CUSTOM CAPTION 🖊️", callback_data="custom_caption")],
+        [InlineKeyboardButton("CUSTOM BUTTON ➕", callback_data="custom_button")],
+        [InlineKeyboardButton("PROTECT CONTENT ☂️", callback_data="protect_menu")],
+        [InlineKeyboardButton("❮ BACK", callback_data="start_back")],
     ])
 
 
 async def settings(client, message):
-    if not owner(client, message.from_user.id):
-        return await message.reply("❌ Clone owner only.")
-    await message.reply("⚙️ <b>CLONE SETTINGS</b>\n\nOnly your clone settings are shown here.", reply_markup=menu())
+    text = "🛠️ <b>Settings</b>\n\nCustomize your settings as your need"
+    await message.reply(text, reply_markup=settings_menu())
 
 
 async def callbacks(client, query):
     data = query.data
-    if not data.startswith("cset:"):
-        return
-    if not owner(client, query.from_user.id):
-        return await query.answer("❌ Clone owner only.", show_alert=True)
-    action = data.split(":", 1)[1]
     r = record(client)
+    user_id = query.from_user.id
+    user = await get_user(user_id)
 
-    if action == "home":
-        await query.message.edit_text("⚙️ <b>CLONE SETTINGS</b>\n\nOnly your clone settings are shown here.", reply_markup=menu())
-        return await query.answer()
+    if data in ("settings", "settings_back", "cset:home"):
+        text = "🛠️ <b>Settings</b>\n\nCustomize your settings as your need"
+        try:
+            return await query.message.edit_text(text, reply_markup=settings_menu())
+        except Exception:
+            return await query.message.reply(text, reply_markup=settings_menu())
 
-    if action == "protect":
+    if data == "link_shortener":
+        site = user.get("base_site") or r.get("base_site")
+        api = user.get("shortener_api") or r.get("shortener_api")
+        if not (site and api):
+            text = (
+                "<b>Link Shortener</b>\n\n"
+                "To shorten your links using your preferred provider, make sure to connect it with me first."
+            )
+            markup = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Add Shortener", callback_data="add_shortener")],
+                [InlineKeyboardButton("back", callback_data="settings_back")]
+            ])
+            return await query.message.edit_text(text, reply_markup=markup)
+
+        text = (
+            "<b>Link Shortener</b>\n\n"
+            f"- Shortener: {site}\n"
+            f"- Shortener Api: {api}\n\n"
+            "You can now use the /shortener command to shorten any links."
+        )
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Delete shortener", callback_data="delete_shortener")],
+            [InlineKeyboardButton("back", callback_data="settings_back")]
+        ])
+        return await query.message.edit_text(text, reply_markup=markup)
+
+    if data == "add_shortener":
+        await query.answer()
+        site_msg = await client.ask(user_id, "Send your shortener site url\n\neg: https://droplink.co", timeout=120)
+        site_raw = (site_msg.text or "").strip()
+        if not site_raw or site_raw.startswith("/"):
+            return await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]]))
+        
+        site_clean = site_raw.replace("https://", "").replace("http://", "").split("/")[0].strip()
+        api_msg = await client.ask(user_id, f"Send your shortener ({site_clean}) api token, get it from <a href='http://{site_clean}/member/tools/api'>here</a>", timeout=120)
+        api_raw = (api_msg.text or "").strip()
+        if not api_raw or api_raw.startswith("/"):
+            return await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]]))
+        
+        await update_user_info(user_id, {"base_site": site_clean, "shortener_api": api_raw})
+        save(client, base_site=site_clean, shortener_api=api_raw)
+        return await query.message.edit_text(
+            f"✨ <b>Successfully {site_clean} added as your link shortener Provider</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]])
+        )
+
+    if data == "delete_shortener":
+        await update_user_info(user_id, {"base_site": None, "shortener_api": None})
+        save(client, base_site=None, shortener_api=None)
+        await query.answer("✨ Successfully deleted your link shortener provider", show_alert=False)
+        return await query.message.edit_text(
+            "✨ <b>Successfully deleted your link shortener provider</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]])
+        )
+
+    if data == "protect_menu":
+        state = bool(r.get("protect_content", False))
+        text = (
+            "<b>Protect Content</b>\n\n"
+            "Restrict other users from forwarding contents from your shareable link.\n\n"
+            "<b>Available Mode's</b>"
+        )
+        toggle_btn = InlineKeyboardButton("Disable ❌", callback_data="protect_toggle") if state else InlineKeyboardButton("Enable ✅", callback_data="protect_toggle")
+        markup = InlineKeyboardMarkup([
+            [toggle_btn],
+            [InlineKeyboardButton("❮ back", callback_data="settings_back")]
+        ])
+        return await query.message.edit_text(text, reply_markup=markup)
+
+    if data == "protect_toggle":
         state = not bool(r.get("protect_content", False))
         save(client, protect_content=state)
-        return await query.answer(f"🛡️ Protect Content: {'ON' if state else 'OFF'}", show_alert=True)
+        await query.answer(f"Protect content: {'Enabled' if state else 'Disabled'}")
+        text = (
+            "<b>Protect Content</b>\n\n"
+            "Restrict other users from forwarding contents from your shareable link.\n\n"
+            "<b>Available Mode's</b>"
+        )
+        toggle_btn = InlineKeyboardButton("Disable ❌", callback_data="protect_toggle") if state else InlineKeyboardButton("Enable ✅", callback_data="protect_toggle")
+        markup = InlineKeyboardMarkup([
+            [toggle_btn],
+            [InlineKeyboardButton("❮ back", callback_data="settings_back")]
+        ])
+        return await query.message.edit_text(text, reply_markup=markup)
 
-    await query.answer()
-    if action == "shortener":
-        ans = await client.ask(query.from_user.id, "🔗 Send <code>API_KEY | BASE_SITE</code>. Send <code>off</code> to disable.", timeout=120)
-        text = (ans.text or "").strip()
-        if text.lower() == "off":
-            save(client, shortener_api=None, base_site=None)
-            try:
-                await update_user_info(int(r.get("user_id")), {"shortener_api": None, "base_site": None})
-            except Exception:
-                pass
-            return await client.send_message(query.from_user.id, "✅ <b>Link shortener disabled.</b>")
-        if "|" not in text:
-            return await client.send_message(query.from_user.id, "❌ <b>Format:</b> <code>API_KEY | BASE_SITE</code>\nExample: <code>cc32b72b56d7980dba4e49bf3ee466556955c0c6 | vplink.in</code>")
-        api, site = [x.strip() for x in text.split("|", 1)]
-        site = site.replace("https://", "").replace("http://", "").rstrip("/")
-        save(client, shortener_api=api, base_site=site)
-        try:
-            await update_user_info(int(r.get("user_id")), {"shortener_api": api, "base_site": site})
-        except Exception:
-            pass
-        return await client.send_message(query.from_user.id, f"✅ <b>Link shortener saved!</b>\n\n<b>Site:</b> <code>{site}</code>\n<b>API:</b> <code>{api}</code>")
+    if data == "custom_caption":
+        text = (
+            "<b>Custom Caption:</b>\n\n"
+            "You can add a custom caption to your media messages instead of its original caption\n\n"
+            "<b>Fillings:</b>\n"
+            "• {file_name} : File Name\n"
+            "• {file_size} : File Size\n"
+            "• {caption} : Orginal Caption"
+        )
+        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Edit", callback_data="caption_edit"), InlineKeyboardButton("See", callback_data="caption_see"), InlineKeyboardButton("Delete", callback_data="caption_delete")],
+            [InlineKeyboardButton("back", callback_data="settings_back")]
+        ]))
 
-    if action == "caption":
-        ans = await client.ask(query.from_user.id, "📝 Send custom caption. Send <code>off</code> to disable.", timeout=120)
-        text = (ans.text or "").strip()
-        if text.lower() == "off":
-            save(client, custom_caption=None)
-            return await client.send_message(query.from_user.id, "✅ <b>Custom caption disabled.</b>")
-        save(client, custom_caption=text[:4000])
-        return await client.send_message(query.from_user.id, f"✅ <b>Custom caption saved!</b>\n\n<code>{text[:4000]}</code>")
+    if data == "caption_see":
+        cap = r.get("custom_caption") or "Default caption"
+        return await query.answer(f"Custom Caption:\n\n{cap}", show_alert=True)
 
-    if action == "button":
-        ans = await client.ask(query.from_user.id, "➕ Send <code>Button Text - https://example.com</code>. Send <code>off</code> to clear.", timeout=120)
-        text = (ans.text or "").strip()
-        if text.lower() == "off":
-            save(client, custom_buttons=[])
-            return await client.send_message(query.from_user.id, "✅ <b>Custom buttons cleared.</b>")
-        if " - " not in text and "-" in text:
-            parts = [x.strip() for x in text.split("-", 1)]
-        elif " - " in text:
-            parts = [x.strip() for x in text.split(" - ", 1)]
-        else:
-            return await client.send_message(query.from_user.id, "❌ <b>Format:</b> <code>Button Text - https://example.com</code>")
-        label, url = parts[0], parts[1]
-        if not url.startswith(("http://", "https://", "tg://")):
-            return await client.send_message(query.from_user.id, "❌ <b>URL must start with http://, https:// or tg://</b>")
-        buttons = list(r.get("custom_buttons", []))
-        buttons.append({"text": label[:64], "url": url})
-        save(client, custom_buttons=buttons)
-        return await client.send_message(query.from_user.id, f"✅ <b>Custom button added:</b> [{label}]({url})", disable_web_page_preview=True)
+    if data == "caption_delete":
+        save(client, custom_caption=None)
+        await query.answer("Custom caption deleted.", show_alert=True)
+        text = (
+            "<b>Custom Caption:</b>\n\n"
+            "You can add a custom caption to your media messages instead of its original caption\n\n"
+            "<b>Fillings:</b>\n"
+            "• {file_name} : File Name\n"
+            "• {file_size} : File Size\n"
+            "• {caption} : Orginal Caption"
+        )
+        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Edit", callback_data="caption_edit"), InlineKeyboardButton("See", callback_data="caption_see"), InlineKeyboardButton("Delete", callback_data="caption_delete")],
+            [InlineKeyboardButton("back", callback_data="settings_back")]
+        ]))
 
-    if action == "startpic":
-        ans = await client.ask(query.from_user.id, "🖼️ Send image URL for start photo. Send <code>off</code> to reset to default.", timeout=120)
-        text = (ans.text or "").strip()
-        if text.lower() == "off":
-            save(client, start_pic=None)
-            return await client.send_message(query.from_user.id, "✅ <b>Reset to default start photo.</b>")
-        if not text.startswith(("http://", "https://")):
-            return await client.send_message(query.from_user.id, "❌ <b>URL must start with http:// or https://</b>")
-        save(client, start_pic=text)
-        return await client.send_message(query.from_user.id, "✅ <b>Custom start photo saved!</b>")
+    if data == "caption_edit":
+        await query.answer()
+        ans = await client.ask(user_id, "Send Your New Custom Caption", timeout=180)
+        cap_text = (ans.text or "").strip()
+        if not cap_text or cap_text.startswith("/"):
+            return await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_caption")]]))
+        save(client, custom_caption=cap_text)
+        await update_user_info(user_id, {"custom_caption": cap_text})
+        return await query.message.edit_text(
+            "✨ <b>Successfully Saved Your Caption</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_caption")]])
+        )
+
+    if data == "custom_button":
+        buttons = r.get("custom_buttons", [])
+        rows = []
+        for b in buttons:
+            if isinstance(b, dict) and b.get("text") and b.get("url"):
+                rows.append([InlineKeyboardButton(b["text"], url=b["url"]), InlineKeyboardButton("➕", callback_data="button_add")])
+        if not rows:
+            rows.append([InlineKeyboardButton("➕", callback_data="button_add")])
+        rows.append([InlineKeyboardButton("back", callback_data="settings_back"), InlineKeyboardButton("Delete", callback_data="button_delete")])
+        text = "<b>Custom Button:</b>\n\nYou can add a custom button to your message"
+        return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(rows))
+
+    if data == "button_add":
+        await query.answer()
+        ans_txt = await client.ask(user_id, "Send text for button", timeout=120)
+        btn_txt = (ans_txt.text or "").strip()
+        if not btn_txt or btn_txt.startswith("/"):
+            return await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_button")]]))
+        ans_url = await client.ask(user_id, "Send url for button", timeout=120)
+        btn_url = (ans_url.text or "").strip()
+        if not (btn_url.startswith("http://") or btn_url.startswith("https://") or btn_url.startswith("tg://")):
+            return await query.message.edit_text("❌ URL must start with http://, https:// or tg://", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_button")]]))
+        btns = list(r.get("custom_buttons", []))
+        btns.append({"text": btn_txt[:64], "url": btn_url})
+        save(client, custom_buttons=btns)
+        await update_user_info(user_id, {"custom_buttons": btns})
+        return await query.message.edit_text(
+            "✨ <b>Successfully Button Added</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_button")]])
+        )
+
+    if data == "button_delete":
+        save(client, custom_buttons=[])
+        await update_user_info(user_id, {"custom_buttons": []})
+        await query.answer("Custom buttons deleted.", show_alert=True)
+        return await query.message.edit_text(
+            "<b>Custom Button:</b>\n\nYou can add a custom button to your message",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕", callback_data="button_add")],
+                [InlineKeyboardButton("back", callback_data="settings_back")]
+            ])
+        )
 
 
 def register(client):
     client.add_handler(MessageHandler(settings, filters.command("settings") & filters.private), group=0)
-    client.add_handler(CallbackQueryHandler(callbacks, filters.regex(r"^cset:(home|shortener|caption|button|startpic|protect)$")), group=0)
+    client.add_handler(CallbackQueryHandler(callbacks, filters.regex(r"^(settings|settings_back|link_shortener|add_shortener|delete_shortener|protect_menu|protect_toggle|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete)$")), group=0)
     return client
+
