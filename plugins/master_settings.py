@@ -1,4 +1,4 @@
-from pyrogram import filters, StopPropagation
+from pyrogram import Client, filters, StopPropagation
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from config import ADMINS, SUPPORT_GROUP, UPDATE_CHANNEL, BOT_USERNAME, PICS, tg_link
@@ -105,20 +105,22 @@ async def callbacks(client, query):
         
         raw_text = (token_msg.text or "").strip()
         if raw_text.lower() == "/cancel":
-            return await query.message.reply_text(
+            await query.message.edit_text(
                 "<b>Cancelled 🚫</b>",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ back", callback_data="my_clones")]])
             )
+            raise StopPropagation
         
         match = re.search(r"\b(\d+:[A-Za-z0-9_-]+)\b", raw_text)
         if not match:
-            return await query.message.reply_text(
+            await query.message.edit_text(
                 "❌ <b>Could not read the bot token. Please forward the token message from @BotFather.</b>",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ back", callback_data="my_clones")]])
             )
+            raise StopPropagation
         
         bot_token = match.group(1)
-        loading_msg = await query.message.reply_text("<b>👨‍💻 Cloning your bot...</b>")
+        await query.message.edit_text("<b>👨‍💻 Cloning your bot...</b>")
         try:
             from plugins.clone import set_clone_menu, register_clone_handlers, mongo_db
             from config import API_ID, API_HASH
@@ -136,20 +138,12 @@ async def callbacks(client, query):
                     "moderators": [], "mode": "private", "deactivated": False, "hide_owner": False
                 }}, upsert=True)
             await set_clone_menu(vj, query.from_user.id)
-            try:
-                await loading_msg.delete()
-            except Exception:
-                pass
-            await query.message.reply_text(
+            await query.message.edit_text(
                 "✨ <b>Sucessfully Cloned Your Bot</b>",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="my_clones")]])
             )
         except Exception as e:
-            try:
-                await loading_msg.delete()
-            except Exception:
-                pass
-            await query.message.reply_text(
+            await query.message.edit_text(
                 f"⚠️ <b>Bot Error:</b>\n\n<code>{e}</code>",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ back", callback_data="my_clones")]])
             )
