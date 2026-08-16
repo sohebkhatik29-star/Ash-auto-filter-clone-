@@ -319,6 +319,7 @@ async def callbacks(client, query):
     # Settings callbacks are fully handled by clone_settings_ui
     if data in (
         "settings", "settings_back", "log_channel", "set_log_channel", "delete_log_channel",
+        "database_channel", "set_database_channel", "delete_database_channel",
         "link_shortener", "add_shortener", "delete_shortener",
         "custom_caption", "caption_see", "caption_delete", "caption_edit",
         "custom_button", "button_add", "button_delete", "protect_menu", "protect_toggle", "protect_on", "protect_off"
@@ -337,5 +338,5 @@ def register(client):
     client.add_handler(MessageHandler(base_site_handler,filters.command("base_site")&private),group=1)
     client.add_handler(MessageHandler(shortener,filters.command("shortener")&private),group=1)
     client.add_handler(MessageHandler(settings_command,filters.command("settings")&private),group=1)
-    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|settings|settings_back|log_channel|set_log_channel|delete_log_channel|my_clone|google_backup|google_connect|link_shortener|add_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_on|protect_off)$")),group=0)
+    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|settings|settings_back|log_channel|set_log_channel|delete_log_channel|database_channel|set_database_channel|delete_database_channel|my_clone|google_backup|google_connect|link_shortener|add_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_on|protect_off)$")),group=0)
     return client

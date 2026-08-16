@@ -12,6 +12,7 @@ def master_settings_markup():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("MY CLONE BOT 🤖", callback_data="my_clone")],
         [InlineKeyboardButton("📢 LOG CHANNEL", callback_data="master_log_channel")],
+        [InlineKeyboardButton("☁️ DATABASE CHANNEL", callback_data="master_database_channel")],
         [InlineKeyboardButton("GOOGLE BACKUP 📁", callback_data="master_google_backup")],
         [InlineKeyboardButton("LINK SHORTENER 📎", callback_data="link_shortener")],
         [InlineKeyboardButton("CUSTOM CAPTION 🖌", callback_data="custom_caption")],
@@ -201,6 +202,117 @@ async def callbacks(client, query):
         await query.message.edit_text(
             "🗑️ <b>SUCCESSFULLY DELETED LOG CHANNEL</b>",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_log_channel")]])
+        )
+        raise StopPropagation
+
+    if data in ("database_channel", "master_database_channel"):
+        user = await get_user(query.from_user.id)
+        db_ch = user.get("database_channel")
+        db_title = user.get("database_channel_title")
+        if db_ch:
+            status_text = f"<b>YOUR DATABASE CHANNEL - {db_title or db_ch}</b>"
+        else:
+            status_text = "<b>YOU DIDN'T ADDED ANY DATABASE CHANNEL ❗</b>"
+
+        text = (
+            "☁️ <b>DATABASE CHANNEL:</b>\n\n"
+            "<b>WHAT IS DATABASE CHANNEL ❓</b>\n\n"
+            "<b>DATABASE CHANNEL MEANS WHEN YOU STORE ANYTHING IN FILE STORE BOT ALL MESSAGES BOT WILL STORE IN YOUR DATABASE CHANNEL IF YOU DELETE THAT MESSAGE THEN BOT CAN NOT GIVE IT TO ANYONE.</b>\n\n"
+            f"{status_text}"
+        )
+        markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("SET CHANNEL", callback_data="master_set_database_channel"),
+                InlineKeyboardButton("DELETE CHANNEL", callback_data="master_delete_database_channel")
+            ],
+            [InlineKeyboardButton("‹ BACK", callback_data="master_settings")]
+        ])
+        await query.message.edit_text(text, reply_markup=markup)
+        await query.answer()
+        raise StopPropagation
+
+    if data == "master_set_database_channel":
+        await query.answer()
+        me = client.me or (await client.get_me())
+        prompt_text = (
+            "<b>FORWARD DATABASE CHANNEL ANY MESSAGE TO ME,\n"
+            f"AND MAKE SURE @{me.username} IS ADMIN IN YOUR CHANNEL.</b>\n\n"
+            "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
+        )
+        await query.message.edit_text(
+            prompt_text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_database_channel")]])
+        )
+        try:
+            ch_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
+        except Exception:
+            raise StopPropagation
+
+        ch_raw = (ch_msg.text or "").strip()
+        try:
+            await ch_msg.delete()
+        except Exception:
+            pass
+
+        if ch_raw.lower() == "/cancel":
+            await query.message.edit_text(
+                "❌ <b>Process Cancelled.</b>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_database_channel")]])
+            )
+            raise StopPropagation
+
+        channel_id = None
+        channel_title = None
+
+        if ch_msg.forward_from_chat:
+            channel_id = ch_msg.forward_from_chat.id
+            channel_title = ch_msg.forward_from_chat.title
+        elif ch_raw.startswith("-100") or (ch_raw.startswith("-") and ch_raw[1:].isdigit()):
+            channel_id = int(ch_raw)
+        elif ch_raw.isdigit():
+            channel_id = int(f"-100{ch_raw}")
+        elif ch_raw.startswith("@"):
+            try:
+                chat = await client.get_chat(ch_raw)
+                channel_id = chat.id
+                channel_title = chat.title
+            except Exception:
+                pass
+
+        if not channel_id:
+            await query.message.edit_text(
+                "❌ <b>Invalid Channel! Please forward a message directly from your channel.</b>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_database_channel")]])
+            )
+            raise StopPropagation
+
+        try:
+            chat = await client.get_chat(channel_id)
+            channel_title = chat.title or channel_title or str(channel_id)
+            await client.send_message(
+                chat_id=channel_id,
+                text=f"⚡ <b>Database channel successfully connected with @{me.username}!</b>"
+            )
+        except Exception as err:
+            await query.message.edit_text(
+                f"❌ <b>Failed to connect channel!</b>\n\nMake sure <b>@{me.username}</b> is an <b>ADMIN</b> in the channel with post permissions.\n\n<code>Error: {err}</code>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_database_channel")]])
+            )
+            raise StopPropagation
+
+        await update_user_info(query.from_user.id, {"database_channel": channel_id, "database_channel_title": channel_title})
+        await query.message.edit_text(
+            f"⚡ <b>SUCCESSFULLY ADDED YOUR DATABASE CHANNEL - {channel_title}</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_database_channel")]])
+        )
+        raise StopPropagation
+
+    if data == "master_delete_database_channel":
+        await update_user_info(query.from_user.id, {"database_channel": None, "database_channel_title": None})
+        await query.answer("🗑️ Successfully deleted your database channel", show_alert=False)
+        await query.message.edit_text(
+            "🗑️ <b>SUCCESSFULLY DELETED DATABASE CHANNEL</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_database_channel")]])
         )
         raise StopPropagation
 
@@ -672,7 +784,7 @@ def register(client):
     client.add_handler(
         CallbackQueryHandler(
             callbacks,
-            filters.regex(r"^(settings|master_settings|settings_back|log_channel|master_log_channel|master_set_log_channel|master_delete_log_channel|my_clone|my_clones|google_backup|master_google_backup|google_connect|link_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_toggle_on|protect_toggle_off|start_photo_menu|start_pic_edit|start_pic_see|start_pic_delete|manage_clone:\d+|cm:\d+:[a-z_]+|cmdelete:\d+)$"),
+            filters.regex(r"^(settings|master_settings|settings_back|log_channel|master_log_channel|master_set_log_channel|master_delete_log_channel|database_channel|master_database_channel|master_set_database_channel|master_delete_database_channel|my_clone|my_clones|google_backup|master_google_backup|google_connect|link_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_toggle_on|protect_toggle_off|start_photo_menu|start_pic_edit|start_pic_see|start_pic_delete|manage_clone:\d+|cm:\d+:[a-z_]+|cmdelete:\d+)$"),
         ),
         group=-1,
     )

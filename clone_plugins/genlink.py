@@ -102,14 +102,27 @@ async def capture_interactive(client, message):
         await message.reply("❌ Database is not configured.")
         raise StopPropagation
 
+    rec = bot_record(client)
+    db_ch = rec.get("database_channel")
+    source_chat_id = int(message.chat.id)
+    source_message_id = int(message.id)
+
+    if db_ch:
+        try:
+            copied = await message.copy(chat_id=int(db_ch))
+            source_chat_id = int(db_ch)
+            source_message_id = int(copied.id)
+        except Exception:
+            pass
+
     token = secrets.token_urlsafe(18)
     db.share_links.update_one(
         {"bot_id": client.me.id, "token": token},
         {"$set": {
             "bot_id": client.me.id,
             "token": token,
-            "source_chat_id": int(message.chat.id),
-            "source_message_id": int(message.id),
+            "source_chat_id": source_chat_id,
+            "source_message_id": source_message_id,
             "owner_id": int(message.from_user.id),
             "created_at": int(time.time()),
         }},
@@ -120,14 +133,16 @@ async def capture_interactive(client, message):
     original = f"https://t.me/{username}?start={_encode(token)}"
     link = original
 
-    # Exactly one direct Telegram link is returned.
     markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📢 SHARE URL", url=f"https://t.me/share/url?url={link}")]
+        [
+            InlineKeyboardButton("📋 Copy Link 📋", url=f"https://t.me/share/url?url={link}"),
+            InlineKeyboardButton("📢 SHARE URL 📢", url=f"https://t.me/share/url?url={link}")
+        ]
     ])
 
     await message.reply(
-        "✅ <b>HERE IS YOUR LINK:</b>\n\n"
-        f"🔗 <b>LINK:</b> {link}",
+        "⚡ <b>HERE IS YOUR LINK :</b>\n\n"
+        f"🔗 {link}",
         reply_markup=markup,
         disable_web_page_preview=True,
     )

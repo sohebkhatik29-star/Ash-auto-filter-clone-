@@ -62,9 +62,8 @@ async def genlink_prompt(client, message):
         raise StopPropagation
     _PENDING[(client.me.id, message.from_user.id)] = int(time.time())
     await message.reply(
-        "📩 <b>Send or forward the message/file now.</b>\n\n"
-        "No reply command is needed. I will automatically create the single shareable link.\n\n"
-        "/cancel - cancel"
+        "<b>SEND ME YOUR MESSAGE WHICH YOU WANT TO STORE</b>\n\n"
+        "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
     )
     raise StopPropagation
 
@@ -87,19 +86,38 @@ async def capture_single(client, message):
     if mongo_db is None:
         await message.reply("❌ Database is not configured.")
         raise StopPropagation
+
+    rec = bot_record(client)
+    db_ch = rec.get("database_channel")
+    source_chat_id = int(message.chat.id)
+    source_message_id = int(message.id)
+
+    if db_ch:
+        try:
+            copied = await message.copy(chat_id=int(db_ch))
+            source_chat_id = int(db_ch)
+            source_message_id = int(copied.id)
+        except Exception:
+            pass
+
     token = secrets.token_urlsafe(18)
     mongo_db.share_links.update_one(
         {"bot_id": client.me.id, "token": token},
-        {"$set": {"bot_id": client.me.id, "token": token, "source_chat_id": int(message.chat.id), "source_message_id": int(message.id), "owner_id": int(message.from_user.id), "created_at": int(time.time())}},
+        {"$set": {"bot_id": client.me.id, "token": token, "source_chat_id": source_chat_id, "source_message_id": source_message_id, "owner_id": int(message.from_user.id), "created_at": int(time.time())}},
         upsert=True,
     )
     username = (await client.get_me()).username
     original = f"https://t.me/{username}?start={_payload(token)}"
     link = original
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton("📢 SHARE URL", url=f"https://t.me/share/url?url={link}")]])
+    markup = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📋 Copy Link 📋", url=f"https://t.me/share/url?url={link}"),
+            InlineKeyboardButton("📢 SHARE URL 📢", url=f"https://t.me/share/url?url={link}")
+        ]
+    ])
     await message.reply(
-        "✅ <b>HERE IS YOUR LINK:</b>\n\n"
-        f"🔗 <b>LINK:</b> {link}",
+        "⚡ <b>HERE IS YOUR LINK :</b>\n\n"
+        f"🔗 {link}",
         reply_markup=markup,
         disable_web_page_preview=True,
     )
