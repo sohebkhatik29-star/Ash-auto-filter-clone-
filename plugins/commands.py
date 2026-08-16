@@ -69,7 +69,7 @@ async def start(client, message):
             InlineKeyboardButton('😊 ᴀʙᴏᴜᴛ', callback_data='about')
         ]]
         if CLONE_MODE == True:
-            buttons.append([InlineKeyboardButton('🤖 ᴄʀᴇᴀᴛᴇ ʏᴏᴜʀ ᴏᴡɴ ᴄʟᴏɴᴇ ʙᴏᴛ', callback_data='settings')])
+            buttons.append([InlineKeyboardButton('🤖 ᴄʀᴇᴀᴛᴇ ʏᴏᴜʀ ᴏᴡɴ ᴄʟᴏɴᴇ ʙᴏᴛ', callback_data='my_clones')])
         reply_markup = InlineKeyboardMarkup(buttons)
         me = client.me
         u_info = await get_user(message.from_user.id)
@@ -93,7 +93,10 @@ async def start(client, message):
 # Ask Doubt on telegram @movies_1780
     
     data = message.command[1]
-    if data.lower() in ("clone", "settings"):
+    if data.lower() == "clone":
+        from plugins.master_settings import send_manage_clones
+        return await send_manage_clones(client, message)
+    if data.lower() == "settings":
         from plugins.master_settings import send_settings_menu
         return await send_settings_menu(client, message)
     try:

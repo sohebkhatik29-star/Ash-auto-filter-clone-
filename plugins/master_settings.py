@@ -6,6 +6,7 @@ from Script import script
 from clone_plugins.master_manager import docs_for, list_markup, manage_clone, clone_manage_action, clone_delete, get_bot
 from plugins.users_api import get_user, update_user_info, validate_shortener_token
 import random
+import re
 
 
 def master_settings_markup():
@@ -21,6 +22,31 @@ def master_settings_markup():
         [InlineKeyboardButton("START PHOTO 🖼️", callback_data="start_photo_menu")],
         [InlineKeyboardButton("‹ BACK", callback_data="settings_back")],
     ])
+
+
+def manage_clones_markup(uid):
+    docs = docs_for(uid)
+    rows = []
+    for d in docs:
+        bid = int(d["bot_id"])
+        name = d.get("name") or d.get("username") or str(bid)
+        rows.append([InlineKeyboardButton(f"{name}", callback_data=f"manage_clone:{bid}")])
+    rows.append([InlineKeyboardButton("➕ Add Clone", callback_data="add_clone_prompt")])
+    rows.append([InlineKeyboardButton("‹ back", callback_data="master_settings")])
+    return InlineKeyboardMarkup(rows)
+
+
+async def send_manage_clones(client, message, user_id=None):
+    uid = user_id or message.from_user.id
+    text = (
+        "✨ <b>Manage Clone's</b>\n\n"
+        "You can now manage and create your very own identical clone bot, "
+        "mirroring all my awesome features, using the given buttons."
+    )
+    markup = manage_clones_markup(uid)
+    if hasattr(message, "reply_text"):
+        return await message.reply_text(text, reply_markup=markup)
+    return await message.reply(text, reply_markup=markup)
 
 
 async def send_settings_menu(client, message):
@@ -51,29 +77,82 @@ async def callbacks(client, query):
         raise StopPropagation
 
     if data in ("my_clone", "my_clones"):
-        docs = docs_for(query.from_user.id)
         text = (
             "✨ <b>Manage Clone's</b>\n\n"
             "You can now manage and create your very own identical clone bot, "
             "mirroring all my awesome features, using the given buttons."
         )
-        if not docs:
-            markup = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🤖 CREATE NEW CLONE", callback_data="clone")],
-                [InlineKeyboardButton("‹ back", callback_data="master_settings")]
-            ])
-            await query.message.edit_text(text, reply_markup=markup)
-            await query.answer()
-            raise StopPropagation
-
-        rows = []
-        for d in docs:
-            bid = int(d["bot_id"])
-            name = d.get("name") or d.get("username") or str(bid)
-            rows.append([InlineKeyboardButton(f"{name[:32]}", callback_data=f"manage_clone:{bid}")])
-        rows.append([InlineKeyboardButton("‹ back", callback_data="master_settings")])
-        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(rows))
+        markup = manage_clones_markup(query.from_user.id)
+        await query.message.edit_text(text, reply_markup=markup)
         await query.answer()
+        raise StopPropagation
+
+    if data in ("add_clone_prompt", "clone"):
+        prompt_text = (
+            "1) create a bot using @BotFather\n"
+            "2) Then you will get a message with bot token\n"
+            "3) Send that bot token to me"
+        )
+        await query.message.edit_text(
+            prompt_text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ back", callback_data="my_clones")]])
+        )
+        await query.answer()
+        try:
+            token_msg = await client.listen(chat_id=query.from_user.id, timeout=180)
+        except Exception:
+            return
+        
+        raw_text = (token_msg.text or "").strip()
+        if raw_text.lower() == "/cancel":
+            return await query.message.reply_text(
+                "<b>Cancelled 🚫</b>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ back", callback_data="my_clones")]])
+            )
+        
+        match = re.search(r"\b(\d+:[A-Za-z0-9_-]+)\b", raw_text)
+        if not match:
+            return await query.message.reply_text(
+                "❌ <b>Could not read the bot token. Please forward the token message from @BotFather.</b>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ back", callback_data="my_clones")]])
+            )
+        
+        bot_token = match.group(1)
+        loading_msg = await query.message.reply_text("<b>👨‍💻 Cloning your bot...</b>")
+        try:
+            from plugins.clone import set_clone_menu, register_clone_handlers, mongo_db
+            from config import API_ID, API_HASH
+            vj = Client(f"clone_{query.from_user.id}_{int(match.group(1).split(':')[0])}", API_ID, API_HASH, bot_token=bot_token, plugins={})
+            await vj.start()
+            register_clone_handlers(vj)
+            bot = await vj.get_me()
+            if mongo_db is not None:
+                mongo_db.bots.update_one({"bot_id": bot.id}, {"$set": {
+                    "bot_id": bot.id, "is_bot": True, "user_id": query.from_user.id,
+                    "name": bot.first_name, "token": bot_token, "username": bot.username,
+                    "force_channels": [], "custom_caption": None, "custom_buttons": [],
+                    "protect_content": False, "no_forward": False, "auto_delete_enabled": False,
+                    "auto_delete_minutes": 15, "access_token_enabled": False, "access_token_hours": 1,
+                    "moderators": [], "mode": "private", "deactivated": False, "hide_owner": False
+                }}, upsert=True)
+            await set_clone_menu(vj, query.from_user.id)
+            try:
+                await loading_msg.delete()
+            except Exception:
+                pass
+            await query.message.reply_text(
+                "✨ <b>Sucessfully Cloned Your Bot</b>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="my_clones")]])
+            )
+        except Exception as e:
+            try:
+                await loading_msg.delete()
+            except Exception:
+                pass
+            await query.message.reply_text(
+                f"⚠️ <b>Bot Error:</b>\n\n<code>{e}</code>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ back", callback_data="my_clones")]])
+            )
         raise StopPropagation
 
     if data in ("google_backup", "master_google_backup"):
@@ -784,7 +863,7 @@ def register(client):
     client.add_handler(
         CallbackQueryHandler(
             callbacks,
-            filters.regex(r"^(settings|master_settings|settings_back|log_channel|master_log_channel|master_set_log_channel|master_delete_log_channel|database_channel|master_database_channel|master_set_database_channel|master_delete_database_channel|my_clone|my_clones|google_backup|master_google_backup|google_connect|link_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_toggle_on|protect_toggle_off|start_photo_menu|start_pic_edit|start_pic_see|start_pic_delete|manage_clone:\d+|cm:\d+:[a-z_]+|cmdelete:\d+)$"),
+            filters.regex(r"^(settings|master_settings|settings_back|log_channel|master_log_channel|master_set_log_channel|master_delete_log_channel|database_channel|master_database_channel|master_set_database_channel|master_delete_database_channel|my_clone|my_clones|add_clone_prompt|clone|google_backup|master_google_backup|google_connect|link_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_toggle_on|protect_toggle_off|start_photo_menu|start_pic_edit|start_pic_see|start_pic_delete|manage_clone:\d+|cm:\d+:[a-z_]+|cmdelete:\d+)$"),
         ),
         group=-1,
     )

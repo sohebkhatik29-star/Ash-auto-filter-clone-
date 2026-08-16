@@ -65,21 +65,23 @@ async def clone(client, message):
     if not CLONE_MODE or mongo_db is None:
         return await message.reply_text("Clone mode is disabled or database is not configured.")
 
-    prompt = "<b>1) Send <code>/newbot</code> to @BotFather\n2) Give a name.\n3) Give a username.\n4) Copy the bot token message.\n5) Forward it to me.\n\n/cancel - cancel.</b>"
+    prompt = (
+        "1) create a bot using @BotFather\n"
+        "2) Then you will get a message with bot token\n"
+        "3) Send that bot token to me"
+    )
     token_msg = await client.ask(message.chat.id, prompt)
     if (token_msg.text or "").strip() == "/cancel":
         return await message.reply_text("<b>Cancelled 🚫</b>")
-    if not token_msg.forward_from or token_msg.forward_from.id != 93372553:
-        return await message.reply_text("<b>Please forward the token message from BotFather.</b>")
 
     match = re.search(r"\b(\d+:[A-Za-z0-9_-]+)\b", token_msg.text or "")
     if not match:
-        return await message.reply_text("<b>Could not read the bot token.</b>")
+        return await message.reply_text("<b>❌ Could not read the bot token. Please send a valid token.</b>")
     bot_token = match.group(1)
 
     msg = await message.reply_text("<b>👨‍💻 Creating your clone...</b>")
     try:
-        vj = Client(bot_token, API_ID, API_HASH, bot_token=bot_token, plugins={})
+        vj = Client(f"clone_{message.from_user.id}_{int(bot_token.split(':')[0])}", API_ID, API_HASH, bot_token=bot_token, plugins={})
         await vj.start()
         register_clone_handlers(vj)
         bot = await vj.get_me()
@@ -92,7 +94,7 @@ async def clone(client, message):
             "moderators": [], "mode": "private", "deactivated": False, "hide_owner": False
         }}, upsert=True)
         await set_clone_menu(vj, message.from_user.id)
-        await msg.edit_text(f"<b>✅ Successfully cloned: @{bot.username}</b>\n\nAll commands, settings and owner controls are loaded.")
+        await msg.edit_text("✨ <b>Sucessfully Cloned Your Bot</b>")
     except BaseException as e:
         logging.exception("Clone creation failed")
         await msg.edit_text(f"⚠️ <b>Bot Error:</b>\n\n<code>{e}</code>")

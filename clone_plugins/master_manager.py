@@ -58,16 +58,13 @@ def list_markup(docs):
 
 def manage_markup(bid):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📝 START MSG", callback_data=f"cm:{bid}:startmsg"), InlineKeyboardButton("📢 FORCE SUB", callback_data=f"cm:{bid}:force")],
-        [InlineKeyboardButton("👮 MODERATORS", callback_data=f"cm:{bid}:mods"), InlineKeyboardButton("🗑 AUTO DELETE", callback_data=f"cm:{bid}:autodelete")],
-        [InlineKeyboardButton("🚫 NO FORWARD", callback_data=f"cm:{bid}:noforward"), InlineKeyboardButton("🔑 ACCESS TOKEN", callback_data=f"cm:{bid}:access")],
-        [InlineKeyboardButton("🔄 TRANSFER DB", callback_data=f"cm:{bid}:transfer"), InlineKeyboardButton("⏸ DEACTIVATE", callback_data=f"cm:{bid}:deactivate")],
-        [InlineKeyboardButton("🔒 MODE", callback_data=f"cm:{bid}:mode"), InlineKeyboardButton("🔄 RESTART", callback_data=f"cm:{bid}:restart")],
-        [InlineKeyboardButton("📊 STATS", callback_data=f"cm:{bid}:stats"), InlineKeyboardButton("🗑 DELETE", callback_data=f"cm:{bid}:delete")],
-        [InlineKeyboardButton("🔗 LINK SHORTENER", callback_data=f"cm:{bid}:shortener")],
-        [InlineKeyboardButton("📝 CUSTOM CAPTION", callback_data=f"cm:{bid}:caption"), InlineKeyboardButton("➕ CUSTOM BUTTON", callback_data=f"cm:{bid}:button")],
-        [InlineKeyboardButton("🖼️ START PHOTO", callback_data=f"cm:{bid}:startpic"), InlineKeyboardButton("🛡️ PROTECT CONTENT", callback_data=f"cm:{bid}:protect")],
-        [InlineKeyboardButton("‹ BACK", callback_data="my_clones")]
+        [InlineKeyboardButton("START MSG", callback_data=f"cm:{bid}:startmsg"), InlineKeyboardButton("FORCE SUB", callback_data=f"cm:{bid}:force")],
+        [InlineKeyboardButton("MODERATORS", callback_data=f"cm:{bid}:mods"), InlineKeyboardButton("AUTO DELETE", callback_data=f"cm:{bid}:autodelete")],
+        [InlineKeyboardButton("NO FORWARD", callback_data=f"cm:{bid}:noforward"), InlineKeyboardButton("ACCESS TOKEN", callback_data=f"cm:{bid}:access")],
+        [InlineKeyboardButton("TRANSFER DB", callback_data=f"cm:{bid}:transfer"), InlineKeyboardButton("DEACTIVATE", callback_data=f"cm:{bid}:deactivate")],
+        [InlineKeyboardButton("MODE", callback_data=f"cm:{bid}:mode"), InlineKeyboardButton("RESTART", callback_data=f"cm:{bid}:restart")],
+        [InlineKeyboardButton("STATS", callback_data=f"cm:{bid}:stats"), InlineKeyboardButton("DELETE", callback_data=f"cm:{bid}:delete")],
+        [InlineKeyboardButton("BACK", callback_data="my_clones")]
     ])
 
 
@@ -82,10 +79,13 @@ async def edit_setting(query, bid, title, value):
 
 @Client.on_callback_query(filters.regex(r"^my_clones$"))
 async def my_clones(client, query):
-    docs = docs_for(query.from_user.id)
-    if not docs:
-        return await query.answer("No clones found for your account.", show_alert=True)
-    await query.message.edit_text("🤖 <b>MY CLONE BOT</b>\n\nSelect your clone:", reply_markup=list_markup(docs))
+    from plugins.master_settings import manage_clones_markup
+    text = (
+        "✨ <b>Manage Clone's</b>\n\n"
+        "You can now manage and create your very own identical clone bot, "
+        "mirroring all my awesome features, using the given buttons."
+    )
+    await query.message.edit_text(text, reply_markup=manage_clones_markup(query.from_user.id))
     await query.answer()
 
 
@@ -96,7 +96,12 @@ async def manage_clone(client, query):
         return await query.answer("❌ You can manage only your own clones.", show_alert=True)
     d = get_bot(bid) or {}
     title = d.get("name") or d.get("username") or str(bid)
-    await query.message.edit_text(f"🛠 <b>Customize Clone</b>\n\n🤖 {title}\n\nChoose what you want to manage:", reply_markup=manage_markup(bid))
+    text = (
+        "🪄 <u><b>Customize Clone</b></u>\n\n"
+        f"➣ <b>Name:</b> <code>{title}</code>\n\n"
+        "<b>Configure Your Clone Settings Using Given Buttons</b>"
+    )
+    await query.message.edit_text(text, reply_markup=manage_markup(bid))
     await query.answer()
 
 
