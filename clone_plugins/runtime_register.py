@@ -58,7 +58,6 @@ def register_clone_handlers(client):
         "link": single_link.genlink_prompt,
         "genlink": single_link.genlink_prompt,
         "universal_link": cmd.universal_link,
-        "settings": cset.settings,
         "shortener": cmd.shortener,
         "api": cmd.api_handler,
         "base_site": cmd.base_site_handler,

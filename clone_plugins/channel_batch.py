@@ -219,11 +219,7 @@ async def capture_batch_step(client, message):
 
         username = (await client.get_me()).username
         orig_link = f"https://t.me/{username}?start=cbatch_{token}"
-        owner = cmd.owner_id(client) or int(message.from_user.id)
-        try:
-            shown_link = await get_short_link(await get_user(owner), orig_link)
-        except Exception:
-            shown_link = orig_link
+        shown_link = orig_link
 
         try:
             await notice_msg.delete()
@@ -231,7 +227,7 @@ async def capture_batch_step(client, message):
             pass
 
         markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📢 SHARE URL", url=shown_link)]
+            [InlineKeyboardButton("📢 SHARE URL", url=f"https://t.me/share/url?url={shown_link}")]
         ])
 
         await status_msg.edit_text(

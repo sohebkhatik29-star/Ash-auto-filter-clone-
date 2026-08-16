@@ -95,10 +95,8 @@ async def capture_single(client, message):
     )
     username = (await client.get_me()).username
     original = f"https://t.me/{username}?start={_payload(token)}"
-    owner = int(bot_record(client).get("user_id", 0)) or message.from_user.id
-    short = await get_short_link(await get_user(owner), original)
-    link = short or original
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔗 SHARE URL", url=link)]])
+    link = original
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("📢 SHARE URL", url=f"https://t.me/share/url?url={link}")]])
     await message.reply(
         "✅ <b>HERE IS YOUR LINK:</b>\n\n"
         f"🔗 <b>LINK:</b> {link}",

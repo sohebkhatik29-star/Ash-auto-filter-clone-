@@ -222,8 +222,34 @@ async def callbacks(client, query):
 
     if data == "caption_see":
         user = await get_user(query.from_user.id)
-        cap = user.get("custom_caption") or "Default caption"
-        await query.answer(f"Caption:\n{cap}", show_alert=True)
+        cap = user.get("custom_caption")
+        if cap:
+            text = (
+                "<b>👀 Current Custom Caption:</b>\n\n"
+                f"<code>{cap}</code>\n\n"
+                "<b>Fillings:</b>\n"
+                "• {file_name} : File Name\n"
+                "• {file_size} : File Size\n"
+                "• {caption} : Orginal Caption"
+            )
+        else:
+            text = (
+                "<b>👀 Current Custom Caption:</b>\n\n"
+                "<i>No custom caption set. Default caption will be used.</i>\n\n"
+                "<b>Fillings:</b>\n"
+                "• {file_name} : File Name\n"
+                "• {file_size} : File Size\n"
+                "• {caption} : Orginal Caption"
+            )
+        await query.answer()
+        markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Edit", callback_data="caption_edit"),
+                InlineKeyboardButton("Delete", callback_data="caption_delete")
+            ],
+            [InlineKeyboardButton("‹ back", callback_data="custom_caption")]
+        ])
+        await query.message.edit_text(text, reply_markup=markup)
         raise StopPropagation
 
     if data == "caption_delete":

@@ -386,11 +386,7 @@ async def special_link_callbacks(client, query):
 
         username = (await client.get_me()).username
         orig_link = f"https://t.me/{username}?start=special_{token}"
-        owner = cmd.owner_id(client) or int(query.from_user.id)
-        try:
-            shown_link = await get_short_link(await get_user(owner), orig_link)
-        except Exception:
-            shown_link = orig_link
+        shown_link = orig_link
 
         text = f"Here is your special link:\n\n{shown_link}"
         await query.message.edit_text(
@@ -633,11 +629,7 @@ async def special_link_callbacks(client, query):
     elif action == "getlink":
         username = (await client.get_me()).username
         orig_link = f"https://t.me/{username}?start=special_{token}"
-        owner = cmd.owner_id(client) or int(query.from_user.id)
-        try:
-            shown_link = await get_short_link(await get_user(owner), orig_link)
-        except Exception:
-            shown_link = orig_link
+        shown_link = orig_link
 
         text = f"Here is your special link:\n\n{shown_link}"
         await query.message.edit_text(

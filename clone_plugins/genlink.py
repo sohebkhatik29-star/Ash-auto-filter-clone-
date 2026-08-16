@@ -118,14 +118,11 @@ async def capture_interactive(client, message):
 
     username = (await client.get_me()).username
     original = f"https://t.me/{username}?start={_encode(token)}"
-    owner = _bot_owner(client, message.from_user.id)
-    short = await get_short_link(await get_user(owner), original)
-    link = short or original
+    link = original
 
-    # Exactly one link is returned. There is no old /link reply flow and no
-    # duplicate Original Link block.
+    # Exactly one direct Telegram link is returned.
     markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔗 SHARE URL", url=link)]
+        [InlineKeyboardButton("📢 SHARE URL", url=f"https://t.me/share/url?url={link}")]
     ])
 
     await message.reply(

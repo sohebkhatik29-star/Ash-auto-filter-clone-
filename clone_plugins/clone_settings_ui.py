@@ -197,9 +197,12 @@ async def callbacks(client, query):
         return await query.message.edit_text(text, reply_markup=markup)
 
     if data == "custom_caption":
+        cap = r.get("custom_caption")
+        cap_status = f"\n\n<b>Current:</b> <code>{cap}</code>" if cap else "\n\n<b>Current:</b> <i>Not set (Default)</i>"
         text = (
             "<b>Custom Caption:</b>\n\n"
-            "You can add a custom caption to your media messages instead of its original caption\n\n"
+            "You can add a custom caption to your media messages instead of its original caption."
+            f"{cap_status}\n\n"
             "<b>Fillings:</b>\n"
             "• {file_name} : File Name\n"
             "• {file_size} : File Size\n"
@@ -211,15 +214,42 @@ async def callbacks(client, query):
         ]))
 
     if data == "caption_see":
-        cap = r.get("custom_caption") or "Default caption"
-        return await query.answer(f"Custom Caption:\n\n{cap}", show_alert=True)
+        cap = r.get("custom_caption")
+        if cap:
+            text = (
+                "<b>👀 Current Custom Caption:</b>\n\n"
+                f"<code>{cap}</code>\n\n"
+                "<b>Fillings:</b>\n"
+                "• {file_name} : File Name\n"
+                "• {file_size} : File Size\n"
+                "• {caption} : Orginal Caption"
+            )
+        else:
+            text = (
+                "<b>👀 Current Custom Caption:</b>\n\n"
+                "<i>No custom caption set. Default caption will be used.</i>\n\n"
+                "<b>Fillings:</b>\n"
+                "• {file_name} : File Name\n"
+                "• {file_size} : File Size\n"
+                "• {caption} : Orginal Caption"
+            )
+        await query.answer()
+        return await query.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("Edit", callback_data="caption_edit"), InlineKeyboardButton("Delete", callback_data="caption_delete")],
+                [InlineKeyboardButton("❮ back", callback_data="custom_caption")]
+            ])
+        )
 
     if data == "caption_delete":
         save(client, custom_caption=None)
-        await query.answer("Custom caption deleted.", show_alert=True)
+        await update_user_info(user_id, {"custom_caption": None})
+        await query.answer("✨ Custom caption deleted.", show_alert=False)
         text = (
             "<b>Custom Caption:</b>\n\n"
-            "You can add a custom caption to your media messages instead of its original caption\n\n"
+            "You can add a custom caption to your media messages instead of its original caption.\n\n"
+            "<b>Current:</b> <i>Not set (Default)</i>\n\n"
             "<b>Fillings:</b>\n"
             "• {file_name} : File Name\n"
             "• {file_size} : File Size\n"
@@ -233,7 +263,7 @@ async def callbacks(client, query):
     if data == "caption_edit":
         await query.answer()
         await query.message.edit_text(
-            "Send Your New Custom Caption",
+            "Send Your New Custom Caption\n\nSend /cancel to abort.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_caption")]])
         )
         try:
@@ -250,7 +280,7 @@ async def callbacks(client, query):
         save(client, custom_caption=cap_text)
         await update_user_info(user_id, {"custom_caption": cap_text})
         return await query.message.edit_text(
-            "✨ <b>Successfully Saved Your Caption</b>",
+            f"✨ <b>Successfully Saved Your Caption</b>\n\n<code>{cap_text}</code>",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_caption")]])
         )
 
@@ -259,17 +289,20 @@ async def callbacks(client, query):
         rows = []
         for b in buttons:
             if isinstance(b, dict) and b.get("text") and b.get("url"):
-                rows.append([InlineKeyboardButton(b["text"], url=b["url"]), InlineKeyboardButton("➕", callback_data="button_add")])
-        if not rows:
-            rows.append([InlineKeyboardButton("➕", callback_data="button_add")])
-        rows.append([InlineKeyboardButton("back", callback_data="settings_back"), InlineKeyboardButton("Delete", callback_data="button_delete")])
-        text = "<b>Custom Button:</b>\n\nYou can add a custom button to your message"
+                rows.append([InlineKeyboardButton(b["text"], url=b["url"])])
+        rows.append([InlineKeyboardButton("➕ Add Button", callback_data="button_add"), InlineKeyboardButton("🗑️ Delete All", callback_data="button_delete")])
+        rows.append([InlineKeyboardButton("back", callback_data="settings_back")])
+        text = "<b>Custom Button:</b>\n\nYou can add custom buttons to your shared messages."
+        if buttons:
+            text += f"\n\n<b>Configured Buttons:</b> {len(buttons)}"
+        else:
+            text += "\n\n<i>No custom buttons set.</i>"
         return await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(rows))
 
     if data == "button_add":
         await query.answer()
         await query.message.edit_text(
-            "Send text for button",
+            "Send text for button\n\nSend /cancel to abort.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_button")]])
         )
         try:
@@ -285,7 +318,7 @@ async def callbacks(client, query):
             return await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_button")]]))
         
         await query.message.edit_text(
-            "Send url for button",
+            f"<b>Button Text:</b> <code>{btn_txt}</code>\n\nSend url for button\n(e.g., https://t.me/yourchannel)\n\nSend /cancel to abort.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_button")]])
         )
         try:
@@ -297,8 +330,10 @@ async def callbacks(client, query):
             await ans_url.delete()
         except Exception:
             pass
-        if not (btn_url.startswith("http://") or btn_url.startswith("https://") or btn_url.startswith("tg://")):
+        if not (btn_url.startswith("http://") or btn_url.startswith("https://") or btn_url.startswith("tg://") or btn_url.startswith("t.me/")):
             return await query.message.edit_text("❌ URL must start with http://, https:// or tg://", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_button")]]))
+        if btn_url.startswith("t.me/"):
+            btn_url = "https://" + btn_url
         btns = list(r.get("custom_buttons", []))
         btns.append({"text": btn_txt[:64], "url": btn_url})
         save(client, custom_buttons=btns)
@@ -313,9 +348,9 @@ async def callbacks(client, query):
         await update_user_info(user_id, {"custom_buttons": []})
         await query.answer("Custom buttons deleted.", show_alert=True)
         return await query.message.edit_text(
-            "<b>Custom Button:</b>\n\nYou can add a custom button to your message",
+            "<b>Custom Button:</b>\n\nYou can add a custom button to your message\n\n<i>All buttons deleted.</i>",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("➕", callback_data="button_add")],
+                [InlineKeyboardButton("➕ Add Button", callback_data="button_add")],
                 [InlineKeyboardButton("back", callback_data="settings_back")]
             ])
         )

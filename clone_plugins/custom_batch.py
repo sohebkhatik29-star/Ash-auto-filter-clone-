@@ -253,11 +253,7 @@ async def _generate(client, query, session):
 
     username = (await client.get_me()).username
     url = f"https://t.me/{username}?start=batch_{token}"
-    owner = cmd.owner_id(client) or int(session["user_id"])
-    try:
-        shown = await get_short_link(await get_user(owner), url)
-    except Exception:
-        shown = url
+    shown = url
 
     old_chat = session.get("control_chat_id")
     old_msg = session.get("control_message_id")

@@ -195,8 +195,8 @@ async def genlink(client, message):
     if not replied or not replied.media: return await message.reply("Reply to a video, audio or document and use <code>/link</code>.")
     media=getattr(replied,replied.media.value,None); file_id=getattr(media,"file_id",None)
     if not file_id: return await message.reply("❌ Supported media: video, audio or document.")
-    rec=bot_record(client); protected=bool(rec.get("protect_content",False)) or bool(rec.get("no_forward",False)); username=(await client.get_me()).username; link=make_file_link(username,file_id,protected); user=await get_user(owner_id(client) or message.from_user.id); short=await get_short_link(user,link)
-    await message.reply(f"🔗 <b>File Link:</b>\n{short if short!=link else link}"+(f"\n\n🔗 <b>Original:</b>\n{link}" if short!=link else ""))
+    rec=bot_record(client); protected=bool(rec.get("protect_content",False)) or bool(rec.get("no_forward",False)); username=(await client.get_me()).username; link=make_file_link(username,file_id,protected)
+    await message.reply(f"🔗 <b>File Link:</b>\n{link}")
 
 
 async def custom_batch(client,message): return await message.reply("Use /custom_batch or /batch.")
@@ -309,8 +309,7 @@ async def callbacks(client, query):
         "custom_caption", "caption_see", "caption_delete", "caption_edit",
         "custom_button", "button_add", "button_delete", "protect_menu", "protect_toggle", "protect_on", "protect_off"
     ):
-        from clone_plugins import clone_settings_ui as cset
-        return await cset.callbacks(client, query)
+        return
     return await query.answer("Unknown option.", show_alert=True)
 
 
