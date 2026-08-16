@@ -100,32 +100,43 @@ async def callbacks(client, query):
 
     if data == "add_shortener":
         await query.answer()
-        site_msg = await client.ask(user_id, "Send your shortener site url\n\neg: https://droplink.co", timeout=120)
+        await query.message.edit_text(
+            "Send your shortener site url\n\neg: https://droplink.co",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]]),
+            disable_web_page_preview=True
+        )
+        try:
+            site_msg = await client.listen(chat_id=user_id, timeout=120)
+        except Exception:
+            return
+
         site_raw = (site_msg.text or "").strip()
         try:
             await site_msg.delete()
-            if hasattr(site_msg, "request") and site_msg.request:
-                await site_msg.request.delete()
-            if hasattr(site_msg, "sent_message") and site_msg.sent_message:
-                await site_msg.sent_message.delete()
         except Exception:
             pass
 
         if not site_raw or site_raw.startswith("/"):
             return await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]]))
-        
+
         site_clean = site_raw.replace("https://", "").replace("http://", "").split("/")[0].strip()
-        if not site_clean:
+        if not site_clean or "." not in site_clean:
             return await query.message.edit_text("❌ Invalid site URL.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]]))
 
-        api_msg = await client.ask(user_id, f"Send your shortener ({site_clean}) api token, get it from <a href='http://{site_clean}/member/tools/api'>here</a>", timeout=120, disable_web_page_preview=True)
+        await query.message.edit_text(
+            f"Send your shortener ({site_clean}) api token, get it from <a href='https://{site_clean}/member/tools/api'>here</a>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]]),
+            disable_web_page_preview=True
+        )
+
+        try:
+            api_msg = await client.listen(chat_id=user_id, timeout=120)
+        except Exception:
+            return
+
         api_raw = (api_msg.text or "").strip()
         try:
             await api_msg.delete()
-            if hasattr(api_msg, "request") and api_msg.request:
-                await api_msg.request.delete()
-            if hasattr(api_msg, "sent_message") and api_msg.sent_message:
-                await api_msg.sent_message.delete()
         except Exception:
             pass
 
@@ -221,8 +232,19 @@ async def callbacks(client, query):
 
     if data == "caption_edit":
         await query.answer()
-        ans = await client.ask(user_id, "Send Your New Custom Caption", timeout=180)
+        await query.message.edit_text(
+            "Send Your New Custom Caption",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_caption")]])
+        )
+        try:
+            ans = await client.listen(chat_id=user_id, timeout=180)
+        except Exception:
+            return
         cap_text = (ans.text or "").strip()
+        try:
+            await ans.delete()
+        except Exception:
+            pass
         if not cap_text or cap_text.startswith("/"):
             return await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_caption")]]))
         save(client, custom_caption=cap_text)
@@ -246,12 +268,35 @@ async def callbacks(client, query):
 
     if data == "button_add":
         await query.answer()
-        ans_txt = await client.ask(user_id, "Send text for button", timeout=120)
+        await query.message.edit_text(
+            "Send text for button",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_button")]])
+        )
+        try:
+            ans_txt = await client.listen(chat_id=user_id, timeout=120)
+        except Exception:
+            return
         btn_txt = (ans_txt.text or "").strip()
+        try:
+            await ans_txt.delete()
+        except Exception:
+            pass
         if not btn_txt or btn_txt.startswith("/"):
             return await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_button")]]))
-        ans_url = await client.ask(user_id, "Send url for button", timeout=120)
+        
+        await query.message.edit_text(
+            "Send url for button",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_button")]])
+        )
+        try:
+            ans_url = await client.listen(chat_id=user_id, timeout=120)
+        except Exception:
+            return
         btn_url = (ans_url.text or "").strip()
+        try:
+            await ans_url.delete()
+        except Exception:
+            pass
         if not (btn_url.startswith("http://") or btn_url.startswith("https://") or btn_url.startswith("tg://")):
             return await query.message.edit_text("❌ URL must start with http://, https:// or tg://", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="custom_button")]]))
         btns = list(r.get("custom_buttons", []))

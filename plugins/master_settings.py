@@ -125,14 +125,19 @@ async def callbacks(client, query):
 
     if data == "master_add_shortener":
         await query.answer()
-        site_msg = await client.ask(query.from_user.id, "Send your shortener site url\n\neg: https://droplink.co", timeout=120)
+        await query.message.edit_text(
+            "Send your shortener site url\n\neg: https://droplink.co",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]]),
+            disable_web_page_preview=True
+        )
+        try:
+            site_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
+        except Exception:
+            raise StopPropagation
+
         site_raw = (site_msg.text or "").strip()
         try:
             await site_msg.delete()
-            if hasattr(site_msg, "request") and site_msg.request:
-                await site_msg.request.delete()
-            if hasattr(site_msg, "sent_message") and site_msg.sent_message:
-                await site_msg.sent_message.delete()
         except Exception:
             pass
 
@@ -140,18 +145,24 @@ async def callbacks(client, query):
             await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]]))
             raise StopPropagation
         site_clean = site_raw.replace("https://", "").replace("http://", "").split("/")[0].strip()
-        if not site_clean:
+        if not site_clean or "." not in site_clean:
             await query.message.edit_text("❌ Invalid site URL.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]]))
             raise StopPropagation
 
-        api_msg = await client.ask(query.from_user.id, f"Send your shortener ({site_clean}) api token, get it from <a href='http://{site_clean}/member/tools/api'>here</a>", timeout=120, disable_web_page_preview=True)
+        await query.message.edit_text(
+            f"Send your shortener ({site_clean}) api token, get it from <a href='https://{site_clean}/member/tools/api'>here</a>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]]),
+            disable_web_page_preview=True
+        )
+
+        try:
+            api_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
+        except Exception:
+            raise StopPropagation
+
         api_raw = (api_msg.text or "").strip()
         try:
             await api_msg.delete()
-            if hasattr(api_msg, "request") and api_msg.request:
-                await api_msg.request.delete()
-            if hasattr(api_msg, "sent_message") and api_msg.sent_message:
-                await api_msg.sent_message.delete()
         except Exception:
             pass
 
