@@ -9,6 +9,7 @@ from clone_plugins import clone_settings_ui as cset
 from clone_plugins import single_link
 from clone_plugins import custom_batch as cbatch
 from clone_plugins import channel_batch as chbatch
+from clone_plugins import special_link
 
 
 async def clean_help(client, message):
@@ -18,8 +19,11 @@ async def clean_help(client, message):
         "• /start — Check bot / open file link\n"
         "• /help — Open this help\n"
         "• /getlink — Create a single shareable file link\n"
+        "• /link — Create a single shareable file link\n"
         "• /batch — Store multiple messages from a channel\n"
         "• /custom_batch — Create custom batch links\n"
+        "• /special_link — Create a special link\n"
+        "• /universal_link — Create a universal link\n"
         "• /shortener — Shortener settings\n"
         "• /settings — Customize bot\n"
         "• /api KEY — Set or view shortener API\n"
@@ -32,7 +36,7 @@ async def clean_help(client, message):
         "• /auto_delete • /no_forward • /moderator\n"
         "• /access_token • /transfer_db • /deactivate\n"
         "• /mode • /restart • /delete • /start_msg\n\n"
-        "⚙️ Owner features are also available from <b>Settings → My Clone Bot</b>."
+        "⚙️ Owner features are also available from <b>Settings</b>."
     )
     await message.reply(text, reply_markup=InlineKeyboardMarkup([
         [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings")]
@@ -44,12 +48,17 @@ def register_clone_handlers(client):
     single_link.register(client)
     cbatch.register(client, base_group=-1)
     chbatch.register(client, base_group=-3)
+    special_link.register(client, base_group=-5)
 
     # Public clone commands
     command_map = {
         "start": cmd.start,
         "help": clean_help,
         "getlink": single_link.genlink_prompt,
+        "link": single_link.genlink_prompt,
+        "genlink": single_link.genlink_prompt,
+        "universal_link": cmd.universal_link,
+        "settings": cset.settings,
         "shortener": cmd.shortener,
         "api": cmd.api_handler,
         "base_site": cmd.base_site_handler,

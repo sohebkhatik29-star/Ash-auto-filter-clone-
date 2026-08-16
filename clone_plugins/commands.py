@@ -41,10 +41,16 @@ def is_owner_or_mod(client, user_id):
         pass
     rec = bot_record(client)
     if not rec:
-        return False
+        from config import PUBLIC_FILE_STORE
+        return bool(PUBLIC_FILE_STORE)
     if int(rec.get("user_id", 0)) == uid:
         return True
-    return uid in [int(x) for x in rec.get("moderators", [])]
+    if uid in [int(x) for x in rec.get("moderators", [])]:
+        return True
+    if rec.get("mode") == "public":
+        return True
+    from config import PUBLIC_FILE_STORE
+    return bool(PUBLIC_FILE_STORE)
 
 
 def make_file_link(bot_username, file_id, protected=False):

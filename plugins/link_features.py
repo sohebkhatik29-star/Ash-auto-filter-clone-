@@ -1,6 +1,5 @@
-"""Basic working file-link commands for the master bot."""
+"""Helper functions for file-link commands."""
 import base64
-from pyrogram import Client, filters
 from pyrogram.types import Message
 
 
@@ -14,17 +13,4 @@ def extract_file_id(message: Message):
         return None
     obj = getattr(message, media.value, None)
     return getattr(obj, "file_id", None)
-
-
-@Client.on_message(filters.command(["link", "genlink"]) & filters.private)
-async def make_single_link(client, message):
-    target = message.reply_to_message
-    if not target:
-        return await message.reply_text("Reply to a document/video/audio/photo and send /link")
-    file_id = extract_file_id(target)
-    if not file_id:
-        return await message.reply_text("Please reply to a supported media/file message.")
-    bot = await client.get_me()
-    payload = encode_payload(f"file_{file_id}")
-    await message.reply_text(f"<b>Your file link:</b>\nhttps://t.me/{bot.username}?start={payload}")
 

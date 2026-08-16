@@ -302,6 +302,61 @@ async def start(client, message):
 # Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
 # Ask Doubt on telegram @movies_1780
 
+@Client.on_message(filters.command("help") & filters.private)
+async def help_command_handler(client, message):
+    buttons = [[
+        InlineKeyboardButton('Hᴏᴍᴇ', callback_data='start'),
+        InlineKeyboardButton('🔒 Cʟᴏsᴇ', callback_data='close_data')
+    ]]
+    try:
+        await message.reply_photo(
+            photo=random.choice(PICS),
+            caption=script.HELP_TXT,
+            reply_markup=InlineKeyboardMarkup(buttons),
+            parse_mode=enums.ParseMode.HTML
+        )
+    except Exception:
+        await message.reply_text(
+            text=script.HELP_TXT,
+            reply_markup=InlineKeyboardMarkup(buttons),
+            parse_mode=enums.ParseMode.HTML
+        )
+
+
+@Client.on_message(filters.command("settings") & filters.private)
+async def settings_cmd_handler(client, message):
+    from plugins.master_settings import send_settings_menu
+    return await send_settings_menu(client, message)
+
+
+@Client.on_message(filters.command("shortener") & filters.private)
+async def shortener_cmd_handler(client, message):
+    user_id = message.from_user.id
+    user = await get_user(user_id)
+    if not (user.get("base_site") and user.get("shortener_api")):
+        return await message.reply(
+            "<b>Link Shortener</b>\n\n"
+            "To shorten your links using your preferred provider, make sure to connect it with me first.\n\n"
+            "Use /settings to connect your shortener provider."
+        )
+    ans = await client.ask(message.chat.id, "Send your Link which you want to shorten", timeout=120)
+    link = (ans.text or "").strip()
+    if not link or link.startswith("/"):
+        return await message.reply("❌ Invalid link or cancelled.")
+    from clone_plugins.users_api import get_short_link
+    short_link = await get_short_link(user, link)
+    if not short_link or short_link == link:
+        return await message.reply("❌ Failed to shorten link. Please check your shortener API and site settings.")
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔗 SHARE SHORTENED LINK ↗️", url=f"https://t.me/share/url?url={short_link}")]
+    ])
+    await message.reply(
+        f"Here is your shortened link:\n\n{short_link}",
+        reply_markup=markup,
+        disable_web_page_preview=True
+    )
+
+
 @Client.on_message(filters.command('api') & filters.private)
 async def shortener_api_handler(client, m: Message):
     user_id = m.from_user.id

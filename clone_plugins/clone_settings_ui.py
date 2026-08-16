@@ -20,6 +20,12 @@ def record(client):
 
 
 def owner(client, uid):
+    from config import ADMINS
+    try:
+        if int(uid) in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]:
+            return True
+    except Exception:
+        pass
     r = record(client)
     try:
         return int(r.get("user_id", 0)) == int(uid)

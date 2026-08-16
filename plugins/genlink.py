@@ -49,17 +49,22 @@ async def incoming_gen_link(bot, message):
         await message.reply(f"<b>⭕ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ:\n\n🔗 ᴏʀɪɢɪɴᴀʟ ʟɪɴᴋ :- {share_link}</b>")
         
 
-@Client.on_message(filters.command(['link']) & filters.create(allowed))
+@Client.on_message(filters.command(['link', 'genlink', 'getlink']) & filters.create(allowed))
 async def gen_link_s(bot, message):
     username = (await bot.get_me()).username
     replied = message.reply_to_message
     if not replied:
-        return await message.reply('Reply to a message to get a shareable link.')
-
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
+        try:
+            ans = await bot.ask(message.chat.id, "📩 <b>Send or forward any media / document to generate a shareable link.</b>\n\nSend /cancel to abort.", timeout=120)
+            if not ans or (ans.text and ans.text.strip().lower() == "/cancel"):
+                return await message.reply("❌ Cancelled.")
+            replied = ans
+        except Exception:
+            return await message.reply("Reply to a message to get a shareable link or send the file directly.")
     
+    if not (replied.document or replied.video or replied.audio or replied.photo or replied.media):
+        return await message.reply("❌ Please send or reply to a valid media file.")
+
     post = await replied.copy(LOG_CHANNEL)
     file_id = str(post.id)
     string = f"file_"
@@ -71,7 +76,7 @@ async def gen_link_s(bot, message):
         share_link = f"{WEBSITE_URL}?tech_as_0={outstr}"
     else:
         share_link = f"https://t.me/{username}?start={outstr}"
-    if user["base_site"] and user["shortener_api"] != None:
+    if user and user.get("base_site") and user.get("shortener_api"):
         short_link = await get_short_link(user, share_link)
         await message.reply(f"<b>⭕ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ:\n\n🖇️ sʜᴏʀᴛ ʟɪɴᴋ :- {short_link}</b>")
     else:
