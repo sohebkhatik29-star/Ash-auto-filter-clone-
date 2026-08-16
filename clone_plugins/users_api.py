@@ -88,3 +88,24 @@ async def get_short_link(user, link):
             continue
             
     return link
+
+
+async def validate_shortener_token(site_clean: str, api_token: str) -> bool:
+    api_token = (api_token or "").strip()
+    if not api_token:
+        return False
+    # If user pasted a URL or invalid characters
+    if api_token.startswith(("http://", "https://", "www.", "/", "@")) or "/" in api_token or " " in api_token:
+        return False
+    if len(api_token) < 5:
+        return False
+    
+    test_link = "https://telegram.org"
+    dummy_user = {"base_site": site_clean, "shortener_api": api_token}
+    try:
+        shortened = await get_short_link(dummy_user, test_link)
+        if shortened and shortened != test_link and str(shortened).startswith("http"):
+            return True
+    except Exception:
+        pass
+    return False

@@ -3,7 +3,7 @@ import asyncio
 from pyrogram import filters
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from clone_plugins.users_api import get_user, update_user_info, get_short_link
+from clone_plugins.users_api import get_user, update_user_info, get_short_link, validate_shortener_token
 from config import ADMINS
 
 
@@ -71,6 +71,8 @@ async def callbacks(client, query):
             return await query.message.reply(text, reply_markup=settings_menu())
 
     if data == "link_shortener":
+        user = await get_user(user_id)
+        r = record(client)
         site = user.get("base_site") or r.get("base_site")
         api = user.get("shortener_api") or r.get("shortener_api")
         if not (site and api):
@@ -100,15 +102,43 @@ async def callbacks(client, query):
         await query.answer()
         site_msg = await client.ask(user_id, "Send your shortener site url\n\neg: https://droplink.co", timeout=120)
         site_raw = (site_msg.text or "").strip()
+        try:
+            await site_msg.delete()
+            if hasattr(site_msg, "request") and site_msg.request:
+                await site_msg.request.delete()
+            if hasattr(site_msg, "sent_message") and site_msg.sent_message:
+                await site_msg.sent_message.delete()
+        except Exception:
+            pass
+
         if not site_raw or site_raw.startswith("/"):
             return await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]]))
         
         site_clean = site_raw.replace("https://", "").replace("http://", "").split("/")[0].strip()
-        api_msg = await client.ask(user_id, f"Send your shortener ({site_clean}) api token, get it from <a href='http://{site_clean}/member/tools/api'>here</a>", timeout=120)
+        if not site_clean:
+            return await query.message.edit_text("❌ Invalid site URL.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]]))
+
+        api_msg = await client.ask(user_id, f"Send your shortener ({site_clean}) api token, get it from <a href='http://{site_clean}/member/tools/api'>here</a>", timeout=120, disable_web_page_preview=True)
         api_raw = (api_msg.text or "").strip()
+        try:
+            await api_msg.delete()
+            if hasattr(api_msg, "request") and api_msg.request:
+                await api_msg.request.delete()
+            if hasattr(api_msg, "sent_message") and api_msg.sent_message:
+                await api_msg.sent_message.delete()
+        except Exception:
+            pass
+
         if not api_raw or api_raw.startswith("/"):
             return await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]]))
-        
+
+        is_valid = await validate_shortener_token(site_clean, api_raw)
+        if not is_valid:
+            return await query.message.edit_text(
+                "The given Shortener Api Token is invalid",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]])
+            )
+
         await update_user_info(user_id, {"base_site": site_clean, "shortener_api": api_raw})
         save(client, base_site=site_clean, shortener_api=api_raw)
         return await query.message.edit_text(
