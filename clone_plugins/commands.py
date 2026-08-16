@@ -135,6 +135,33 @@ async def start(client, message):
     try:
         if not await clonedb.is_user_exist(me.id, message.from_user.id): await clonedb.add_user(me.id, message.from_user.id)
     except Exception: pass
+
+    rec = bot_record(client)
+    log_ch = rec.get("log_channel")
+    if log_ch:
+        try:
+            u = message.from_user
+            log_text = (
+                "❓ <b>USER INFO:</b>\n\n"
+                f"🪪 <b>Mention:</b> {u.mention}\n"
+                f"🆔 <b>User ID:</b> <code>{u.id}</code>\n"
+                f"👤 <b>First Name:</b> {u.first_name or 'None'}\n"
+                f"👤 <b>Last Name:</b> {u.last_name or 'None'}\n"
+                f"📎 <b>Username:</b> @{u.username or 'None'}\n\n"
+                f"🌐 <b>Language:</b> {getattr(u, 'language_code', None) or 'None'}\n"
+                f"⭐️ <b>Premium:</b> {bool(getattr(u, 'is_premium', False))}\n"
+                f"🤖 <b>Bot:</b> {bool(getattr(u, 'is_bot', False))}\n"
+                f"🚨 <b>Scam:</b> {bool(getattr(u, 'is_scam', False))}\n"
+                f"⚠️ <b>Fake:</b> {bool(getattr(u, 'is_fake', False))}\n"
+                f"🛡️ <b>Support:</b> {bool(getattr(u, 'is_support', False))}\n"
+                f"✅ <b>Verified:</b> {bool(getattr(u, 'is_verified', False))}\n"
+                f"⛔️ <b>Restricted:</b> {bool(getattr(u, 'is_restricted', False))}\n"
+                f"🌐 <b>DC ID:</b> {getattr(u, 'dc_id', None) or 'None'}"
+            )
+            await client.send_message(chat_id=int(log_ch), text=log_text)
+        except Exception:
+            pass
+
     if len(message.command) != 2:
         buttons = [
             [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
@@ -142,7 +169,6 @@ async def start(client, message):
             [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
         ]
         caption = script.CLONE_START_TXT.format(message.from_user.mention, me.mention)
-        rec = bot_record(client)
         start_photo = rec.get("start_pic") or random.choice(PICS)
         try: return await message.reply_photo(photo=start_photo, caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
         except Exception:
@@ -292,7 +318,8 @@ async def callbacks(client, query):
         return await query.message.edit_text(caption, reply_markup=InlineKeyboardMarkup(buttons))
     # Settings callbacks are fully handled by clone_settings_ui
     if data in (
-        "settings", "settings_back", "link_shortener", "add_shortener", "delete_shortener",
+        "settings", "settings_back", "log_channel", "set_log_channel", "delete_log_channel",
+        "link_shortener", "add_shortener", "delete_shortener",
         "custom_caption", "caption_see", "caption_delete", "caption_edit",
         "custom_button", "button_add", "button_delete", "protect_menu", "protect_toggle", "protect_on", "protect_off"
     ):
@@ -310,5 +337,5 @@ def register(client):
     client.add_handler(MessageHandler(base_site_handler,filters.command("base_site")&private),group=1)
     client.add_handler(MessageHandler(shortener,filters.command("shortener")&private),group=1)
     client.add_handler(MessageHandler(settings_command,filters.command("settings")&private),group=1)
-    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|settings|settings_back|my_clone|google_backup|google_connect|link_shortener|add_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_on|protect_off)$")),group=0)
+    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|settings|settings_back|log_channel|set_log_channel|delete_log_channel|my_clone|google_backup|google_connect|link_shortener|add_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_on|protect_off)$")),group=0)
     return client

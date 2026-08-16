@@ -44,6 +44,7 @@ def save(client, **data):
 
 def settings_menu():
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📢 LOG CHANNEL", callback_data="log_channel")],
         [InlineKeyboardButton("LINK SHORTENER 🔗", callback_data="link_shortener")],
         [InlineKeyboardButton("CUSTOM CAPTION 🖊️", callback_data="custom_caption")],
         [InlineKeyboardButton("CUSTOM BUTTON ➕", callback_data="custom_button")],
@@ -69,6 +70,110 @@ async def callbacks(client, query):
             return await query.message.edit_text(text, reply_markup=settings_menu())
         except Exception:
             return await query.message.reply(text, reply_markup=settings_menu())
+
+    if data == "log_channel":
+        r = record(client)
+        log_ch = r.get("log_channel")
+        log_title = r.get("log_channel_title")
+        if log_ch:
+            status_text = f"<b>YOUR LOG CHANNEL - {log_title or log_ch}</b>"
+        else:
+            status_text = "<b>YOU DIDN'T ADDED ANY LOG CHANNEL ❗</b>"
+
+        text = (
+            "📢 <b>LOG CHANNEL:</b>\n\n"
+            "<b>\"WHAT IS LOG CHANNEL ??\"</b>\n"
+            "IF NEW USERS START YOUR CLONE BOT THEN BOT NOTIFIES YOU.\n\n"
+            f"{status_text}"
+        )
+        markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("SET CHANNEL", callback_data="set_log_channel"),
+                InlineKeyboardButton("DELETE CHANNEL", callback_data="delete_log_channel")
+            ],
+            [InlineKeyboardButton("❮ BACK", callback_data="settings_back")]
+        ])
+        return await query.message.edit_text(text, reply_markup=markup)
+
+    if data == "set_log_channel":
+        await query.answer()
+        me = client.me or (await client.get_me())
+        prompt_text = (
+            "<b>FORWARD LOG CHANNEL ANY MESSAGE TO ME,\n"
+            f"AND MAKE SURE @{me.username} IS ADMIN IN YOUR CHANNEL.</b>\n\n"
+            "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
+        )
+        await query.message.edit_text(
+            prompt_text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="log_channel")]])
+        )
+        try:
+            ch_msg = await client.listen(chat_id=user_id, timeout=120)
+        except Exception:
+            return
+
+        ch_raw = (ch_msg.text or "").strip()
+        try:
+            await ch_msg.delete()
+        except Exception:
+            pass
+
+        if ch_raw.lower() == "/cancel":
+            return await query.message.edit_text(
+                "❌ <b>Process Cancelled.</b>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="log_channel")]])
+            )
+
+        channel_id = None
+        channel_title = None
+
+        if ch_msg.forward_from_chat:
+            channel_id = ch_msg.forward_from_chat.id
+            channel_title = ch_msg.forward_from_chat.title
+        elif ch_raw.startswith("-100") or (ch_raw.startswith("-") and ch_raw[1:].isdigit()):
+            channel_id = int(ch_raw)
+        elif ch_raw.isdigit():
+            channel_id = int(f"-100{ch_raw}")
+        elif ch_raw.startswith("@"):
+            try:
+                chat = await client.get_chat(ch_raw)
+                channel_id = chat.id
+                channel_title = chat.title
+            except Exception:
+                pass
+
+        if not channel_id:
+            return await query.message.edit_text(
+                "❌ <b>Invalid Channel! Please forward a message directly from your channel.</b>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="log_channel")]])
+            )
+
+        try:
+            chat = await client.get_chat(channel_id)
+            channel_title = chat.title or channel_title or str(channel_id)
+            await client.send_message(
+                chat_id=channel_id,
+                text=f"⚡ <b>Log channel successfully connected with @{me.username}!</b>"
+            )
+        except Exception as err:
+            return await query.message.edit_text(
+                f"❌ <b>Failed to connect channel!</b>\n\nMake sure <b>@{me.username}</b> is an <b>ADMIN</b> in the channel with post permissions.\n\n<code>Error: {err}</code>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="log_channel")]])
+            )
+
+        save(client, log_channel=channel_id, log_channel_title=channel_title)
+        return await query.message.edit_text(
+            f"⚡ <b>SUCCESSFULLY ADDED YOUR LOG CHANNEL - {channel_title}</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="log_channel")]])
+        )
+
+    if data == "delete_log_channel":
+        save(client, log_channel=None, log_channel_title=None)
+        await query.answer("🗑️ Successfully deleted your log channel", show_alert=False)
+        return await query.message.edit_text(
+            "🗑️ <b>SUCCESSFULLY DELETED LOG CHANNEL</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="log_channel")]])
+        )
 
     if data == "link_shortener":
         user = await get_user(user_id)
@@ -358,6 +463,6 @@ async def callbacks(client, query):
 
 def register(client):
     client.add_handler(MessageHandler(settings, filters.command("settings") & filters.private), group=0)
-    client.add_handler(CallbackQueryHandler(callbacks, filters.regex(r"^(settings|settings_back|link_shortener|add_shortener|delete_shortener|protect_menu|protect_toggle|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete)$")), group=0)
+    client.add_handler(CallbackQueryHandler(callbacks, filters.regex(r"^(settings|settings_back|log_channel|set_log_channel|delete_log_channel|link_shortener|add_shortener|delete_shortener|protect_menu|protect_toggle|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete)$")), group=0)
     return client
 
