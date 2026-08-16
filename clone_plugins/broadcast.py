@@ -12,12 +12,11 @@ from clone_plugins.dbusers import clonedb
         
 @Client.on_message(filters.command("broadcast"))
 async def pm_broadcast(bot, message):
-    me = await bot.get_me()
-    owner = mongo_db.bots.find_one({'bot_id': me.id})
-    ownerid = int(owner['user_id'])
-    if ownerid != message.from_user.id:
-        await message.reply_text("ᴏɴʟʏ ᴏᴡɴᴇʀ ᴄᴏᴍᴍᴀɴᴅ❗")
+    from clone_plugins.clone_settings_ui import is_bot_owner, has_permission
+    if not (is_bot_owner(bot, message.from_user.id) or has_permission(bot, message.from_user.id, "broadcast")):
+        await message.reply_text("ᴏɴʟʏ ᴏᴡɴᴇʀ / ᴀᴜᴛʜᴏʀɪᴢᴇᴅ ᴀᴅᴍɪɴ ᴄᴏᴍᴍᴀɴᴅ❗")
         return
+    me = await bot.get_me()
     b_msg = await bot.ask(chat_id = message.from_user.id, text = "Now Send Me Your Broadcast Message")
     try:
         users = await clonedb.get_all_users(me.id)

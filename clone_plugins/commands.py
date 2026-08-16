@@ -263,9 +263,23 @@ async def shortener(client, message):
     )
 
 
+async def id_command(client, message):
+    uid = message.from_user.id
+    return await message.reply(f"<code>{uid}</code>")
+
+
+async def customize_command(client, message):
+    from clone_plugins.clone_settings_ui import is_bot_owner, has_permission
+    uid = message.from_user.id
+    if not (is_bot_owner(client, uid) or has_permission(client, uid, "settings")):
+        return await message.reply("❌ Only owner and authorized admins can customize this bot.")
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🤖 CUSTOMIZE YOUR BOT SETTINGS 🤖", callback_data="settings")]])
+    return await message.reply("<b>YOU CAN CUSTOMISE YOUR BOT SETTINGS FROM BELOW BUTTON</b>", reply_markup=markup)
+
+
 async def settings_command(client, message):
-    text = "🛠️ <b>Settings</b>\n\nCustomize your settings as your need"
-    return await message.reply(text, reply_markup=settings_menu())
+    from clone_plugins import clone_settings_ui as cset
+    return await cset.settings(client, message)
 
 
 async def callbacks(client, query):
@@ -320,10 +334,11 @@ async def callbacks(client, query):
     if data in (
         "settings", "settings_back", "log_channel", "set_log_channel", "delete_log_channel",
         "database_channel", "set_database_channel", "delete_database_channel",
+        "admins_menu", "add_admin_prompt",
         "link_shortener", "add_shortener", "delete_shortener",
         "custom_caption", "caption_see", "caption_delete", "caption_edit",
         "custom_button", "button_add", "button_delete", "protect_menu", "protect_toggle", "protect_on", "protect_off"
-    ):
+    ) or data.startswith(("admin_info:", "adm_tgl:", "adm_trans:", "adm_rem:")):
         return
     return await query.answer("Unknown option.", show_alert=True)
 
@@ -332,11 +347,13 @@ def register(client):
     private=filters.private
     client.add_handler(MessageHandler(start,filters.command("start")&private),group=0)
     client.add_handler(MessageHandler(help_command,filters.command("help")&private),group=0)
+    client.add_handler(MessageHandler(id_command,filters.command("id")&private),group=0)
+    client.add_handler(MessageHandler(customize_command,filters.command("customize")&private),group=0)
     client.add_handler(MessageHandler(genlink,filters.command(["link","genlink"])&private),group=1)
     client.add_handler(MessageHandler(universal_link,filters.command("universal_link")&private),group=1)
     client.add_handler(MessageHandler(api_handler,filters.command("api")&private),group=1)
     client.add_handler(MessageHandler(base_site_handler,filters.command("base_site")&private),group=1)
     client.add_handler(MessageHandler(shortener,filters.command("shortener")&private),group=1)
     client.add_handler(MessageHandler(settings_command,filters.command("settings")&private),group=1)
-    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|settings|settings_back|log_channel|set_log_channel|delete_log_channel|database_channel|set_database_channel|delete_database_channel|my_clone|google_backup|google_connect|link_shortener|add_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_on|protect_off)$")),group=0)
+    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|settings|settings_back|log_channel|set_log_channel|delete_log_channel|database_channel|set_database_channel|delete_database_channel|admins_menu|add_admin_prompt|admin_info:\d+|adm_tgl:\d+:[a-z_]+|adm_trans:\d+|adm_rem:\d+|my_clone|google_backup|google_connect|link_shortener|add_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_on|protect_off)$")),group=0)
     return client

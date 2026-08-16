@@ -19,7 +19,7 @@ def record(client):
     return m.bots.find_one({"bot_id": client.me.id}) or {}
 
 
-def owner(client, uid):
+def is_bot_owner(client, uid):
     try:
         if int(uid) in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]:
             return True
@@ -29,11 +29,49 @@ def owner(client, uid):
     try:
         if int(r.get("user_id", 0)) == int(uid):
             return True
+    except Exception:
+        pass
+    return False
+
+
+def get_bot_admins(client):
+    r = record(client)
+    adms = r.get("admins", [])
+    if isinstance(adms, dict):
+        return list(adms.values())
+    elif isinstance(adms, list):
+        return adms
+    return []
+
+
+def get_admin_data(client, uid):
+    for a in get_bot_admins(client):
+        if int(a.get("user_id", 0)) == int(uid):
+            return a
+    return None
+
+
+def has_permission(client, uid, perm):
+    if is_bot_owner(client, uid):
+        return True
+    a = get_admin_data(client, uid)
+    if a and bool(a.get(perm, False)):
+        return True
+    return False
+
+
+def owner(client, uid):
+    if is_bot_owner(client, uid):
+        return True
+    r = record(client)
+    try:
         if int(uid) in [int(x) for x in r.get("moderators", [])]:
             return True
     except Exception:
         pass
-    return True
+    if get_admin_data(client, uid):
+        return True
+    return False
 
 
 def save(client, **data):
@@ -42,10 +80,67 @@ def save(client, **data):
         m.bots.update_one({"bot_id": client.me.id}, {"$set": data}, upsert=True)
 
 
+def admins_menu_text():
+    return (
+        "👥 <b>ADMINS:</b>\n\n"
+        "<b>YOU CAN CHANGE WHAT ADMINS CAN USE OR NOT BY CLICKING ON ADMIN NAME BUTTON.</b>\n\n"
+        "<b>YOU CAN CUSTOMISE FOLLOWING ADMINS SETTINGS:</b>\n\n"
+        "- <b>CAN DO BROADCAST</b>\n"
+        "- <b>CAN USE CLONE BOT CUSTOMISATION</b>\n"
+        "- <b>CAN ADD ADMINS OR CHANGE ADMIN SETTINGS</b>\n"
+        "- <b>CAN DELETE BOT</b>\n\n"
+        "<b>YOU CAN CUSTOMISE THE EACH ADMIN SETTINGS THAT WHAT THEY CAN USE OR WHAT THEY CAN NOT USE.</b>"
+    )
+
+
+def admins_menu_markup(client):
+    rows = []
+    admins = get_bot_admins(client)
+    for adm in admins:
+        name = adm.get("name") or f"Admin {adm.get('user_id')}"
+        rows.append([InlineKeyboardButton(f"{name}", callback_data=f"admin_info:{adm.get('user_id')}")])
+    rows.append([InlineKeyboardButton("➕ ADD ADMIN ➕", callback_data="add_admin_prompt")])
+    rows.append([InlineKeyboardButton("❮ BACK", callback_data="settings_back")])
+    return InlineKeyboardMarkup(rows)
+
+
+def admin_info_text(adm):
+    name = adm.get("name") or f"Admin {adm.get('user_id')}"
+    uid = adm.get("user_id")
+    uname = adm.get("username")
+    uname_str = f"@{uname}" if uname else "None"
+    return (
+        "🪪 <b>ADMIN INFO:</b>\n\n"
+        f"- <b>NAME:</b> {name}\n"
+        f"- <b>USER ID:</b> <code>{uid}</code>\n"
+        f"- <b>USERNAME:</b> {uname_str}\n\n"
+        "<b>IF YOU ENABLE ALL SETTINGS WHICH IS GIVEN BELOW OF THIS ADMINS IT MEANS THIS ADMINS CAN DO EVERYTHING WHICH CAN DONE BY OWNER AND THIS ALSO HELP IF BY MISTAKE YOUR MAIN TELEGRAM ACCOUNT DELETED BUT ADMIN CAN NOT TRANSFER OWNERSHIP TO OTHER ADMIN ONLY OWNER CAN.</b>\n\n"
+        "<b>YOU CAN CUSTOMISE THE EACH ADMIN SETTINGS THAT WHAT THEY CAN USE OR WHAT THEY CAN NOT USE.</b>"
+    )
+
+
+def admin_info_markup(adm):
+    uid = adm.get("user_id")
+    b_icon = "✅" if adm.get("broadcast") else "❌"
+    s_icon = "✅" if adm.get("settings") else "❌"
+    a_icon = "✅" if adm.get("add_admins") else "❌"
+    d_icon = "✅" if adm.get("delete_bot") else "❌"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"📢 BROADCAST - {b_icon}", callback_data=f"adm_tgl:{uid}:broadcast")],
+        [InlineKeyboardButton(f"⚙️ CLONE BOT SETTINGS - {s_icon}", callback_data=f"adm_tgl:{uid}:settings")],
+        [InlineKeyboardButton(f"👥 ADD ADMINS - {a_icon}", callback_data=f"adm_tgl:{uid}:add_admins")],
+        [InlineKeyboardButton(f"🚫 DELETE BOT - {d_icon}", callback_data=f"adm_tgl:{uid}:delete_bot")],
+        [InlineKeyboardButton("♻️ TRANSFER CLONE OWNERSHIP", callback_data=f"adm_trans:{uid}")],
+        [InlineKeyboardButton("🗑️ REMOVE ADMIN", callback_data=f"adm_rem:{uid}")],
+        [InlineKeyboardButton("❮ BACK", callback_data="admins_menu")]
+    ])
+
+
 def settings_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📢 LOG CHANNEL", callback_data="log_channel")],
         [InlineKeyboardButton("☁️ DATABASE CHANNEL", callback_data="database_channel")],
+        [InlineKeyboardButton("👥 ADMINS", callback_data="admins_menu")],
         [InlineKeyboardButton("LINK SHORTENER 🔗", callback_data="link_shortener")],
         [InlineKeyboardButton("CUSTOM CAPTION 🖊️", callback_data="custom_caption")],
         [InlineKeyboardButton("CUSTOM BUTTON ➕", callback_data="custom_button")],
@@ -278,6 +373,149 @@ async def callbacks(client, query):
         return await query.message.edit_text(
             "🗑️ <b>SUCCESSFULLY DELETED DATABASE CHANNEL</b>",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="database_channel")]])
+        )
+
+    if data == "admins_menu":
+        if not (is_bot_owner(client, user_id) or has_permission(client, user_id, "add_admins")):
+            return await query.answer("❌ You don't have permission to manage admins.", show_alert=True)
+        return await query.message.edit_text(
+            admins_menu_text(),
+            reply_markup=admins_menu_markup(client)
+        )
+
+    if data == "add_admin_prompt":
+        if not (is_bot_owner(client, user_id) or has_permission(client, user_id, "add_admins")):
+            return await query.answer("❌ You don't have permission to add admins.", show_alert=True)
+        await query.answer()
+        prompt_text = (
+            "<b>NOW SEND ME USER ID</b>\n\n"
+            "<b>FOR USER ID , TOLD THAT USER TO GIVE <code>/id</code> COMMAND IN THIS BOT TO GET THAT USER ID</b>\n\n"
+            "<b>AND MAKE SURE YOUR ADMIN START THIS BOT ELSE YOU WILL GET ERROR THAT THIS IS NOT USER ID</b>\n\n"
+            "<code>/cancel</code> - <b>CANCEL THIS PROCESS</b>"
+        )
+        await query.message.edit_text(
+            prompt_text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="admins_menu")]])
+        )
+        try:
+            uid_msg = await client.listen(chat_id=user_id, timeout=120)
+        except Exception:
+            return
+
+        raw_uid = (uid_msg.text or "").strip()
+        try:
+            await uid_msg.delete()
+        except Exception:
+            pass
+
+        if raw_uid.lower() == "/cancel":
+            return await query.message.edit_text(
+                "❌ <b>Process Cancelled.</b>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="admins_menu")]])
+            )
+
+        if not (raw_uid.isdigit() or (raw_uid.startswith("-") and raw_uid[1:].isdigit())):
+            return await query.message.edit_text(
+                "❌ <b>Invalid User ID!</b>\n\nPlease make sure the user starts the bot and gives their numeric User ID.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="admins_menu")]])
+            )
+
+        target_uid = int(raw_uid)
+        admin_name = f"User {target_uid}"
+        admin_uname = None
+
+        try:
+            user_obj = await client.get_users(target_uid)
+            if user_obj:
+                admin_name = (user_obj.first_name or "") + (" " + user_obj.last_name if user_obj.last_name else "")
+                admin_name = admin_name.strip() or f"User {target_uid}"
+                admin_uname = user_obj.username
+        except Exception:
+            try:
+                chat_obj = await client.get_chat(target_uid)
+                if chat_obj:
+                    admin_name = (chat_obj.first_name or "") + (" " + chat_obj.last_name if chat_obj.last_name else "")
+                    admin_name = admin_name.strip() or f"User {target_uid}"
+                    admin_uname = chat_obj.username
+            except Exception:
+                pass
+
+        admins = get_bot_admins(client)
+        found = False
+        for a in admins:
+            if int(a.get("user_id", 0)) == target_uid:
+                a["name"] = admin_name
+                a["username"] = admin_uname
+                found = True
+                break
+        if not found:
+            admins.append({
+                "user_id": target_uid,
+                "name": admin_name,
+                "username": admin_uname,
+                "broadcast": False,
+                "settings": False,
+                "add_admins": False,
+                "delete_bot": False
+            })
+        save(client, admins=admins)
+        return await query.message.edit_text(
+            "<b>SUCCESSFULLY UPDATED</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="admins_menu")]])
+        )
+
+    if data.startswith("admin_info:"):
+        target_uid = int(data.split(":")[1])
+        adm = get_admin_data(client, target_uid)
+        if not adm:
+            return await query.answer("❌ Admin not found!", show_alert=True)
+        return await query.message.edit_text(
+            admin_info_text(adm),
+            reply_markup=admin_info_markup(adm)
+        )
+
+    if data.startswith("adm_tgl:"):
+        if not (is_bot_owner(client, user_id) or has_permission(client, user_id, "add_admins")):
+            return await query.answer("❌ You don't have permission to modify admin settings.", show_alert=True)
+        _, target_uid_str, perm = data.split(":")
+        target_uid = int(target_uid_str)
+        admins = get_bot_admins(client)
+        found_adm = None
+        for a in admins:
+            if int(a.get("user_id", 0)) == target_uid:
+                a[perm] = not bool(a.get(perm, False))
+                found_adm = a
+                break
+        if found_adm:
+            save(client, admins=admins)
+            await query.answer()
+            return await query.message.edit_text(
+                admin_info_text(found_adm),
+                reply_markup=admin_info_markup(found_adm)
+            )
+        return await query.answer("❌ Admin not found!", show_alert=True)
+
+    if data.startswith("adm_trans:"):
+        target_uid = int(data.split(":")[1])
+        if not is_bot_owner(client, user_id):
+            return await query.answer("❌ Only the clone owner can transfer ownership!", show_alert=True)
+        save(client, user_id=target_uid)
+        await query.answer("⚡ Ownership successfully transferred to admin!", show_alert=True)
+        return await query.message.edit_text(
+            admins_menu_text(),
+            reply_markup=admins_menu_markup(client)
+        )
+
+    if data.startswith("adm_rem:"):
+        if not (is_bot_owner(client, user_id) or has_permission(client, user_id, "add_admins")):
+            return await query.answer("❌ You don't have permission to remove admins.", show_alert=True)
+        target_uid = int(data.split(":")[1])
+        admins = [a for a in get_bot_admins(client) if int(a.get("user_id", 0)) != target_uid]
+        save(client, admins=admins)
+        await query.answer("🗑️ Admin successfully removed!", show_alert=False)
+        return await query.message.edit_text(
+            admins_menu_text(),
+            reply_markup=admins_menu_markup(client)
         )
 
     if data == "link_shortener":
@@ -568,6 +806,6 @@ async def callbacks(client, query):
 
 def register(client):
     client.add_handler(MessageHandler(settings, filters.command("settings") & filters.private), group=0)
-    client.add_handler(CallbackQueryHandler(callbacks, filters.regex(r"^(settings|settings_back|log_channel|set_log_channel|delete_log_channel|database_channel|set_database_channel|delete_database_channel|link_shortener|add_shortener|delete_shortener|protect_menu|protect_toggle|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete)$")), group=0)
+    client.add_handler(CallbackQueryHandler(callbacks, filters.regex(r"^(settings|settings_back|log_channel|set_log_channel|delete_log_channel|database_channel|set_database_channel|delete_database_channel|admins_menu|add_admin_prompt|admin_info:\d+|adm_tgl:\d+:[a-z_]+|adm_trans:\d+|adm_rem:\d+|link_shortener|add_shortener|delete_shortener|protect_menu|protect_toggle|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete)$")), group=0)
     return client
 
