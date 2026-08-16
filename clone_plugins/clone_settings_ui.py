@@ -4,7 +4,7 @@ from pyrogram import filters
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from clone_plugins.users_api import get_user, update_user_info, get_short_link, validate_shortener_token
-from config import ADMINS
+from config import ADMINS, BOT_USERNAME
 
 
 def db():
@@ -145,6 +145,7 @@ def settings_menu():
         [InlineKeyboardButton("CUSTOM CAPTION 🖊️", callback_data="custom_caption")],
         [InlineKeyboardButton("CUSTOM BUTTON ➕", callback_data="custom_button")],
         [InlineKeyboardButton("PROTECT CONTENT ☂️", callback_data="protect_menu")],
+        [InlineKeyboardButton("🔎 MORE FEATURES ↗", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
         [InlineKeyboardButton("❮ BACK", callback_data="start_back")],
     ])
 

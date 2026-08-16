@@ -90,10 +90,14 @@ async def access_verification(client, user_id, original_payload):
 
 def settings_menu():
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📢 LOG CHANNEL", callback_data="log_channel")],
+        [InlineKeyboardButton("☁️ DATABASE CHANNEL", callback_data="database_channel")],
+        [InlineKeyboardButton("👥 ADMINS", callback_data="admins_menu")],
         [InlineKeyboardButton("LINK SHORTENER 🔗", callback_data="link_shortener")],
         [InlineKeyboardButton("CUSTOM CAPTION 🖊️", callback_data="custom_caption")],
         [InlineKeyboardButton("CUSTOM BUTTON ➕", callback_data="custom_button")],
         [InlineKeyboardButton("PROTECT CONTENT ☂️", callback_data="protect_menu")],
+        [InlineKeyboardButton("🔎 MORE FEATURES ↗", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
         [InlineKeyboardButton("❮ BACK", callback_data="start_back")],
     ])
 
@@ -132,13 +136,17 @@ async def deliver_file(client, user_id, file_id, protected=False):
 
 async def start(client, message):
     me = await client.get_me()
+    is_new_user = False
     try:
-        if not await clonedb.is_user_exist(me.id, message.from_user.id): await clonedb.add_user(me.id, message.from_user.id)
-    except Exception: pass
+        if not await clonedb.is_user_exist(me.id, message.from_user.id):
+            await clonedb.add_user(me.id, message.from_user.id)
+            is_new_user = True
+    except Exception:
+        pass
 
     rec = bot_record(client)
     log_ch = rec.get("log_channel")
-    if log_ch:
+    if log_ch and is_new_user:
         try:
             u = message.from_user
             log_text = (
