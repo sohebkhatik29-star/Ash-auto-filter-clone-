@@ -103,13 +103,11 @@ async def access_verification(client, user_id, original_payload):
 
 def settings_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("MY CLONE BOT 🤖", callback_data="my_clone")],
-        [InlineKeyboardButton("GOOGLE BACKUP 📁", callback_data="google_backup")],
-        [InlineKeyboardButton("LINK SHORTENER 📎", callback_data="link_shortener")],
-        [InlineKeyboardButton("CUSTOM CAPTION 🖌", callback_data="custom_caption")],
+        [InlineKeyboardButton("LINK SHORTENER 🔗", callback_data="link_shortener")],
+        [InlineKeyboardButton("CUSTOM CAPTION 🖊️", callback_data="custom_caption")],
         [InlineKeyboardButton("CUSTOM BUTTON ➕", callback_data="custom_button")],
         [InlineKeyboardButton("PROTECT CONTENT ☂️", callback_data="protect_menu")],
-        [InlineKeyboardButton("‹ BACK", callback_data="settings_back")],
+        [InlineKeyboardButton("❮ BACK", callback_data="start_back")],
     ])
 
 
@@ -219,23 +217,27 @@ async def base_site_handler(client,message):
 
 
 async def shortener(client, message):
-    uid = owner_id(client) or message.from_user.id
-    user = await get_user(uid)
+    user_id = message.from_user.id
+    user = await get_user(user_id)
     if not (user.get("base_site") and user.get("shortener_api")):
-        return await message.reply(
-            "<b>Link Shortener</b>\n\n"
-            "To shorten your links using your preferred provider, make sure to connect it with me first.\n\n"
-            "Use /settings to connect your shortener provider."
-        )
+        rec = bot_record(client)
+        if rec.get("base_site") and rec.get("shortener_api"):
+            user = {"base_site": rec.get("base_site"), "shortener_api": rec.get("shortener_api")}
+        else:
+            return await message.reply(
+                "<b>Link Shortener</b>\n\n"
+                "To shorten your links using your preferred provider, make sure to connect it with me first.\n\n"
+                "Use /settings to connect your shortener provider."
+            )
     ans = await client.ask(message.chat.id, "Send your Link which you want to shorten", timeout=120)
     link = (ans.text or "").strip()
     if not link or link.startswith("/"):
         return await message.reply("❌ Invalid link or cancelled.")
     short_link = await get_short_link(user, link)
     if not short_link or short_link == link:
-        return await message.reply("❌ Failed to shorten link. Please check your shortener API and site settings.")
+        return await message.reply("Something went wrong, please try later")
     markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔗 SHARE SHORTENED LINK ↗️", url=f"https://t.me/share/url?url={short_link}")]
+        [InlineKeyboardButton("🔁 SHARE SHORTENED LINK ↗️", url=f"https://t.me/share/url?url={short_link}")]
     ])
     await message.reply(
         f"Here is your shortened link:\n\n{short_link}",
@@ -244,23 +246,29 @@ async def shortener(client, message):
     )
 
 
-async def settings_command(client,message):
-    from clone_plugins import clone_settings_ui as cset
-    return await cset.settings(client, message)
+async def settings_command(client, message):
+    text = "🛠️ <b>Settings</b>\n\nCustomize your settings as your need"
+    return await message.reply(text, reply_markup=settings_menu())
 
 
-async def callbacks(client,query):
-    data=query.data
-    if data=="close_data": return await query.message.delete()
+async def callbacks(client, query):
+    data = query.data
+    if data == "close_data":
+        return await query.message.delete()
     if data.startswith("verify:"):
-        payload=data.split(":",1)[1]; markup=await force_markup(client,query.from_user.id,payload)
-        if markup: return await query.answer("❌ Join all required channels first.",show_alert=True)
+        payload = data.split(":", 1)[1]
+        markup = await force_markup(client, query.from_user.id, payload)
+        if markup:
+            return await query.answer("❌ Join all required channels first.", show_alert=True)
         await query.answer("✅ Verified!")
-        try: await query.message.delete()
-        except Exception: pass
-        return await client.send_message(query.from_user.id,"<b>✅ Verification successful. Open your file link again.</b>")
-    if data=="help": return await help_command(client,query.message)
-    if data=="about":
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        return await client.send_message(query.from_user.id, "<b>✅ Verification successful. Open your file link again.</b>")
+    if data == "help":
+        return await help_command(client, query.message)
+    if data == "about":
         me = client.me or (await client.get_me())
         owner_id_val = owner_id(client) or query.from_user.id
         owner_name = "Ash"
@@ -280,7 +288,7 @@ async def callbacks(client,query):
         if query.message.photo:
             return await query.message.edit_caption(caption=about_text, reply_markup=markup)
         return await query.message.edit_text(about_text, reply_markup=markup)
-    if data=="start_back":
+    if data == "start_back":
         me = client.me or (await client.get_me())
         buttons = [
             [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
@@ -291,9 +299,9 @@ async def callbacks(client,query):
         if query.message.photo:
             return await query.message.edit_caption(caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
         return await query.message.edit_text(caption, reply_markup=InlineKeyboardMarkup(buttons))
-    if data in ("settings","settings_back"):
-        from clone_plugins import clone_settings_ui as cset
-        return await query.message.edit_text("⚙️ <b>CLONE SETTINGS</b>\n\nOnly your clone settings are shown here.", reply_markup=cset.menu())
+    if data in ("settings", "settings_back"):
+        text = "🛠️ <b>Settings</b>\n\nCustomize your settings as your need"
+        return await query.message.edit_text(text, reply_markup=settings_menu())
     if data=="my_clone":
         return await query.message.edit_text(f"🛠 <b>Customize Clone</b>\n\n➜ <b>Name:</b> {client.me.first_name}\n\nConfigure Your Clone Settings Using Given Buttons",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("START MSG",callback_data="clone_startmsg"),InlineKeyboardButton("FORCE SUB",callback_data="clone_force")],[InlineKeyboardButton("MODERATORS",callback_data="clone_mods"),InlineKeyboardButton("AUTO DELETE",callback_data="clone_autodelete")],[InlineKeyboardButton("NO FORWARD",callback_data="clone_noforward"),InlineKeyboardButton("ACCESS TOKEN",callback_data="clone_access")],[InlineKeyboardButton("TRANSFER DB",callback_data="clone_transfer"),InlineKeyboardButton("DEACTIVATE",callback_data="clone_deactivate")],[InlineKeyboardButton("MODE",callback_data="clone_mode"),InlineKeyboardButton("RESTART",callback_data="clone_restart")],[InlineKeyboardButton("STATS",callback_data="clone_stats"),InlineKeyboardButton("DELETE",callback_data="clone_delete")],[InlineKeyboardButton("‹ BACK",callback_data="settings")]]))
     if data=="google_backup":

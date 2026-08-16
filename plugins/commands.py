@@ -346,9 +346,9 @@ async def shortener_cmd_handler(client, message):
     from clone_plugins.users_api import get_short_link
     short_link = await get_short_link(user, link)
     if not short_link or short_link == link:
-        return await message.reply("❌ Failed to shorten link. Please check your shortener API and site settings.")
+        return await message.reply("Something went wrong, please try later")
     markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔗 SHARE SHORTENED LINK ↗️", url=f"https://t.me/share/url?url={short_link}")]
+        [InlineKeyboardButton("🔁 SHARE SHORTENED LINK ↗️", url=f"https://t.me/share/url?url={short_link}")]
     ])
     await message.reply(
         f"Here is your shortened link:\n\n{short_link}",

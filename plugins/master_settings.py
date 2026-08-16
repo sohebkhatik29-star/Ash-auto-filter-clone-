@@ -94,34 +94,61 @@ async def callbacks(client, query):
 
     if data == "link_shortener":
         user = await get_user(query.from_user.id)
-        site = user.get("base_site") or "Not set"
-        api = user.get("shortener_api") or "Not set"
+        site = user.get("base_site")
+        api = user.get("shortener_api")
+        if not (site and api):
+            text = (
+                "<b>Link Shortener</b>\n\n"
+                "To shorten your links using your preferred provider, make sure to connect it with me first."
+            )
+            markup = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Add Shortener", callback_data="master_add_shortener")],
+                [InlineKeyboardButton("back", callback_data="master_settings")]
+            ])
+            await query.message.edit_text(text, reply_markup=markup)
+            await query.answer()
+            raise StopPropagation
+
         text = (
-            "<b>Link Shortener</b>\n"
+            "<b>Link Shortener</b>\n\n"
             f"- Shortener: {site}\n"
             f"- Shortener Api: {api}\n\n"
             "You can now use the /shortener command to shorten any links."
         )
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("Delete shortener", callback_data="delete_shortener")],
-            [InlineKeyboardButton("‹ back", callback_data="master_settings")]
+            [InlineKeyboardButton("back", callback_data="master_settings")]
         ])
         await query.message.edit_text(text, reply_markup=markup)
         await query.answer()
         raise StopPropagation
 
+    if data == "master_add_shortener":
+        await query.answer()
+        site_msg = await client.ask(query.from_user.id, "Send your shortener site url\n\neg: https://droplink.co", timeout=120)
+        site_raw = (site_msg.text or "").strip()
+        if not site_raw or site_raw.startswith("/"):
+            await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]]))
+            raise StopPropagation
+        site_clean = site_raw.replace("https://", "").replace("http://", "").split("/")[0].strip()
+        api_msg = await client.ask(query.from_user.id, f"Send your shortener ({site_clean}) api token, get it from <a href='http://{site_clean}/member/tools/api'>here</a>", timeout=120)
+        api_raw = (api_msg.text or "").strip()
+        if not api_raw or api_raw.startswith("/"):
+            await query.message.edit_text("❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]]))
+            raise StopPropagation
+        await update_user_info(query.from_user.id, {"base_site": site_clean, "shortener_api": api_raw})
+        await query.message.edit_text(
+            f"✨ <b>Successfully {site_clean} added as your link shortener Provider</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]])
+        )
+        raise StopPropagation
+
     if data == "delete_shortener":
         await update_user_info(query.from_user.id, {"base_site": None, "shortener_api": None})
-        await query.answer("Shortener deleted.", show_alert=True)
-        text = (
-            "<b>Link Shortener</b>\n"
-            "- Shortener: Not set\n"
-            "- Shortener Api: Not set\n\n"
-            "You can now use the /shortener command to shorten any links."
-        )
+        await query.answer("✨ Successfully deleted your link shortener provider", show_alert=False)
+        text = "✨ <b>Successfully deleted your link shortener provider</b>"
         markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Delete shortener", callback_data="delete_shortener")],
-            [InlineKeyboardButton("‹ back", callback_data="master_settings")]
+            [InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]
         ])
         await query.message.edit_text(text, reply_markup=markup)
         raise StopPropagation

@@ -1,33 +1,69 @@
 # © Telegram : @movies_1780 , GitHub : @VJBots
 
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
-
-import requests
-import json
-from motor.motor_asyncio import AsyncIOMotorClient
+import aiohttp
 from plugins.clone import mongo_db
 
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
-
 async def get_short_link(user, link):
-    api_key = user["shortener_api"]
-    base_site = user["base_site"]
-    print(user)
-    response = requests.get(f"https://{base_site}/api?api={api_key}&url={link}")
-    data = response.json()
-    if data["status"] == "success" or rget.status_code == 200:
-        return data["shortenedUrl"]
+    if not user:
+        return link
+    api_key = user.get("shortener_api")
+    base_site = (user.get("base_site") or "").strip().rstrip("/")
+    if not api_key or not base_site:
+        return link
+    
+    clean_site = base_site.replace("https://", "").replace("http://", "").split("/")[0].strip()
+    if not clean_site:
+        return link
 
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
+    # Universal shortener request handler
+    urls_to_try = []
+    if "shareus" in clean_site.lower():
+        urls_to_try.append((f"https://api.shareus.io/easy_api", {"key": api_key, "link": link}))
+        urls_to_try.append((f"https://{clean_site}/api", {"api": api_key, "url": link}))
+    elif "tinyurl.com" in clean_site.lower():
+        urls_to_try.append((f"https://tinyurl.com/api-create.php", {"url": link}))
+    elif "bitly" in clean_site.lower():
+        urls_to_try.append((f"https://{clean_site}/api", {"api": api_key, "url": link}))
+    else:
+        urls_to_try.append((f"https://{clean_site}/api", {"api": api_key, "url": link}))
+        urls_to_try.append((f"http://{clean_site}/api", {"api": api_key, "url": link}))
+
+    timeout = aiohttp.ClientTimeout(total=15)
+    connector = aiohttp.TCPConnector(ssl=False)
+    
+    for endpoint, params in urls_to_try:
+        try:
+            async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+                async with session.get(endpoint, params=params) as response:
+                    try:
+                        data = await response.json(content_type=None)
+                        if isinstance(data, dict):
+                            if data.get("status") in ("success", 200, "200", True) or "shortenedUrl" in data:
+                                res_url = data.get("shortenedUrl") or data.get("shortened_url") or data.get("url") or data.get("short") or data.get("link")
+                                if res_url and str(res_url).startswith("http"):
+                                    return str(res_url).strip()
+                            if isinstance(data.get("data"), dict):
+                                nested_url = data["data"].get("short_url") or data["data"].get("url") or data["data"].get("shortenedUrl")
+                                if nested_url and str(nested_url).startswith("http"):
+                                    return str(nested_url).strip()
+                            for key in ("shortenedUrl", "shortened_url", "short_url", "url", "link", "shortlink", "result"):
+                                val = data.get(key)
+                                if val and isinstance(val, str) and val.startswith("http"):
+                                    return val.strip()
+                    except Exception:
+                        text_res = (await response.text()).strip()
+                        if text_res.startswith("http://") or text_res.startswith("https://"):
+                            return text_res
+        except Exception:
+            continue
+            
+    return link
+
 
 async def get_user(user_id):
     user_id = int(user_id)
+    if mongo_db is None:
+        return {"user_id": user_id, "shortener_api": None, "base_site": None}
     user = mongo_db.user.find_one({"user_id": user_id})
     if not user:
         res = {
@@ -37,18 +73,13 @@ async def get_user(user_id):
         }
         mongo_db.user.insert_one(res)
         user = mongo_db.user.find_one({"user_id": user_id})
-    return user
+    return user or {"user_id": user_id, "shortener_api": None, "base_site": None}
 
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
 
-async def update_user_info(user_id, value:dict):
+async def update_user_info(user_id, value: dict):
+    if mongo_db is None:
+        return
     user_id = int(user_id)
     myquery = {"user_id": user_id}
-    newvalues = { "$set": value }
-    mongo_db.user.update_one(myquery, newvalues)
-
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
+    newvalues = {"$set": value}
+    mongo_db.user.update_one(myquery, newvalues, upsert=True)
