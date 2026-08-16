@@ -109,3 +109,55 @@ async def validate_shortener_token(site_clean: str, api_token: str) -> bool:
     except Exception:
         pass
     return False
+
+
+def get_size(size):
+    """Get size in readable format"""
+    units = ["Bytes", "KB", "MB", "GB", "TB", "PB", "EB"]
+    try:
+        size = float(size)
+    except Exception:
+        return "Unknown"
+    i = 0
+    while size >= 1024.0 and i < len(units) - 1:
+        i += 1
+        size /= 1024.0
+    return "%.2f %s" % (size, units[i])
+
+
+def format_caption(custom_caption: str, media=None, source_msg=None, default_caption=None) -> str:
+    if not custom_caption:
+        return default_caption
+    
+    file_name = ""
+    file_size = ""
+    orig_caption = ""
+    
+    if source_msg:
+        orig_caption = getattr(source_msg, "caption", "") or getattr(source_msg, "text", "") or ""
+        if not media and getattr(source_msg, "media", None):
+            media = getattr(source_msg, source_msg.media.value, None)
+            
+    if media:
+        file_name = getattr(media, "file_name", "") or getattr(media, "title", "") or ""
+        sz = getattr(media, "file_size", None)
+        if sz is not None:
+            try:
+                file_size = get_size(sz)
+            except Exception:
+                file_size = str(sz)
+    
+    if not file_name and orig_caption:
+        first_line = orig_caption.strip().splitlines()[0]
+        file_name = first_line[:60]
+    if not file_name:
+        file_name = "File"
+        
+    res = (
+        custom_caption
+        .replace("{file_name}", file_name)
+        .replace("{file_size}", file_size)
+        .replace("{caption}", orig_caption)
+        .replace("{file_caption}", orig_caption)
+    )
+    return res

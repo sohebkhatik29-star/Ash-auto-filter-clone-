@@ -4,11 +4,11 @@ import random
 import base64
 import secrets
 import time
-from pyrogram import filters
+from pyrogram import filters, enums
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins.dbusers import clonedb
-from clone_plugins.users_api import get_user, update_user_info, get_short_link
+from clone_plugins.users_api import get_user, update_user_info, get_short_link, format_caption
 from plugins.clone import mongo_db
 from config import BOT_USERNAME, PICS, CUSTOM_FILE_CAPTION, ADMINS, UPDATE_CHANNEL, tg_link
 from Script import script
@@ -118,11 +118,15 @@ async def deliver_file(client, user_id, file_id, protected=False):
     media = getattr(msg, msg.media.value, None) if msg.media else None
     size = get_size(media.file_size) if media and getattr(media, "file_size", None) else "Unknown"
     name = getattr(media, "file_name", None) if media else None or "File"
-    caption = rec.get("custom_caption") or CUSTOM_FILE_CAPTION or f"<code>{name}</code>\n<code>Size: {size}</code>"
-    try: caption = caption.format(file_name=name, file_size=size, file_caption=getattr(media, "caption", "") if media else "")
-    except Exception: pass
-    try: await msg.edit_caption(caption)
-    except Exception: pass
+    caption_template = rec.get("custom_caption") or CUSTOM_FILE_CAPTION or f"<code>{name}</code>\n<code>Size: {size}</code>"
+    caption = format_caption(caption_template, media=media, source_msg=msg, default_caption=f"<code>{name}</code>\n<code>Size: {size}</code>")
+    try:
+        await msg.edit_caption(caption, parse_mode=enums.ParseMode.HTML)
+    except Exception:
+        try:
+            await msg.edit_caption(caption)
+        except Exception:
+            pass
     buttons = rec.get("custom_buttons", [])
     rows = [[InlineKeyboardButton(b["text"], url=b["url"])] for b in buttons if b.get("text") and b.get("url")]
     if rows:

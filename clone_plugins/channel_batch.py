@@ -2,11 +2,11 @@ import asyncio
 import re
 import secrets
 import time
-from pyrogram import filters, StopPropagation
+from pyrogram import filters, StopPropagation, enums
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins import commands as cmd
-from clone_plugins.users_api import get_user, get_short_link
+from clone_plugins.users_api import get_user, get_short_link, format_caption
 from plugins.clone import mongo_db
 from config import PUBLIC_FILE_STORE, ADMINS
 
@@ -277,21 +277,53 @@ async def batch_start_deliver(client, message):
     f_id = int(record["first_msg_id"])
     l_id = int(record["last_msg_id"])
     ch_id = int(record["channel_id"])
-    protected = bool(record.get("protected", False))
+    rec = cmd.bot_record(client)
+    protected = bool(record.get("protected", False)) or bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
+
+    custom_btns = rec.get("custom_buttons", [])
+    markup = None
+    if custom_btns:
+        rows = [[InlineKeyboardButton(b["text"], url=b["url"])] for b in custom_btns if isinstance(b, dict) and b.get("text") and b.get("url")]
+        if rows:
+            markup = InlineKeyboardMarkup(rows)
+
+    custom_cap = rec.get("custom_caption")
 
     for m_id in range(f_id, l_id + 1):
         if not _ACTIVE_DELIVERIES.get(delivery_key, False):
             break
+        caption_to_use = None
+        if custom_cap:
+            try:
+                src_msg = await client.get_messages(ch_id, m_id)
+                caption_to_use = format_caption(custom_cap, source_msg=src_msg)
+            except Exception:
+                caption_to_use = custom_cap
+
         try:
             await client.copy_message(
                 chat_id=user_id,
                 from_chat_id=ch_id,
                 message_id=m_id,
+                caption=caption_to_use,
+                parse_mode=enums.ParseMode.HTML if caption_to_use else None,
+                reply_markup=markup,
                 protect_content=protected,
             )
             await asyncio.sleep(0.1)
         except Exception:
-            continue
+            try:
+                await client.copy_message(
+                    chat_id=user_id,
+                    from_chat_id=ch_id,
+                    message_id=m_id,
+                    caption=caption_to_use,
+                    reply_markup=markup,
+                    protect_content=protected,
+                )
+                await asyncio.sleep(0.1)
+            except Exception:
+                continue
 
     _ACTIVE_DELIVERIES.pop(delivery_key, None)
     try:

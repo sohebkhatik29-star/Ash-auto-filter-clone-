@@ -3,11 +3,11 @@ import datetime
 import re
 import secrets
 import time
-from pyrogram import filters, StopPropagation
+from pyrogram import filters, StopPropagation, enums
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins import commands as cmd
-from clone_plugins.users_api import get_user, get_short_link
+from clone_plugins.users_api import get_user, get_short_link, format_caption
 from plugins.clone import mongo_db
 from config import ADMINS, PUBLIC_FILE_STORE
 
@@ -704,19 +704,53 @@ async def special_link_start(client, message):
         await message.reply("❌ This special link contains no messages.")
         raise StopPropagation
 
-    protected = bool(record.get("protected", False)) or bool(cmd.bot_record(client).get("protect_content", False)) or bool(cmd.bot_record(client).get("no_forward", False))
+    rec = cmd.bot_record(client)
+    protected = bool(record.get("protected", False)) or bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
+
+    custom_btns = rec.get("custom_buttons", [])
+    markup = None
+    if custom_btns:
+        rows = [[InlineKeyboardButton(b["text"], url=b["url"])] for b in custom_btns if isinstance(b, dict) and b.get("text") and b.get("url")]
+        if rows:
+            markup = InlineKeyboardMarkup(rows)
+
+    custom_cap = rec.get("custom_caption")
 
     for item in messages:
+        c_id = int(item["chat_id"])
+        m_id = int(item["message_id"])
+        caption_to_use = None
+        if custom_cap:
+            try:
+                src_msg = await client.get_messages(c_id, m_id)
+                caption_to_use = format_caption(custom_cap, source_msg=src_msg)
+            except Exception:
+                caption_to_use = custom_cap
+
         try:
             await client.copy_message(
                 chat_id=message.from_user.id,
-                from_chat_id=int(item["chat_id"]),
-                message_id=int(item["message_id"]),
+                from_chat_id=c_id,
+                message_id=m_id,
+                caption=caption_to_use,
+                parse_mode=enums.ParseMode.HTML if caption_to_use else None,
+                reply_markup=markup,
                 protect_content=protected,
             )
             await asyncio.sleep(0.08)
         except Exception:
-            continue
+            try:
+                await client.copy_message(
+                    chat_id=message.from_user.id,
+                    from_chat_id=c_id,
+                    message_id=m_id,
+                    caption=caption_to_use,
+                    reply_markup=markup,
+                    protect_content=protected,
+                )
+                await asyncio.sleep(0.08)
+            except Exception:
+                continue
 
     raise StopPropagation
 

@@ -3,11 +3,11 @@ import base64
 import secrets
 import time
 
-from pyrogram import StopPropagation, filters
+from pyrogram import StopPropagation, filters, enums
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from clone_plugins.users_api import get_user, get_short_link
+from clone_plugins.users_api import get_user, get_short_link, format_caption
 from plugins.clone import mongo_db
 from clone_plugins.commands import bot_record, force_markup, access_verification
 
@@ -131,12 +131,6 @@ async def open_single(client, message):
         rec = bot_record(client)
         is_protect = bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
         
-        # Determine caption
-        custom_cap = rec.get("custom_caption")
-        caption_to_use = None
-        if custom_cap:
-            caption_to_use = custom_cap
-        
         # Determine buttons
         custom_btns = rec.get("custom_buttons", [])
         markup = None
@@ -145,14 +139,39 @@ async def open_single(client, message):
             if rows:
                 markup = InlineKeyboardMarkup(rows)
 
-        delivered = await client.copy_message(
-            chat_id=message.from_user.id,
-            from_chat_id=int(record["source_chat_id"]),
-            message_id=int(record["source_message_id"]),
-            caption=caption_to_use,
-            reply_markup=markup,
-            protect_content=is_protect,
-        )
+        source_chat = int(record["source_chat_id"])
+        source_mid = int(record["source_message_id"])
+
+        # Determine caption
+        custom_cap = rec.get("custom_caption")
+        caption_to_use = None
+        if custom_cap:
+            try:
+                src_msg = await client.get_messages(source_chat, source_mid)
+                caption_to_use = format_caption(custom_cap, source_msg=src_msg)
+            except Exception:
+                caption_to_use = custom_cap
+
+        try:
+            delivered = await client.copy_message(
+                chat_id=message.from_user.id,
+                from_chat_id=source_chat,
+                message_id=source_mid,
+                caption=caption_to_use,
+                parse_mode=enums.ParseMode.HTML if caption_to_use else None,
+                reply_markup=markup,
+                protect_content=is_protect,
+            )
+        except Exception:
+            # If HTML parsing failed due to custom user tags, fallback without parse_mode
+            delivered = await client.copy_message(
+                chat_id=message.from_user.id,
+                from_chat_id=source_chat,
+                message_id=source_mid,
+                caption=caption_to_use,
+                reply_markup=markup,
+                protect_content=is_protect,
+            )
 
         if rec.get("auto_delete_enabled", True):
             minutes = max(1, int(rec.get("auto_delete_minutes", 15)))

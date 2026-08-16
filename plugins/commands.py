@@ -10,7 +10,7 @@ from validators import domain
 from Script import script
 from plugins.dbusers import db
 from pyrogram import Client, filters, enums
-from plugins.users_api import get_user, update_user_info
+from plugins.users_api import get_user, update_user_info, format_caption
 from pyrogram.errors import ChatAdminRequired, FloodWait
 from pyrogram.types import *
 from utils import verify_user, check_token, check_verification, get_token
@@ -248,18 +248,8 @@ async def start(client, message):
             raw_caption = getattr(msg, "caption", "") or ""
             
             cust_cap = user_info.get("custom_caption") if user_info else None
-            if cust_cap:
-                try:
-                    f_caption = cust_cap.format(file_name=title or '', file_size=size or '', caption=raw_caption or '')
-                except Exception:
-                    f_caption = cust_cap
-            elif CUSTOM_FILE_CAPTION:
-                try:
-                    f_caption = CUSTOM_FILE_CAPTION.format(file_name='' if title is None else title, file_size='' if size is None else size, file_caption=raw_caption or '')
-                except Exception:
-                    f_caption = f"@movies_1780 <code>{title}</code>"
-            else:
-                f_caption = f"@movies_1780 <code>{title}</code>"
+            caption_tmpl = cust_cap or CUSTOM_FILE_CAPTION or f"@movies_1780 <code>{title}</code>"
+            f_caption = format_caption(caption_tmpl, media=media, source_msg=msg, default_caption=f"@movies_1780 <code>{title}</code>")
 
             button = []
             if STREAM_MODE == True:
@@ -283,7 +273,10 @@ async def start(client, message):
                         button.append([InlineKeyboardButton(b["text"], url=b["url"])])
 
             reply_markup = InlineKeyboardMarkup(button) if button else None
-            del_msg = await msg.copy(chat_id=message.from_user.id, caption=f_caption, reply_markup=reply_markup, protect_content=user_protect)
+            try:
+                del_msg = await msg.copy(chat_id=message.from_user.id, caption=f_caption, parse_mode=enums.ParseMode.HTML, reply_markup=reply_markup, protect_content=user_protect)
+            except Exception:
+                del_msg = await msg.copy(chat_id=message.from_user.id, caption=f_caption, reply_markup=reply_markup, protect_content=user_protect)
         else:
             del_msg = await msg.copy(chat_id=message.from_user.id, protect_content=user_protect)
         if AUTO_DELETE_MODE == True:
