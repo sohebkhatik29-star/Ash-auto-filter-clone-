@@ -519,12 +519,17 @@ async def cb_handler(client: Client, query: CallbackQuery):
         master_cfg = await get_master_config(client)
         p_text = master_cfg.get("premium_plan_text") or "<b>Please contact the bot admin to purchase a premium plan.</b>"
         p_photo = master_cfg.get("premium_plan_photo")
+        p_upi = master_cfg.get("premium_upi_id")
+        extra = ""
+        if p_upi:
+            extra = f"\n\n💳 <b>Pay via UPI:</b> <code>{p_upi}</code>"
+        full_text = f"💳 <b>PREMIUM PLAN DETAILS:</b>\n\n{p_text}{extra}"
         if p_photo:
             try:
-                return await query.message.reply_photo(photo=p_photo, caption=f"💳 <b>PREMIUM PLAN DETAILS:</b>\n\n{p_text}")
+                return await query.message.reply_photo(photo=p_photo, caption=full_text)
             except Exception:
                 pass
-        return await query.message.reply(f"💳 <b>PREMIUM PLAN DETAILS:</b>\n\n{p_text}")
+        return await query.message.reply(full_text)
     elif query.data == "about":
         buttons = [[
             InlineKeyboardButton('Hᴏᴍᴇ', callback_data='start'),

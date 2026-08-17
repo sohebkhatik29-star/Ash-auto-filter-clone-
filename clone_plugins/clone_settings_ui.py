@@ -553,32 +553,40 @@ async def callbacks(client, query):
         api = user.get("shortener_api") or r.get("shortener_api")
         if not (site and api):
             text = (
-                "<b>Link Shortener</b>\n\n"
-                "To shorten your links using your preferred provider, make sure to connect it with me first."
+                "<b>HERE YOU CAN MANAGE YOUR BOT URL SHORTNER DETAILS</b>\n\n"
+                "<b>Website -</b> <code>Not set</code>\n"
+                "<b>API Token -</b> <code>Not set</code>"
             )
             markup = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Add Shortener", callback_data="add_shortener")],
-                [InlineKeyboardButton("back", callback_data="settings_back")]
+                [InlineKeyboardButton("➕ ADD SHORTNER", callback_data="add_shortener")],
+                [InlineKeyboardButton("‹ BACK", callback_data="settings_back")]
             ])
             return await edit_or_reply(query, text, reply_markup=markup)
 
         text = (
-            "<b>Link Shortener</b>\n\n"
-            f"- Shortener: {site}\n"
-            f"- Shortener Api: {api}\n\n"
-            "You can now use the /shortener command to shorten any links."
+            "<b>HERE YOU CAN MANAGE YOUR BOT URL SHORTNER DETAILS</b>\n\n"
+            f"<b>Website -</b> <code>{site}</code>\n"
+            f"<b>API Token -</b> <code>{api}</code>"
         )
         markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Delete shortener", callback_data="delete_shortener")],
-            [InlineKeyboardButton("back", callback_data="settings_back")]
+            [InlineKeyboardButton("➕ ADD NEW SHORTNER", callback_data="add_shortener")],
+            [InlineKeyboardButton("🗑️ DELETE SHORTNER", callback_data="delete_shortener")],
+            [InlineKeyboardButton("‹ BACK", callback_data="settings_back")]
         ])
         return await edit_or_reply(query, text, reply_markup=markup)
 
     if data == "add_shortener":
         await query.answer()
+        prompt_text = (
+            "<b>SEND ME A SHORTLINK URL...</b>\n\n"
+            "<b>FORMAT :</b>\n"
+            "<code>https://ashlink.online</code> - ❌\n"
+            "<code>ashlink.online</code> - ✅\n\n"
+            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
+        )
         await edit_or_reply(query, 
-            "Send your shortener site url\n\neg: https://droplink.co",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]]),
+            prompt_text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]]),
             disable_web_page_preview=True
         )
         try:
@@ -592,17 +600,17 @@ async def callbacks(client, query):
         except Exception:
             pass
 
-        if not site_raw or site_raw.startswith("/"):
-            return await edit_or_reply(query, "❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]]))
+        if site_raw.lower() == "/cancel":
+            return await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]]))
 
         site_clean = site_raw.replace("https://", "").replace("http://", "").split("/")[0].strip()
         if not site_clean or "." not in site_clean:
-            return await edit_or_reply(query, "❌ Invalid site URL.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]]))
+            return await edit_or_reply(query, "❌ <b>Invalid site URL.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]]))
 
         await edit_or_reply(query, 
-            f"Send your shortener ({site_clean}) api token, get it from <a href='https://{site_clean}/member/tools/api'>here</a>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]]),
-            disable_web_page_preview=True
+            "<b>SEND ME SHORTLINK API...</b>\n\n"
+            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]])
         )
 
         try:
@@ -616,30 +624,36 @@ async def callbacks(client, query):
         except Exception:
             pass
 
-        if not api_raw or api_raw.startswith("/"):
-            return await edit_or_reply(query, "❌ Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]]))
+        if api_raw.lower() == "/cancel":
+            return await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]]))
 
         is_valid = await validate_shortener_token(site_clean, api_raw)
         if not is_valid:
             return await edit_or_reply(query, 
-                "The given Shortener Api Token is invalid",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]])
+                "❌ <b>The given Shortener Api Token is invalid</b>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]])
             )
 
         await update_user_info(user_id, {"base_site": site_clean, "shortener_api": api_raw})
         save(client, base_site=site_clean, shortener_api=api_raw)
-        return await edit_or_reply(query, 
-            f"✨ <b>Successfully {site_clean} added as your link shortener Provider</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]])
+        confirm_text = (
+            "✅ <b>SHORTNER SET HO GAYI!</b>\n\n"
+            f"🌐 <b>Website:</b> <code>{site_clean}</code>\n"
+            f"🔑 <b>API Token:</b> <code>{api_raw}</code>"
         )
+        confirm_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕ ADD NEW SHORTNER", callback_data="add_shortener")],
+            [InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]
+        ])
+        return await edit_or_reply(query, confirm_text, reply_markup=confirm_markup)
 
     if data == "delete_shortener":
         await update_user_info(user_id, {"base_site": None, "shortener_api": None})
         save(client, base_site=None, shortener_api=None)
         await query.answer("✨ Successfully deleted your link shortener provider", show_alert=False)
         return await edit_or_reply(query, 
-            "✨ <b>Successfully deleted your link shortener provider</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❮ BACK", callback_data="link_shortener")]])
+            "✨ <b>SUCCESSFULLY DELETED YOUR LINK SHORTENER PROVIDER</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]])
         )
 
     if data == "protect_menu":
@@ -852,21 +866,34 @@ async def callbacks(client, query):
         v_cfg = r.get(v_key, {})
         is_on = bool(v_cfg.get("is_on", False))
         
+        site = v_cfg.get("site") or r.get("base_site") or "Not set"
+        api = v_cfg.get("api") or r.get("shortener_api") or "Not set"
+        tut = v_cfg.get("tutorial") or "Not set"
+        mins = v_cfg.get("time_minutes", 480)
+        time_str = format_time_minutes(mins)
+
         prefix = "VERIFY" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
         next_slot = (slot % 3) + 1
         next_name = "SECOND VERIFICATION" if slot == 1 else ("THIRD VERIFICATION" if slot == 2 else "FIRST VERIFICATION")
         status_text = "VERIFY IS ON - ✅" if is_on else "VERIFY IS OFF - ❌"
 
-        text = "<b>MANAGE YOUR TOKEN VERIFICATION SETTINGS FROM HERE GIVEN BELOW BUTTONS</b>"
+        text = (
+            "<b>MANAGE YOUR TOKEN VERIFICATION SETTINGS FROM HERE GIVEN BELOW BUTTONS</b>\n\n"
+            f"<b>Slot {slot} Shortener Website :</b> <code>{site}</code>\n"
+            f"<b>Slot {slot} API Token :</b> <code>{api}</code>\n"
+            f"<b>Slot {slot} Tutorial Link :</b> <code>{tut}</code>\n"
+            f"<b>Slot {slot} Verification Time :</b> <code>{time_str}</code>"
+        )
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"🔗 {prefix} SHORTNER", callback_data=f"cset_v_shortner:{slot}")],
             [InlineKeyboardButton(f"🎬 {prefix} TUTORIAL", callback_data=f"cset_v_tutorial:{slot}")],
             [InlineKeyboardButton(f"⏳ {prefix} TIME", callback_data=f"cset_v_time:{slot}")],
             [InlineKeyboardButton(f"⏰ {next_name}", callback_data=f"cset_token_verification:{next_slot}")],
             [InlineKeyboardButton(f"🔒 {status_text}", callback_data=f"cset_v_toggle:{slot}")],
+            [InlineKeyboardButton("➕ ADD NEW SHORTNER", callback_data=f"cset_v_shortner:{slot}")],
             [InlineKeyboardButton("‹ BACK", callback_data="settings_back")]
         ])
-        return await edit_or_reply(query, text, reply_markup=markup)
+        return await edit_or_reply(query, text, reply_markup=markup, disable_web_page_preview=True)
 
     if data.startswith("cset_v_toggle:"):
         slot = int(data.split(":")[1])
@@ -891,16 +918,29 @@ async def callbacks(client, query):
         next_name = "SECOND VERIFICATION" if slot == 1 else ("THIRD VERIFICATION" if slot == 2 else "FIRST VERIFICATION")
         status_text = "VERIFY IS ON - ✅" if new_state else "VERIFY IS OFF - ❌"
 
-        text = "<b>MANAGE YOUR TOKEN VERIFICATION SETTINGS FROM HERE GIVEN BELOW BUTTONS</b>"
+        site_val = v_cfg.get("site") or r.get("base_site") or "Not set"
+        api_val = v_cfg.get("api") or r.get("shortener_api") or "Not set"
+        tut_val = v_cfg.get("tutorial") or "Not set"
+        mins_val = v_cfg.get("time_minutes", 480)
+        time_str_val = format_time_minutes(mins_val)
+
+        text = (
+            "<b>MANAGE YOUR TOKEN VERIFICATION SETTINGS FROM HERE GIVEN BELOW BUTTONS</b>\n\n"
+            f"<b>Slot {slot} Shortener Website :</b> <code>{site_val}</code>\n"
+            f"<b>Slot {slot} API Token :</b> <code>{api_val}</code>\n"
+            f"<b>Slot {slot} Tutorial Link :</b> <code>{tut_val}</code>\n"
+            f"<b>Slot {slot} Verification Time :</b> <code>{time_str_val}</code>"
+        )
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"🔗 {prefix} SHORTNER", callback_data=f"cset_v_shortner:{slot}")],
             [InlineKeyboardButton(f"🎬 {prefix} TUTORIAL", callback_data=f"cset_v_tutorial:{slot}")],
             [InlineKeyboardButton(f"⏳ {prefix} TIME", callback_data=f"cset_v_time:{slot}")],
             [InlineKeyboardButton(f"⏰ {next_name}", callback_data=f"cset_token_verification:{next_slot}")],
             [InlineKeyboardButton(f"🔒 {status_text}", callback_data=f"cset_v_toggle:{slot}")],
+            [InlineKeyboardButton("➕ ADD NEW SHORTNER", callback_data=f"cset_v_shortner:{slot}")],
             [InlineKeyboardButton("‹ BACK", callback_data="settings_back")]
         ])
-        return await edit_or_reply(query, text, reply_markup=markup)
+        return await edit_or_reply(query, text, reply_markup=markup, disable_web_page_preview=True)
 
     if data.startswith("cset_v_shortner:"):
         slot = int(data.split(":")[1])
@@ -908,8 +948,8 @@ async def callbacks(client, query):
         prompt_text = (
             "<b>SEND ME A SHORTLINK URL...</b>\n\n"
             "<b>FORMAT :</b>\n"
-            "<code>https://vjlink.online</code> - ❌\n"
-            "<code>vjlink.online</code> - ✅\n\n"
+            "<code>https://ashlink.online</code> - ❌\n"
+            "<code>ashlink.online</code> - ✅\n\n"
             "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
         )
         await edit_or_reply(query, 
@@ -963,10 +1003,16 @@ async def callbacks(client, query):
         v_cfg["api"] = api_raw
         save(client, **{v_key: v_cfg, "base_site": site_clean, "shortener_api": api_raw})
 
-        return await edit_or_reply(query, 
-            "<b>SUCCESSFULLY SET SHORTLINK ✅</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"cset_token_verification:{slot}")]])
+        confirm_text = (
+            "✅ <b>SHORTNER SET HO GAYI!</b>\n\n"
+            f"🌐 <b>Website:</b> <code>{site_clean}</code>\n"
+            f"🔑 <b>API Token:</b> <code>{api_raw}</code>"
         )
+        confirm_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕ ADD NEW SHORTNER", callback_data=f"cset_v_shortner:{slot}")],
+            [InlineKeyboardButton("‹ BACK", callback_data=f"cset_token_verification:{slot}")]
+        ])
+        return await edit_or_reply(query, confirm_text, reply_markup=confirm_markup)
 
     if data.startswith("cset_v_tutorial:"):
         slot = int(data.split(":")[1])
@@ -1098,10 +1144,99 @@ async def callbacks(client, query):
             [InlineKeyboardButton("➕ ADD PREMIUM USER ➕", callback_data="cset_prem_add")],
             [InlineKeyboardButton("➖ REMOVE PREMIUM USER ➖", callback_data="cset_prem_rem")],
             [InlineKeyboardButton("👥 PREMIUM USERS LIST 👥", callback_data="cset_prem_list")],
+            [InlineKeyboardButton("💳 SET / MANAGE QR & UPI 🖼️", callback_data="cset_qr_upi_menu")],
             [InlineKeyboardButton(f"🔒 {prem_status}", callback_data="cset_prem_toggle")],
             [InlineKeyboardButton("‹ BACK", callback_data="settings_back")]
         ])
         return await edit_or_reply(query, text, reply_markup=markup)
+
+    if data == "cset_qr_upi_menu":
+        r = record(client)
+        p_photo = r.get("premium_plan_photo")
+        p_upi = r.get("premium_upi_id")
+        photo_str = "✅ Photo Set" if p_photo else "❌ Not Set"
+        upi_str = p_upi if p_upi else "Not Set"
+
+        text = (
+            "<b>MANAGE QR CODE PHOTO & UPI ID FOR PREMIUM PAYMENTS</b>\n\n"
+            f"🖼️ <b>QR Code Photo:</b> {photo_str}\n"
+            f"💳 <b>UPI ID:</b> <code>{upi_str}</code>"
+        )
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🖼️ SET QR PHOTO", callback_data="cset_set_qr")],
+            [InlineKeyboardButton("💳 SET UPI ID", callback_data="cset_set_upi")],
+            [InlineKeyboardButton("‹ BACK", callback_data="cset_premium_plan")]
+        ])
+        return await edit_or_reply(query, text, reply_markup=markup)
+
+    if data == "cset_set_qr":
+        await query.answer()
+        prompt_text = (
+            "<b>PLEASE SEND YOUR QR CROP PHOTO...</b>\n\n"
+            "📸 <i>Send the cropped QR photo/image directly in this chat.</i>\n\n"
+            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
+        )
+        await edit_or_reply(query, prompt_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="cset_qr_upi_menu")]]))
+        try:
+            q_msg = await client.listen(chat_id=user_id, timeout=120)
+        except Exception:
+            return
+
+        if q_msg.text and q_msg.text.strip().lower() == "/cancel":
+            try: await q_msg.delete()
+            except Exception: pass
+            return await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="cset_qr_upi_menu")]]))
+
+        photo_id = None
+        if q_msg.photo:
+            photo_id = q_msg.photo.file_id
+        elif q_msg.document and q_msg.document.mime_type and q_msg.document.mime_type.startswith("image/"):
+            photo_id = q_msg.document.file_id
+
+        try: await q_msg.delete()
+        except Exception: pass
+
+        if not photo_id:
+            return await edit_or_reply(query, "❌ <b>Please send a valid cropped photo/image.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="cset_qr_upi_menu")]]))
+
+        save(client, premium_plan_photo=photo_id)
+        confirm_text = "✅ <b>QR CODE PHOTO SET HO GAYI!</b>"
+        confirm_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🖼️ CHANGE QR PHOTO", callback_data="cset_set_qr")],
+            [InlineKeyboardButton("‹ BACK", callback_data="cset_qr_upi_menu")]
+        ])
+        return await edit_or_reply(query, confirm_text, reply_markup=confirm_markup)
+
+    if data == "cset_set_upi":
+        await query.answer()
+        prompt_text = (
+            "<b>PLEASE SEND YOUR UPI ID...</b>\n\n"
+            "💳 <i>Example:</i> <code>ash@upi</code> or <code>username@okhdfcbank</code>\n\n"
+            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
+        )
+        await edit_or_reply(query, prompt_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="cset_qr_upi_menu")]]))
+        try:
+            u_msg = await client.listen(chat_id=user_id, timeout=120)
+        except Exception:
+            return
+
+        u_raw = (u_msg.text or "").strip()
+        try: await u_msg.delete()
+        except Exception: pass
+
+        if u_raw.lower() == "/cancel":
+            return await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="cset_qr_upi_menu")]]))
+
+        if not u_raw or " " in u_raw:
+            return await edit_or_reply(query, "❌ <b>Invalid UPI ID format.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="cset_qr_upi_menu")]]))
+
+        save(client, premium_upi_id=u_raw)
+        confirm_text = f"✅ <b>UPI ID SET HO GAYI:</b> <code>{u_raw}</code>"
+        confirm_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💳 CHANGE UPI ID", callback_data="cset_set_upi")],
+            [InlineKeyboardButton("‹ BACK", callback_data="cset_qr_upi_menu")]
+        ])
+        return await edit_or_reply(query, confirm_text, reply_markup=confirm_markup)
 
     if data == "cset_prem_toggle":
         r = record(client)
@@ -1117,6 +1252,7 @@ async def callbacks(client, query):
             [InlineKeyboardButton("➕ ADD PREMIUM USER ➕", callback_data="cset_prem_add")],
             [InlineKeyboardButton("➖ REMOVE PREMIUM USER ➖", callback_data="cset_prem_rem")],
             [InlineKeyboardButton("👥 PREMIUM USERS LIST 👥", callback_data="cset_prem_list")],
+            [InlineKeyboardButton("💳 SET / MANAGE QR & UPI 🖼️", callback_data="cset_qr_upi_menu")],
             [InlineKeyboardButton(f"🔒 {prem_status}", callback_data="cset_prem_toggle")],
             [InlineKeyboardButton("‹ BACK", callback_data="settings_back")]
         ])

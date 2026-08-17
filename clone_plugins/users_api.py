@@ -1,17 +1,10 @@
-# © Telegram: @movies_1780
-# ASH FILE STORE & CLONE MANAGER
+# © Telegram : @movies_1780 , GitHub : @VJBots
 
 import aiohttp
 import time
 import re
 import uuid
-from motor.motor_asyncio import AsyncIOMotorClient
-from config import CLONE_DB_URI, CDB_NAME
-
-_client = AsyncIOMotorClient(CLONE_DB_URI) if CLONE_DB_URI else None
-_db = _client[CDB_NAME] if _client else None
-col = _db["users"] if _db else None
-
+from plugins.clone import mongo_db
 
 def parse_time_string(val: str) -> int:
     val = (val or "").strip().lower()
@@ -67,11 +60,11 @@ def is_user_premium(user_id: int, source_doc: dict) -> bool:
     return False
 
 
-async def check_user_verified(user_id: int, bot_id=0) -> bool:
-    if _db is None:
+def check_user_verified(user_id: int, bot_id=0) -> bool:
+    if mongo_db is None:
         return False
     now = int(time.time())
-    rec = await _db.user_verifications.find_one({
+    rec = mongo_db.user_verifications.find_one({
         "user_id": int(user_id),
         "bot_id": int(bot_id),
         "expires_at": {"$gt": now}
@@ -79,22 +72,22 @@ async def check_user_verified(user_id: int, bot_id=0) -> bool:
     return bool(rec)
 
 
-async def set_user_verified(user_id: int, bot_id=0, duration_minutes=480):
-    if _db is None:
+def set_user_verified(user_id: int, bot_id=0, duration_minutes=480):
+    if mongo_db is None:
         return
     now = int(time.time())
     expires = now + max(60, int(duration_minutes) * 60)
-    await _db.user_verifications.update_one(
+    mongo_db.user_verifications.update_one(
         {"user_id": int(user_id), "bot_id": int(bot_id)},
         {"$set": {"verified_at": now, "expires_at": expires}},
         upsert=True
     )
 
 
-async def create_verify_token(user_id: int, bot_id=0, payload="") -> str:
+def create_verify_token(user_id: int, bot_id=0, payload="") -> str:
     token = uuid.uuid4().hex[:10]
-    if _db is not None:
-        await _db.verify_tokens.update_one(
+    if mongo_db is not None:
+        mongo_db.verify_tokens.update_one(
             {"token": token},
             {"$set": {
                 "token": token,
@@ -109,35 +102,17 @@ async def create_verify_token(user_id: int, bot_id=0, payload="") -> str:
     return token
 
 
-async def consume_verify_token(token: str, user_id: int, bot_id=0):
-    if _db is None:
+def consume_verify_token(token: str, user_id: int, bot_id=0):
+    if mongo_db is None:
         return None
-    rec = await _db.verify_tokens.find_one({"token": token, "user_id": int(user_id), "bot_id": int(bot_id)})
+    rec = mongo_db.verify_tokens.find_one({"token": token, "user_id": int(user_id), "bot_id": int(bot_id)})
     if not rec:
         return None
-    await _db.verify_tokens.delete_one({"_id": rec["_id"]})
+    mongo_db.verify_tokens.delete_one({"_id": rec["_id"]})
     if int(rec.get("expires_at", 0)) < int(time.time()):
         return None
     return rec.get("payload", "")
 
-
-async def get_user(user_id):
-    user_id = int(user_id)
-    if col is None:
-        return {"user_id": user_id, "shortener_api": None, "base_site": None,
-                "verify_enabled": False, "verify_ttl": 86400}
-    user = await col.find_one({"user_id": user_id})
-    if not user:
-        user = {"user_id": user_id, "shortener_api": None, "base_site": None,
-                "verify_enabled": False, "verify_ttl": 86400,
-                "force_channels": [], "caption": None, "buttons": [],
-                "protect_content": False}
-        await col.insert_one(user)
-    return user
-
-async def update_user_info(user_id, value: dict):
-    if col is not None:
-        await col.update_one({"user_id": int(user_id)}, {"$set": value}, upsert=True)
 
 async def get_short_link(user, link):
     if not user:
@@ -153,7 +128,6 @@ async def get_short_link(user, link):
 
     # Universal shortener request handler
     urls_to_try = []
-    
     if "shareus" in clean_site.lower():
         urls_to_try.append((f"https://api.shareus.io/easy_api", {"key": api_key, "link": link}))
         urls_to_try.append((f"https://{clean_site}/api", {"api": api_key, "url": link}))
@@ -172,27 +146,22 @@ async def get_short_link(user, link):
         try:
             async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
                 async with session.get(endpoint, params=params) as response:
-                    # Check text or JSON
                     try:
                         data = await response.json(content_type=None)
                         if isinstance(data, dict):
-                            # Standard AdLinkFly / Droplink / VPLink / GPLinks format
                             if data.get("status") in ("success", 200, "200", True) or "shortenedUrl" in data:
                                 res_url = data.get("shortenedUrl") or data.get("shortened_url") or data.get("url") or data.get("short") or data.get("link")
                                 if res_url and str(res_url).startswith("http"):
                                     return str(res_url).strip()
-                            # Nested data object
                             if isinstance(data.get("data"), dict):
                                 nested_url = data["data"].get("short_url") or data["data"].get("url") or data["data"].get("shortenedUrl")
                                 if nested_url and str(nested_url).startswith("http"):
                                     return str(nested_url).strip()
-                            # Direct key check
                             for key in ("shortenedUrl", "shortened_url", "short_url", "url", "link", "shortlink", "result"):
                                 val = data.get(key)
                                 if val and isinstance(val, str) and val.startswith("http"):
                                     return val.strip()
                     except Exception:
-                        # Maybe plain text URL returned
                         text_res = (await response.text()).strip()
                         if text_res.startswith("http://") or text_res.startswith("https://"):
                             return text_res
@@ -206,7 +175,6 @@ async def validate_shortener_token(site_clean: str, api_token: str) -> bool:
     api_token = (api_token or "").strip()
     if not api_token:
         return False
-    # If user pasted a URL or invalid characters
     if api_token.startswith(("http://", "https://", "www.", "/", "@")) or "/" in api_token or " " in api_token:
         return False
     if len(api_token) < 5:
@@ -273,3 +241,28 @@ def format_caption(custom_caption: str, media=None, source_msg=None, default_cap
         .replace("{file_caption}", orig_caption)
     )
     return res
+
+
+async def get_user(user_id):
+    user_id = int(user_id)
+    if mongo_db is None:
+        return {"user_id": user_id, "shortener_api": None, "base_site": None}
+    user = mongo_db.user.find_one({"user_id": user_id})
+    if not user:
+        res = {
+            "user_id": user_id,
+            "shortener_api": None,
+            "base_site": None,
+        }
+        mongo_db.user.insert_one(res)
+        user = mongo_db.user.find_one({"user_id": user_id})
+    return user or {"user_id": user_id, "shortener_api": None, "base_site": None}
+
+
+async def update_user_info(user_id, value: dict):
+    if mongo_db is None:
+        return
+    user_id = int(user_id)
+    myquery = {"user_id": user_id}
+    newvalues = {"$set": value}
+    mongo_db.user.update_one(myquery, newvalues, upsert=True)

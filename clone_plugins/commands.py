@@ -433,12 +433,17 @@ async def callbacks(client, query):
         rec = bot_record(client)
         p_text = rec.get("premium_plan_text") or "<b>Please contact the bot admin to purchase a premium plan.</b>"
         p_photo = rec.get("premium_plan_photo")
+        p_upi = rec.get("premium_upi_id")
+        extra = ""
+        if p_upi:
+            extra = f"\n\n💳 <b>Pay via UPI:</b> <code>{p_upi}</code>"
+        full_text = f"💳 <b>PREMIUM PLAN DETAILS:</b>\n\n{p_text}{extra}"
         if p_photo:
             try:
-                return await query.message.reply_photo(photo=p_photo, caption=f"💳 <b>PREMIUM PLAN DETAILS:</b>\n\n{p_text}")
+                return await query.message.reply_photo(photo=p_photo, caption=full_text)
             except Exception:
                 pass
-        return await query.message.reply(f"💳 <b>PREMIUM PLAN DETAILS:</b>\n\n{p_text}")
+        return await query.message.reply(full_text)
 
     # Settings callbacks are fully handled by clone_settings_ui
     if data in (
