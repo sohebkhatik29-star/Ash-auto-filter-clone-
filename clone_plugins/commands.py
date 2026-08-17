@@ -8,7 +8,11 @@ from pyrogram import filters, enums
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins.dbusers import clonedb
-from clone_plugins.users_api import get_user, update_user_info, get_short_link, format_caption
+from clone_plugins.users_api import (
+    get_user, update_user_info, get_short_link, format_caption,
+    is_user_premium, check_user_verified, set_user_verified,
+    create_verify_token, consume_verify_token, format_time_minutes
+)
 from plugins.clone import mongo_db
 from config import BOT_USERNAME, PICS, CUSTOM_FILE_CAPTION, ADMINS, UPDATE_CHANNEL, tg_link
 from Script import script
@@ -85,7 +89,56 @@ async def force_markup(client, user_id, original_payload):
 
 
 async def access_verification(client, user_id, original_payload):
-    return None
+    if is_owner_or_mod(client, user_id):
+        return None
+    rec = bot_record(client)
+    if not rec:
+        return None
+    if is_user_premium(user_id, rec):
+        return None
+    
+    active_slot = None
+    for s in (1, 2, 3):
+        v_key = f"verify_{s}" if s > 1 else "verify_1"
+        v_cfg = rec.get(v_key, {})
+        if v_cfg.get("is_on"):
+            active_slot = v_cfg
+            break
+            
+    if not active_slot:
+        if rec.get("verify_enabled") and rec.get("base_site") and rec.get("shortener_api"):
+            active_slot = {
+                "site": rec.get("base_site"),
+                "api": rec.get("shortener_api"),
+                "tutorial": rec.get("verify_tutorial"),
+                "time_minutes": rec.get("verify_ttl", 480) // 60
+            }
+        else:
+            return None
+
+    is_verified = await check_user_verified(user_id, client.me.id)
+    if is_verified:
+        return None
+
+    site = active_slot.get("site") or rec.get("base_site")
+    api = active_slot.get("api") or rec.get("shortener_api")
+    tutorial = active_slot.get("tutorial")
+
+    if not site or not api:
+        return None
+
+    token = await create_verify_token(user_id, client.me.id, original_payload)
+    me = client.me or (await client.get_me())
+    raw_verify_url = f"https://t.me/{me.username}?start=verify_{token}"
+    short_url = await get_short_link({"base_site": site, "shortener_api": api}, raw_verify_url)
+
+    buttons = [[InlineKeyboardButton("🔗 Click Here To Verify", url=short_url)]]
+    if tutorial:
+        buttons.append([InlineKeyboardButton("🎬 How To Open Link & Verify", url=tutorial)])
+    if rec.get("premium_is_on"):
+        buttons.append([InlineKeyboardButton("💳 Buy Premium Plan", callback_data="c_buy_prem")])
+
+    return InlineKeyboardMarkup(buttons)
 
 
 def settings_menu():
@@ -172,8 +225,8 @@ async def start(client, message):
 
     if len(message.command) != 2:
         buttons = [
+            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 CREATE MY OWN CLONE", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
             [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
-            [InlineKeyboardButton("🤖 CREATE MY OWN CLONE", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
             [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
         ]
         caption = script.CLONE_START_TXT.format(message.from_user.mention, me.mention)
@@ -186,23 +239,61 @@ async def start(client, message):
     if data.lower() in ("clone", "settings"):
         from clone_plugins import clone_settings_ui as cset
         return await cset.settings(client, message)
+    
+    if data.startswith("verify_") or data.startswith("verify-"):
+        token_str = data.split("_", 1)[1] if data.startswith("verify_") else data.split("-", 1)[1]
+        orig_payload = await consume_verify_token(token_str, message.from_user.id, me.id)
+        if orig_payload is None and mongo_db is not None:
+            rec_t = mongo_db.access_tokens.find_one({"bot_id": me.id, "token": token_str, "user_id": int(message.from_user.id)})
+            if rec_t:
+                orig_payload = ""
+        
+        if orig_payload is None:
+            return await message.reply("❌ <b>Invalid or expired verification link!</b>\n\nPlease verify again.")
+        
+        time_mins = 480
+        for s in (1, 2, 3):
+            v_key = f"verify_{s}" if s > 1 else "verify_1"
+            v_cfg = rec.get(v_key, {})
+            if v_cfg.get("is_on"):
+                time_mins = int(v_cfg.get("time_minutes", 480))
+                break
+        
+        await set_user_verified(message.from_user.id, me.id, duration_minutes=time_mins)
+        dur_str = format_time_minutes(time_mins)
+        success_text = (
+            f"✅ <b>Hey {message.from_user.mention}, you are successfully verified!</b>\n\n"
+            f"Now you have unlimited access for all files for <b>{dur_str}</b>."
+        )
+        markup = None
+        if orig_payload:
+            markup = InlineKeyboardMarkup([[InlineKeyboardButton("📥 GET YOUR FILE", url=f"https://t.me/{me.username}?start={orig_payload}")]])
+        return await message.reply(success_text, reply_markup=markup)
+
     try:
         decoded = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode("ascii")
         prefix, file_id = decoded.split("_", 1)
-    except Exception: return await message.reply("❌ Invalid or expired link.")
-    if prefix == "verify":
-        if mongo_db is None: return await message.reply("❌ Verification database is not configured.")
-        rec = mongo_db.access_tokens.find_one({"bot_id": client.me.id, "token": file_id, "user_id": int(message.from_user.id)})
-        if not rec or int(rec.get("expires_at", 0)) <= int(time.time()): return await message.reply("❌ Verification expired. Open the original file link again.")
-        mongo_db.access_tokens.update_one({"_id": rec["_id"]}, {"$set": {"verified_at": int(time.time()), "expires_at": int(time.time()) + max(1, int(bot_record(client).get("access_token_hours", 1))) * 3600}})
-        return await client.send_message(message.from_user.id, "✅ <b>Verification successful.</b>\n\nOpen your file link again.")
-    if prefix not in ("file", "filep") or not file_id: return await message.reply("❌ Invalid or expired file link.")
+    except Exception:
+        if "_" in data:
+            prefix, file_id = data.split("_", 1)
+        else:
+            return await message.reply("❌ Invalid or expired link.")
+
+    if prefix not in ("file", "filep") or not file_id:
+        return await message.reply("❌ Invalid or expired file link.")
+
     access_markup = await access_verification(client, message.from_user.id, data)
-    if access_markup: return await message.reply("<b>🔐 Please verify first to access this file.</b>", reply_markup=access_markup)
+    if access_markup:
+        return await message.reply("<b>🔐 Please verify first to access this file.</b>", reply_markup=access_markup)
+
     markup = await force_markup(client, message.from_user.id, data)
-    if markup: return await message.reply("<b>🔐 Please join the required channel(s) first.</b>", reply_markup=markup)
-    try: await deliver_file(client, message.from_user.id, file_id, protected=prefix == "filep")
-    except Exception as e: await message.reply(f"❌ Unable to deliver file: <code>{e}</code>")
+    if markup:
+        return await message.reply("<b>🔐 Please join the required channel(s) first.</b>", reply_markup=markup)
+
+    try:
+        await deliver_file(client, message.from_user.id, file_id, protected=prefix == "filep")
+    except Exception as e:
+        await message.reply(f"❌ Unable to deliver file: <code>{e}</code>")
 
 
 async def help_command(client, message):
@@ -330,14 +421,25 @@ async def callbacks(client, query):
     if data == "start_back":
         me = client.me or (await client.get_me())
         buttons = [
+            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 CREATE MY OWN CLONE", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
             [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
-            [InlineKeyboardButton("🤖 CREATE MY OWN CLONE", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
             [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
         ]
         caption = script.CLONE_START_TXT.format(query.from_user.mention, me.mention)
         if query.message.photo:
             return await query.message.edit_caption(caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
         return await query.message.edit_text(caption, reply_markup=InlineKeyboardMarkup(buttons))
+    if data == "c_buy_prem":
+        rec = bot_record(client)
+        p_text = rec.get("premium_plan_text") or "<b>Please contact the bot admin to purchase a premium plan.</b>"
+        p_photo = rec.get("premium_plan_photo")
+        if p_photo:
+            try:
+                return await query.message.reply_photo(photo=p_photo, caption=f"💳 <b>PREMIUM PLAN DETAILS:</b>\n\n{p_text}")
+            except Exception:
+                pass
+        return await query.message.reply(f"💳 <b>PREMIUM PLAN DETAILS:</b>\n\n{p_text}")
+
     # Settings callbacks are fully handled by clone_settings_ui
     if data in (
         "settings", "settings_back", "log_channel", "set_log_channel", "delete_log_channel",
@@ -346,7 +448,7 @@ async def callbacks(client, query):
         "link_shortener", "add_shortener", "delete_shortener",
         "custom_caption", "caption_see", "caption_delete", "caption_edit",
         "custom_button", "button_add", "button_delete", "protect_menu", "protect_toggle", "protect_on", "protect_off"
-    ) or data.startswith(("admin_info:", "adm_tgl:", "adm_trans:", "adm_rem:")):
+    ) or data.startswith(("admin_info:", "adm_tgl:", "adm_trans:", "adm_rem:", "clone_", "cset_")):
         return
     return await query.answer("Unknown option.", show_alert=True)
 
@@ -363,5 +465,5 @@ def register(client):
     client.add_handler(MessageHandler(base_site_handler,filters.command("base_site")&private),group=1)
     client.add_handler(MessageHandler(shortener,filters.command("shortener")&private),group=1)
     client.add_handler(MessageHandler(settings_command,filters.command("settings")&private),group=1)
-    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|settings|settings_back|log_channel|set_log_channel|delete_log_channel|database_channel|set_database_channel|delete_database_channel|admins_menu|add_admin_prompt|admin_info:\d+|adm_tgl:\d+:[a-z_]+|adm_trans:\d+|adm_rem:\d+|my_clone|google_backup|google_connect|link_shortener|add_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_on|protect_off)$")),group=0)
+    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|c_buy_prem|settings|settings_back|log_channel|set_log_channel|delete_log_channel|database_channel|set_database_channel|delete_database_channel|admins_menu|add_admin_prompt|admin_info:\d+|adm_tgl:\d+:[a-z_]+|adm_trans:\d+|adm_rem:\d+|my_clone|google_backup|google_connect|link_shortener|add_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_on|protect_off)$")),group=0)
     return client

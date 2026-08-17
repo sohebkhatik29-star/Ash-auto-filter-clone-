@@ -2,12 +2,124 @@
 # ASH FILE STORE & CLONE MANAGER
 
 import aiohttp
+import time
+import re
+import uuid
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import CLONE_DB_URI, CDB_NAME
 
 _client = AsyncIOMotorClient(CLONE_DB_URI) if CLONE_DB_URI else None
 _db = _client[CDB_NAME] if _client else None
 col = _db["users"] if _db else None
+
+
+def parse_time_string(val: str) -> int:
+    val = (val or "").strip().lower()
+    match = re.match(r"^(\d+)\s*([a-zA-Z]+)?$", val)
+    if not match:
+        digits = "".join(filter(str.isdigit, val))
+        if digits:
+            return max(1, int(digits))
+        return 60
+    num = int(match.group(1))
+    unit = (match.group(2) or "m").lower()
+    if unit.startswith("m") and not unit.startswith("mo"):
+        return max(1, num)
+    elif unit.startswith("h"):
+        return max(1, num * 60)
+    elif unit.startswith("d"):
+        return max(1, num * 1440)
+    elif unit.startswith("w"):
+        return max(1, num * 1440 * 7)
+    elif unit.startswith("mo"):
+        return max(1, num * 1440 * 30)
+    elif unit.startswith("y"):
+        return max(1, num * 1440 * 365)
+    return max(1, num)
+
+
+def format_time_minutes(mins: int) -> str:
+    mins = max(1, int(mins))
+    if mins < 60:
+        return f"{mins} Minutes"
+    elif mins % 1440 == 0:
+        d = mins // 1440
+        return f"{d} Day" if d == 1 else f"{d} Days"
+    elif mins % 60 == 0:
+        h = mins // 60
+        return f"{h} Hour" if h == 1 else f"{h} Hours"
+    else:
+        h = mins // 60
+        m = mins % 60
+        return f"{h}h {m}m"
+
+
+def is_user_premium(user_id: int, source_doc: dict) -> bool:
+    if not source_doc or not source_doc.get("premium_is_on", False):
+        return False
+    user_id = int(user_id)
+    prem_users = source_doc.get("premium_users", [])
+    now = int(time.time())
+    for pu in prem_users:
+        if int(pu.get("user_id", 0)) == user_id:
+            if int(pu.get("expires_at", 0)) > now:
+                return True
+    return False
+
+
+async def check_user_verified(user_id: int, bot_id=0) -> bool:
+    if _db is None:
+        return False
+    now = int(time.time())
+    rec = await _db.user_verifications.find_one({
+        "user_id": int(user_id),
+        "bot_id": int(bot_id),
+        "expires_at": {"$gt": now}
+    })
+    return bool(rec)
+
+
+async def set_user_verified(user_id: int, bot_id=0, duration_minutes=480):
+    if _db is None:
+        return
+    now = int(time.time())
+    expires = now + max(60, int(duration_minutes) * 60)
+    await _db.user_verifications.update_one(
+        {"user_id": int(user_id), "bot_id": int(bot_id)},
+        {"$set": {"verified_at": now, "expires_at": expires}},
+        upsert=True
+    )
+
+
+async def create_verify_token(user_id: int, bot_id=0, payload="") -> str:
+    token = uuid.uuid4().hex[:10]
+    if _db is not None:
+        await _db.verify_tokens.update_one(
+            {"token": token},
+            {"$set": {
+                "token": token,
+                "user_id": int(user_id),
+                "bot_id": int(bot_id),
+                "payload": payload,
+                "created_at": int(time.time()),
+                "expires_at": int(time.time()) + 3600
+            }},
+            upsert=True
+        )
+    return token
+
+
+async def consume_verify_token(token: str, user_id: int, bot_id=0):
+    if _db is None:
+        return None
+    rec = await _db.verify_tokens.find_one({"token": token, "user_id": int(user_id), "bot_id": int(bot_id)})
+    if not rec:
+        return None
+    await _db.verify_tokens.delete_one({"_id": rec["_id"]})
+    if int(rec.get("expires_at", 0)) < int(time.time()):
+        return None
+    return rec.get("payload", "")
+
 
 async def get_user(user_id):
     user_id = int(user_id)

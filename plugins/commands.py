@@ -10,7 +10,11 @@ from validators import domain
 from Script import script
 from plugins.dbusers import db
 from pyrogram import Client, filters, enums
-from plugins.users_api import get_user, update_user_info, format_caption
+from plugins.users_api import (
+    get_user, update_user_info, format_caption, get_short_link,
+    is_user_premium, check_user_verified, set_user_verified,
+    create_verify_token, consume_verify_token, format_time_minutes
+)
 from pyrogram.errors import ChatAdminRequired, FloodWait
 from pyrogram.types import *
 from utils import verify_user, check_token, check_verification, get_token
@@ -52,6 +56,108 @@ def formate_file_name(file_name):
 # Ask Doubt on telegram @movies_1780
 
 
+async def get_master_config(client):
+    try:
+        admin_id = int(ADMINS[0])
+        u = await get_user(admin_id)
+        if u: return u
+    except Exception:
+        pass
+    return await get_user(client.me.id)
+
+
+async def check_master_verification(client, user_id, original_payload):
+    try:
+        if int(user_id) in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]:
+            return None
+    except Exception:
+        pass
+    master_cfg = await get_master_config(client)
+    if not master_cfg:
+        return None
+    if is_user_premium(user_id, master_cfg):
+        return None
+
+    active_slot = None
+    for s in (1, 2, 3):
+        v_key = f"verify_{s}" if s > 1 else "verify_1"
+        v_cfg = master_cfg.get(v_key, {})
+        if v_cfg.get("is_on"):
+            active_slot = v_cfg
+            break
+
+    if not active_slot:
+        if VERIFY_MODE and master_cfg.get("base_site") and master_cfg.get("shortener_api"):
+            active_slot = {
+                "site": master_cfg.get("base_site"),
+                "api": master_cfg.get("shortener_api"),
+                "tutorial": VERIFY_TUTORIAL,
+                "time_minutes": 480
+            }
+        elif VERIFY_MODE:
+            if not await check_verification(client, user_id):
+                btn = [[
+                    InlineKeyboardButton("Verify", url=await get_token(client, user_id, f"https://telegram.me/{client.me.username}?start="))
+                ],[
+                    InlineKeyboardButton("How To Open Link & Verify", url=VERIFY_TUTORIAL)
+                ]]
+                if master_cfg.get("premium_is_on"):
+                    btn.append([InlineKeyboardButton("💳 Buy Premium Plan", callback_data="m_buy_prem")])
+                return InlineKeyboardMarkup(btn)
+            return None
+        else:
+            return None
+
+    if check_user_verified(user_id, client.me.id):
+        return None
+
+    site = active_slot.get("site") or master_cfg.get("base_site")
+    api = active_slot.get("api") or master_cfg.get("shortener_api")
+    tutorial = active_slot.get("tutorial") or VERIFY_TUTORIAL
+
+    if not site or not api:
+        return None
+
+    token = create_verify_token(user_id, client.me.id, original_payload)
+    raw_url = f"https://telegram.me/{client.me.username}?start=verify_{token}"
+    short_url = await get_short_link({"base_site": site, "shortener_api": api}, raw_url)
+
+    btn = [[InlineKeyboardButton("🔗 Click Here To Verify", url=short_url)]]
+    if tutorial:
+        btn.append([InlineKeyboardButton("🎬 How To Open Link & Verify", url=tutorial)])
+    if master_cfg.get("premium_is_on"):
+        btn.append([InlineKeyboardButton("💳 Buy Premium Plan", callback_data="m_buy_prem")])
+    return InlineKeyboardMarkup(btn)
+
+
+async def check_master_fsub(client, user_id, original_payload):
+    master_cfg = await get_master_config(client)
+    channels = master_cfg.get("force_channels", [])
+    if not channels:
+        return None
+    missing = []
+    for ch in channels:
+        try:
+            member = await client.get_chat_member(ch, user_id)
+            if member.status in (enums.ChatMemberStatus.LEFT, enums.ChatMemberStatus.BANNED):
+                missing.append(ch)
+        except Exception:
+            missing.append(ch)
+    if not missing:
+        return None
+    buttons = []
+    for ch in missing:
+        try:
+            chat = await client.get_chat(ch)
+            link = chat.invite_link or f"https://t.me/{chat.username}"
+            title = chat.title or str(ch)
+            buttons.append([InlineKeyboardButton(f"📢 Join {title[:20]}", url=link)])
+        except Exception:
+            pass
+    buttons.append([InlineKeyboardButton("🔄 Try Again", url=f"https://t.me/{client.me.username}?start={original_payload}")])
+    return InlineKeyboardMarkup(buttons)
+
+
 @Client.on_message(filters.command("start") & filters.incoming)
 async def start(client, message):
     username = client.me.username
@@ -59,17 +165,12 @@ async def start(client, message):
         await db.add_user(message.from_user.id, message.from_user.first_name)
         await client.send_message(LOG_CHANNEL, script.LOG_TEXT.format(message.from_user.id, message.from_user.mention))
     if len(message.command) != 2:
-        buttons = [[
-            InlineKeyboardButton('💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ', url='https://www.youtube.com/@tech_as_0')
-            ],[
-            InlineKeyboardButton('🔍 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ', url=tg_link(SUPPORT_GROUP, 'ash_movie_j')),
-            InlineKeyboardButton('🤖 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ', url=tg_link(UPDATE_CHANNEL, 'MoviesGroupG3'))
-            ],[
-            InlineKeyboardButton('💁‍♀️ ʜᴇʟᴘ', callback_data='help'),
-            InlineKeyboardButton('😊 ᴀʙᴏᴜᴛ', callback_data='about')
-        ]]
-        if CLONE_MODE == True:
-            buttons.append([InlineKeyboardButton('🤖 ᴄʀᴇᴀᴛᴇ ʏᴏᴜʀ ᴏᴡɴ ᴄʟᴏɴᴇ ʙᴏᴛ', callback_data='my_clones')])
+        buttons = [
+            [InlineKeyboardButton('⚙️ SETTINGS', callback_data='master_settings'), InlineKeyboardButton('🤖 MY CLONE BOT', callback_data='my_clones')],
+            [InlineKeyboardButton('💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ', url='https://www.youtube.com/@tech_as_0')],
+            [InlineKeyboardButton('🔍 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ', url=tg_link(SUPPORT_GROUP, 'ash_movie_j')), InlineKeyboardButton('🤖 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ', url=tg_link(UPDATE_CHANNEL, 'MoviesGroupG3'))],
+            [InlineKeyboardButton('💁‍♀️ ʜᴇʟᴘ', callback_data='help'), InlineKeyboardButton('😊 ᴀʙᴏᴜᴛ', callback_data='about')]
+        ]
         reply_markup = InlineKeyboardMarkup(buttons)
         me = client.me
         u_info = await get_user(message.from_user.id)
@@ -99,47 +200,59 @@ async def start(client, message):
     if data.lower() == "settings":
         from plugins.master_settings import send_settings_menu
         return await send_settings_menu(client, message)
-    try:
-        pre, file_id = data.split('_', 1)
-    except:
-        file_id = data
-        pre = ""
-    if data.split("-", 1)[0] == "verify":
-        userid = data.split("-", 2)[1]
-        token = data.split("-", 3)[2]
-        if str(message.from_user.id) != str(userid):
-            return await message.reply_text(
-                text="<b>Invalid link or Expired link !</b>",
-                protect_content=True
-            )
-        is_valid = await check_token(client, userid, token)
-        if is_valid == True:
-            await message.reply_text(
-                text=f"<b>Hey {message.from_user.mention}, You are successfully verified !\nNow you have unlimited access for all files till today midnight.</b>",
-                protect_content=True
-            )
-            await verify_user(client, userid, token)
-        else:
-            return await message.reply_text(
-                text="<b>Invalid link or Expired link !</b>",
-                protect_content=True
-            )
-    elif data.split("-", 1)[0] == "BATCH":
-        try:
-            if not await check_verification(client, message.from_user.id) and VERIFY_MODE == True:
-                btn = [[
-                    InlineKeyboardButton("Verify", url=await get_token(client, message.from_user.id, f"https://telegram.me/{username}?start="))
-                ],[
-                    InlineKeyboardButton("How To Open Link & Verify", url=VERIFY_TUTORIAL)
-                ]]
+    if data.startswith("verify_") or data.startswith("verify-"):
+        master_cfg = await get_master_config(client)
+        time_mins = 480
+        for s in (1, 2, 3):
+            v_key = f"verify_{s}" if s > 1 else "verify_1"
+            v_cfg = master_cfg.get(v_key, {})
+            if v_cfg.get("is_on"):
+                time_mins = int(v_cfg.get("time_minutes", 480))
+                break
+
+        if data.startswith("verify_"):
+            token = data.split("_", 1)[1]
+            orig_payload = await consume_verify_token(token, message.from_user.id, client.me.id)
+            if orig_payload is not None:
+                await set_user_verified(message.from_user.id, client.me.id, duration_minutes=time_mins)
+                dur_str = format_time_minutes(time_mins)
+                text = f"<b>Hey {message.from_user.mention}, You are successfully verified !\nNow you have unlimited access for all files for {dur_str}.</b>"
+                markup = None
+                if orig_payload:
+                    markup = InlineKeyboardMarkup([[InlineKeyboardButton("📥 GET YOUR FILE", url=f"https://telegram.me/{username}?start={orig_payload}")]])
+                return await message.reply_text(text=text, protect_content=True, reply_markup=markup)
+            else:
+                return await message.reply_text("<b>Invalid link or Expired link !</b>", protect_content=True)
+
+        if data.split("-", 1)[0] == "verify":
+            userid = data.split("-", 2)[1]
+            token = data.split("-", 3)[2]
+            if str(message.from_user.id) != str(userid):
+                return await message.reply_text(text="<b>Invalid link or Expired link !</b>", protect_content=True)
+            is_valid = await check_token(client, userid, token)
+            if is_valid == True:
+                dur_str = format_time_minutes(time_mins)
                 await message.reply_text(
-                    text="<b>You are not verified !\nKindly verify to continue !</b>",
-                    protect_content=True,
-                    reply_markup=InlineKeyboardMarkup(btn)
+                    text=f"<b>Hey {message.from_user.mention}, You are successfully verified !\nNow you have unlimited access for all files for {dur_str}.</b>",
+                    protect_content=True
                 )
+                await verify_user(client, userid, token)
+                await set_user_verified(message.from_user.id, client.me.id, duration_minutes=time_mins)
                 return
-        except Exception as e:
-            return await message.reply_text(f"**Error - {e}**")
+            else:
+                return await message.reply_text(text="<b>Invalid link or Expired link !</b>", protect_content=True)
+
+    fsub_markup = await check_master_fsub(client, message.from_user.id, data)
+    if fsub_markup:
+        return await message.reply_text("<b>🔐 Please join the required channel(s) first to access files.</b>", reply_markup=fsub_markup)
+
+    verify_markup = await check_master_verification(client, message.from_user.id, data)
+    if verify_markup:
+        return await message.reply_text("<b>You are not verified !\nKindly verify to continue !</b>", protect_content=True, reply_markup=verify_markup)
+
+    master_cfg = await get_master_config(client)
+
+    if data.split("-", 1)[0] == "BATCH":
         sts = await message.reply("**🔺 ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ**")
         file_id = data.split("-", 1)[1]
         msgs = BATCH_FILES.get(file_id)
@@ -212,9 +325,12 @@ async def start(client, message):
             filesarr.append(msg)
             await asyncio.sleep(1) 
         await sts.delete()
-        if AUTO_DELETE_MODE == True:
-            k = await client.send_message(chat_id = message.from_user.id, text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nThis Movie File/Video will be deleted in <b><u>{AUTO_DELETE} minutes</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>")
-            await asyncio.sleep(AUTO_DELETE_TIME)
+        
+        ad_enabled = master_cfg.get("auto_delete_enabled", AUTO_DELETE_MODE)
+        ad_mins = int(master_cfg.get("auto_delete_minutes", AUTO_DELETE))
+        if ad_enabled:
+            k = await client.send_message(chat_id = message.from_user.id, text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nThis Movie File/Video will be deleted in <b><u>{ad_mins} minutes</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>")
+            await asyncio.sleep(ad_mins * 60)
             for x in filesarr:
                 try:
                     await x.delete()
@@ -223,34 +339,25 @@ async def start(client, message):
             await k.edit_text("<b>Your All Files/Videos is successfully deleted!!!</b>")
         return
 
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
+    try:
+        pre, decode_file_id = ((base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))).decode("ascii")).split("_", 1)
+    except Exception:
+        if "_" in data:
+            pre, decode_file_id = data.split("_", 1)
+        else:
+            return await message.reply_text("<b>Invalid or expired link!</b>")
 
-    pre, decode_file_id = ((base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))).decode("ascii")).split("_", 1)
-    if not await check_verification(client, message.from_user.id) and VERIFY_MODE == True:
-        btn = [[
-            InlineKeyboardButton("Verify", url=await get_token(client, message.from_user.id, f"https://telegram.me/{username}?start="))
-        ],[
-            InlineKeyboardButton("How To Open Link & Verify", url=VERIFY_TUTORIAL)
-        ]]
-        await message.reply_text(
-            text="<b>You are not verified !\nKindly verify to continue !</b>",
-            protect_content=True,
-            reply_markup=InlineKeyboardMarkup(btn)
-        )
-        return
     try:
         user_info = await get_user(message.from_user.id)
         msg = await client.get_messages(LOG_CHANNEL, int(decode_file_id))
-        user_protect = bool(user_info.get("protect_content", False)) if user_info else False
+        user_protect = bool(user_info.get("protect_content", False)) if user_info else bool(master_cfg.get("protect_content", False))
         if msg.media:
             media = getattr(msg, msg.media.value)
             title = formate_file_name(getattr(media, "file_name", None) or "Media")
             size = get_size(getattr(media, "file_size", 0))
             raw_caption = getattr(msg, "caption", "") or ""
             
-            cust_cap = user_info.get("custom_caption") if user_info else None
+            cust_cap = user_info.get("custom_caption") if user_info else master_cfg.get("custom_caption")
             caption_tmpl = cust_cap or CUSTOM_FILE_CAPTION or f"@movies_1780 <code>{title}</code>"
             f_caption = format_caption(caption_tmpl, media=media, source_msg=msg, default_caption=f"@movies_1780 <code>{title}</code>")
 
@@ -269,11 +376,11 @@ async def start(client, message):
                         InlineKeyboardButton("• ᴡᴀᴛᴄʜ ɪɴ ᴡᴇʙ ᴀᴘᴘ •", web_app=WebAppInfo(url=stream))
                     ])
             
-            # Custom buttons from user settings
-            if user_info and user_info.get("custom_buttons"):
-                for b in user_info.get("custom_buttons"):
-                    if isinstance(b, dict) and b.get("text") and b.get("url"):
-                        button.append([InlineKeyboardButton(b["text"], url=b["url"])])
+            # Custom buttons
+            c_btns = (user_info.get("custom_buttons") if user_info and user_info.get("custom_buttons") else master_cfg.get("custom_buttons", []))
+            for b in c_btns:
+                if isinstance(b, dict) and b.get("text") and b.get("url"):
+                    button.append([InlineKeyboardButton(b["text"], url=b["url"])])
 
             reply_markup = InlineKeyboardMarkup(button) if button else None
             try:
@@ -282,17 +389,23 @@ async def start(client, message):
                 del_msg = await msg.copy(chat_id=message.from_user.id, caption=f_caption, reply_markup=reply_markup, protect_content=user_protect)
         else:
             del_msg = await msg.copy(chat_id=message.from_user.id, protect_content=user_protect)
-        if AUTO_DELETE_MODE == True:
-            k = await client.send_message(chat_id = message.from_user.id, text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nThis Movie File/Video will be deleted in <b><u>{AUTO_DELETE} minutes</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>")
-            await asyncio.sleep(AUTO_DELETE_TIME)
+        
+        ad_enabled = master_cfg.get("auto_delete_enabled", AUTO_DELETE_MODE)
+        ad_mins = int(master_cfg.get("auto_delete_minutes", AUTO_DELETE))
+        if ad_enabled:
+            k = await client.send_message(chat_id = message.from_user.id, text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nThis Movie File/Video will be deleted in <b><u>{ad_mins} minutes</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>")
+            await asyncio.sleep(ad_mins * 60)
             try:
                 await del_msg.delete()
             except:
                 pass
-            await k.edit_text("<b>Your File/Video is successfully deleted!!!</b>")
+            try:
+                await k.edit_text("<b>Your File/Video is successfully deleted!!!</b>")
+            except:
+                pass
         return
-    except:
-        pass
+    except Exception as e:
+        logger.error(e)
         
 # Don't Remove Credit Tg - @movies_1780
 # Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
@@ -399,6 +512,19 @@ async def base_site_handler(client, m: Message):
 async def cb_handler(client: Client, query: CallbackQuery):
     if query.data == "close_data":
         await query.message.delete()
+    elif query.data in ("settings", "master_settings", "settings_back", "my_clone", "my_clones", "add_clone_prompt") or query.data.startswith(("master_", "manage_clone:", "cm:", "cmdelete:", "protect_", "caption_", "button_", "start_pic_", "link_shortener", "delete_shortener")):
+        from plugins.master_settings import callbacks as master_cb
+        return await master_cb(client, query)
+    elif query.data == "m_buy_prem":
+        master_cfg = await get_master_config(client)
+        p_text = master_cfg.get("premium_plan_text") or "<b>Please contact the bot admin to purchase a premium plan.</b>"
+        p_photo = master_cfg.get("premium_plan_photo")
+        if p_photo:
+            try:
+                return await query.message.reply_photo(photo=p_photo, caption=f"💳 <b>PREMIUM PLAN DETAILS:</b>\n\n{p_text}")
+            except Exception:
+                pass
+        return await query.message.reply(f"💳 <b>PREMIUM PLAN DETAILS:</b>\n\n{p_text}")
     elif query.data == "about":
         buttons = [[
             InlineKeyboardButton('Hᴏᴍᴇ', callback_data='start'),
@@ -422,17 +548,12 @@ async def cb_handler(client: Client, query: CallbackQuery):
 # Ask Doubt on telegram @movies_1780
     
     elif query.data == "start":
-        buttons = [[
-            InlineKeyboardButton('💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ', url='https://www.youtube.com/@tech_as_0')
-        ],[
-            InlineKeyboardButton('🔍 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ', url=tg_link(SUPPORT_GROUP, 'ash_movie_j')),
-            InlineKeyboardButton('🤖 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ', url=tg_link(UPDATE_CHANNEL, 'MoviesGroupG3'))
-        ],[
-            InlineKeyboardButton('💁‍♀️ ʜᴇʟᴘ', callback_data='help'),
-            InlineKeyboardButton('😊 ᴀʙᴏᴜᴛ', callback_data='about')
-        ]]
-        if CLONE_MODE == True:
-            buttons.append([InlineKeyboardButton('🤖 ᴄʀᴇᴀᴛᴇ ʏᴏᴜʀ ᴏᴡɴ ᴄʟᴏɴᴇ ʙᴏᴛ', callback_data='settings')])
+        buttons = [
+            [InlineKeyboardButton('⚙️ SETTINGS', callback_data='master_settings'), InlineKeyboardButton('🤖 MY CLONE BOT', callback_data='my_clones')],
+            [InlineKeyboardButton('💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ', url='https://www.youtube.com/@tech_as_0')],
+            [InlineKeyboardButton('🔍 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ', url=tg_link(SUPPORT_GROUP, 'ash_movie_j')), InlineKeyboardButton('🤖 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ', url=tg_link(UPDATE_CHANNEL, 'MoviesGroupG3'))],
+            [InlineKeyboardButton('💁‍♀️ ʜᴇʟᴘ', callback_data='help'), InlineKeyboardButton('😊 ᴀʙᴏᴜᴛ', callback_data='about')]
+        ]
         reply_markup = InlineKeyboardMarkup(buttons)
         await client.edit_message_media(
             query.message.chat.id, 
