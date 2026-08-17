@@ -13,6 +13,20 @@ import re
 import time
 
 
+def cancel_user_listeners(client, chat_id):
+    try:
+        if hasattr(client, "cancel_listener"):
+            client.cancel_listener(chat_id=chat_id)
+    except Exception:
+        pass
+    try:
+        listeners = getattr(client, "_listeners", None) or getattr(client, "listeners", None)
+        if isinstance(listeners, dict) and chat_id in listeners:
+            del listeners[chat_id]
+    except Exception:
+        pass
+
+
 async def edit_or_reply(query_or_msg, text, reply_markup=None, disable_web_page_preview=False):
     msg = getattr(query_or_msg, "message", None) or query_or_msg
     if not msg:
@@ -93,6 +107,10 @@ async def settings(client, message):
 
 async def callbacks(client, query):
     data = query.data or ""
+    try:
+        cancel_user_listeners(client, query.from_user.id)
+    except Exception:
+        pass
 
     if data in ("settings", "master_settings"):
         text = "⚙️ <b>Settings</b>\n\nCustomize your settings as your need"
@@ -1066,13 +1084,23 @@ async def callbacks(client, query):
             f"💳 <b>UPI ID:</b> <code>{upi_str}</code>"
         )
         markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🖼️ SET QR PHOTO", callback_data="master_set_qr")],
-            [InlineKeyboardButton("💳 SET UPI ID", callback_data="master_set_upi")],
+            [InlineKeyboardButton("🖼️ SET QR PHOTO", callback_data="master_set_qr"), InlineKeyboardButton("🗑️ DELETE QR PHOTO", callback_data="master_del_qr")],
+            [InlineKeyboardButton("💳 SET UPI ID", callback_data="master_set_upi"), InlineKeyboardButton("🗑️ DELETE UPI ID", callback_data="master_del_upi")],
             [InlineKeyboardButton("‹ BACK", callback_data="master_premium_plan")]
         ])
         await edit_or_reply(query, text, reply_markup=markup)
         await query.answer()
         raise StopPropagation
+
+    if data == "master_del_qr":
+        await update_user_info(query.from_user.id, {"premium_plan_photo": None})
+        await query.answer("QR Code Photo deleted.", show_alert=True)
+        return await callbacks(client, type('Q', (), {'data': 'master_qr_upi_menu', 'from_user': query.from_user, 'message': query.message, 'answer': query.answer})())
+
+    if data == "master_del_upi":
+        await update_user_info(query.from_user.id, {"premium_upi_id": None})
+        await query.answer("UPI ID deleted.", show_alert=True)
+        return await callbacks(client, type('Q', (), {'data': 'master_qr_upi_menu', 'from_user': query.from_user, 'message': query.message, 'answer': query.answer})())
 
     if data == "master_set_qr":
         await query.answer()
