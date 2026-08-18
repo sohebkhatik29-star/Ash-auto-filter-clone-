@@ -801,8 +801,8 @@ async def callbacks(client, query):
         api = v_cfg.get("api") or user.get("shortener_api")
         tut = v_cfg.get("tutorial")
         
-        if not curr_state and (not site or not api or not tut):
-            await query.answer("YOU DON NOT ADDED SHORTLINK AND TUTORIAL LINK FOR VERIFICATION, FIRST ADD IT THEN TURN ME ON", show_alert=True)
+        if not curr_state and (not site or not api):
+            await query.answer("PLEASE ADD SHORTLINK AND API TOKEN FIRST, THEN TURN ME ON", show_alert=True)
             raise StopPropagation
         
         new_state = not curr_state

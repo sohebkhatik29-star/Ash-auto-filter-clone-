@@ -924,8 +924,8 @@ async def callbacks(client, query):
         api = v_cfg.get("api") or r.get("shortener_api")
         tut = v_cfg.get("tutorial")
         
-        if not curr_state and (not site or not api or not tut):
-            return await query.answer("YOU DON NOT ADDED SHORTLINK AND TUTORIAL LINK FOR VERIFICATION, FIRST ADD IT THEN TURN ME ON", show_alert=True)
+        if not curr_state and (not site or not api):
+            return await query.answer("PLEASE ADD SHORTLINK AND API TOKEN FIRST, THEN TURN ME ON", show_alert=True)
         
         new_state = not curr_state
         v_cfg["is_on"] = new_state
