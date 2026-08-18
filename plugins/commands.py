@@ -200,6 +200,73 @@ async def start(client, message):
     if data.lower() == "settings":
         from plugins.master_settings import send_settings_menu
         return await send_settings_menu(client, message)
+
+    # 1. Custom batch routing
+    if data.startswith("batch_"):
+        from clone_plugins import custom_batch
+        return await custom_batch.batch_start(client, message)
+
+    # 2. Channel batch routing
+    if data.startswith("cbatch_"):
+        from clone_plugins import channel_batch
+        return await channel_batch.batch_start_deliver(client, message)
+
+    # 3. Special link routing
+    if data.startswith("special_"):
+        from clone_plugins import special_link
+        return await special_link.open_special(client, message)
+
+    # 4. Single message / file link routing
+    if data.startswith("msg_") or data.startswith("msM_"):
+        from clone_plugins import single_link
+        return await single_link.open_single(client, message)
+
+    # 5. Check if base64 encoded payload
+    try:
+        pad = (4 - len(data) % 4) % 4
+        raw_dec = base64.urlsafe_b64decode(data + "=" * pad).decode("utf-8", errors="ignore")
+        if raw_dec.startswith("batch_"):
+            message.command[1] = raw_dec
+            from clone_plugins import custom_batch
+            return await custom_batch.batch_start(client, message)
+        if raw_dec.startswith("cbatch_"):
+            message.command[1] = raw_dec
+            from clone_plugins import channel_batch
+            return await channel_batch.batch_start_deliver(client, message)
+        if raw_dec.startswith("special_"):
+            message.command[1] = raw_dec
+            from clone_plugins import special_link
+            return await special_link.open_special(client, message)
+        if raw_dec.startswith("msg_") or raw_dec.startswith("msM_"):
+            from clone_plugins import single_link
+            return await single_link.open_single(client, message)
+        if raw_dec.startswith("file_") or raw_dec.startswith("filep_"):
+            data = raw_dec
+    except Exception:
+        pass
+
+    # 6. Check database tables directly by token
+    try:
+        from clone_plugins.database import mongo_db
+        if mongo_db is not None:
+            clean_tok = data.split("_", 1)[1] if "_" in data else data
+            if mongo_db.share_links.find_one({"token": data}) or mongo_db.share_links.find_one({"token": clean_tok}):
+                from clone_plugins import single_link
+                return await single_link.open_single(client, message)
+            if mongo_db.custom_batch_links.find_one({"token": data}) or mongo_db.custom_batch_links.find_one({"token": clean_tok}):
+                message.command[1] = f"batch_{clean_tok}"
+                from clone_plugins import custom_batch
+                return await custom_batch.batch_start(client, message)
+            if mongo_db.channel_batch_links.find_one({"token": data}) or mongo_db.channel_batch_links.find_one({"token": clean_tok}):
+                message.command[1] = f"cbatch_{clean_tok}"
+                from clone_plugins import channel_batch
+                return await channel_batch.batch_start_deliver(client, message)
+            if mongo_db.special_links.find_one({"token": data}) or mongo_db.special_links.find_one({"token": clean_tok}):
+                message.command[1] = f"special_{clean_tok}"
+                from clone_plugins import special_link
+                return await special_link.open_special(client, message)
+    except Exception:
+        pass
     if data.startswith("verify_") or data.startswith("verify-"):
         master_cfg = await get_master_config(client)
         time_mins = 480
