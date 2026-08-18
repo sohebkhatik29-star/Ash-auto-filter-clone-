@@ -140,14 +140,18 @@ async def open_single(client, message):
     token = _decode(payload_val)
     record = None
     if token:
-        record = mongo_db.share_links.find_one({"bot_id": client.me.id, "token": token})
+        record = mongo_db.share_links.find_one({"token": token})
     if not record:
-        record = mongo_db.share_links.find_one({"bot_id": client.me.id, "token": payload_val})
+        record = mongo_db.share_links.find_one({"token": payload_val})
     if not record and "_" in payload_val:
-        record = mongo_db.share_links.find_one({"bot_id": client.me.id, "token": payload_val.split("_", 1)[1]})
+        clean = payload_val.split("_", 1)[1]
+        record = mongo_db.share_links.find_one({"token": clean})
     if not record:
-        await message.reply("❌ This link is invalid or expired.")
-        raise StopPropagation
+        # If payload specifically belonged to single link, reply error, otherwise return
+        if payload_val.startswith("msg_") or payload_val.startswith("msM_"):
+            await message.reply("❌ This link is invalid or expired.")
+            raise StopPropagation
+        return
     payload = message.command[1]
     access = await access_verification(client, message.from_user.id, payload)
     if access:
@@ -226,7 +230,6 @@ def register(client):
     private = filters.private
     client.add_handler(MessageHandler(genlink_prompt, filters.command(["genlink", "getlink"]) & private), group=-100)
     client.add_handler(MessageHandler(capture_single, private), group=-99)
-    client.add_handler(MessageHandler(open_single, filters.command("start") & private), group=-98)
     # IMPORTANT: multi_batch is NOT registered here. It was creating a second
     # custom-batch collector and replying with a new panel for every message.
     # The sole batch collector is clone_plugins.custom_batch.
