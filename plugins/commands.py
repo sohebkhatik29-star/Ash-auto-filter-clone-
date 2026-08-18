@@ -67,11 +67,6 @@ async def get_master_config(client):
 
 
 async def check_master_verification(client, user_id, original_payload):
-    try:
-        if int(user_id) in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]:
-            return None
-    except Exception:
-        pass
     master_cfg = await get_master_config(client)
     if not master_cfg:
         return None

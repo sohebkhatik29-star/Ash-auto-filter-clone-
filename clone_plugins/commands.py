@@ -89,8 +89,6 @@ async def force_markup(client, user_id, original_payload):
 
 
 async def access_verification(client, user_id, original_payload):
-    if is_owner_or_mod(client, user_id):
-        return None
     rec = bot_record(client)
     if not rec:
         return None
