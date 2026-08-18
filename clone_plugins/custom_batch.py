@@ -202,6 +202,14 @@ async def capture_message(client, message):
             raise StopPropagation
 
         item = {"chat_id": int(message.chat.id), "message_id": int(message.id)}
+        try:
+            rec_db = cmd.bot_record(client)
+            db_ch = rec_db.get("database_channel")
+            if db_ch:
+                copied = await message.copy(chat_id=int(db_ch))
+                item = {"chat_id": int(db_ch), "message_id": int(copied.id)}
+        except Exception:
+            pass
         if any(x.get("chat_id") == item["chat_id"] and x.get("message_id") == item["message_id"] for x in messages):
             raise StopPropagation
 
@@ -338,9 +346,11 @@ async def batch_start(client, message):
 
     raw_cmd = message.command[1]
     token = raw_cmd[6:] if raw_cmd.startswith("batch_") else raw_cmd
-    record = mongo_db.custom_batch_links.find_one({"bot_id": client.me.id, "token": token})
+    record = mongo_db.custom_batch_links.find_one({"token": token})
     if not record:
-        record = mongo_db.custom_batch_links.find_one({"bot_id": client.me.id, "token": raw_cmd})
+        record = mongo_db.custom_batch_links.find_one({"token": raw_cmd})
+    if not record and "_" in raw_cmd:
+        record = mongo_db.custom_batch_links.find_one({"token": raw_cmd.split("_", 1)[1]})
     if not record:
         await message.reply("❌ Invalid or expired batch link.")
         raise StopPropagation

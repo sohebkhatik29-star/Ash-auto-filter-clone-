@@ -284,16 +284,25 @@ async def start(client, message):
     except Exception:
         pass
 
-    # 6. Check single_link database directly by token
+    # 6. Check databases directly by token
     if mongo_db is not None:
         try:
-            if mongo_db.share_links.find_one({"bot_id": client.me.id, "token": data}):
+            clean_tok = data.split("_", 1)[1] if "_" in data else data
+            if mongo_db.share_links.find_one({"token": data}) or mongo_db.share_links.find_one({"token": clean_tok}):
                 from clone_plugins import single_link
                 return await single_link.open_single(client, message)
-            if mongo_db.custom_batch_links.find_one({"bot_id": client.me.id, "token": data}):
-                message.command[1] = f"batch_{data}"
+            if mongo_db.custom_batch_links.find_one({"token": data}) or mongo_db.custom_batch_links.find_one({"token": clean_tok}):
+                message.command[1] = f"batch_{clean_tok}"
                 from clone_plugins import custom_batch
                 return await custom_batch.batch_start(client, message)
+            if mongo_db.channel_batch_links.find_one({"token": data}) or mongo_db.channel_batch_links.find_one({"token": clean_tok}):
+                message.command[1] = f"cbatch_{clean_tok}"
+                from clone_plugins import channel_batch
+                return await channel_batch.batch_start_deliver(client, message)
+            if mongo_db.special_links.find_one({"token": data}) or mongo_db.special_links.find_one({"token": clean_tok}):
+                message.command[1] = f"special_{clean_tok}"
+                from clone_plugins import special_link
+                return await special_link.open_special(client, message)
         except Exception:
             pass
         
