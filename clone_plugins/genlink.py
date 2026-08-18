@@ -164,7 +164,8 @@ async def open_interactive(client, message):
         await message.reply("❌ This link is invalid or expired.")
         raise StopPropagation
 
-        # Force subscription check only (verification disabled)
+    user_id = message.from_user.id
+    try:
         force = await force_markup(client, user_id, payload)
         if force:
             await message.reply(

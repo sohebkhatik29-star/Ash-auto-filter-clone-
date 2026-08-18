@@ -233,11 +233,31 @@ async def start(client, message):
         except Exception:
             try: return await message.reply_photo(photo=random.choice(PICS), caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
             except Exception: return await message.reply(caption, reply_markup=InlineKeyboardMarkup(buttons))
-    data = message.command[1]
+        data = message.command[1]
     if data.lower() in ("clone", "settings"):
         from clone_plugins import clone_settings_ui as cset
         return await cset.settings(client, message)
-    
+
+    if data.startswith("batch_"):
+        from clone_plugins import custom_batch
+        return await custom_batch.batch_start(client, message)
+
+    if data.startswith("cbatch_"):
+        from clone_plugins import channel_batch
+        return await channel_batch.batch_start_deliver(client, message)
+
+    if data.startswith("special_"):
+        from clone_plugins import special_link
+        return await special_link.open_special(client, message)
+
+    try:
+        raw_dec = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode("ascii")
+        if raw_dec.startswith("msg_"):
+            from clone_plugins import single_link
+            return await single_link.open_single(client, message)
+    except Exception:
+        pass
+        
     if data.startswith("verify_") or data.startswith("verify-"):
         token_str = data.split("_", 1)[1] if data.startswith("verify_") else data.split("-", 1)[1]
         orig_payload = await consume_verify_token(token_str, message.from_user.id, me.id)
@@ -453,7 +473,10 @@ async def callbacks(client, query):
         "custom_button", "button_add", "button_delete", "protect_menu", "protect_toggle", "protect_on", "protect_off"
     ) or data.startswith(("admin_info:", "adm_tgl:", "adm_trans:", "adm_rem:", "clone_", "cset_")):
         return
-    return await query.answer("Unknown option.", show_alert=True)
+    try:
+        await query.answer()
+    except Exception:
+        pass
 
 
 def register(client):
