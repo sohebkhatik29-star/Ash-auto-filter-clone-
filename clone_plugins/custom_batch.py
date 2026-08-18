@@ -336,8 +336,11 @@ async def batch_start(client, message):
         await message.reply("❌ Database is not configured.")
         raise StopPropagation
 
-    token = message.command[1][6:]
+    raw_cmd = message.command[1]
+    token = raw_cmd[6:] if raw_cmd.startswith("batch_") else raw_cmd
     record = mongo_db.custom_batch_links.find_one({"bot_id": client.me.id, "token": token})
+    if not record:
+        record = mongo_db.custom_batch_links.find_one({"bot_id": client.me.id, "token": raw_cmd})
     if not record:
         await message.reply("❌ Invalid or expired batch link.")
         raise StopPropagation

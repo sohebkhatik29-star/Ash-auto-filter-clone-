@@ -19,14 +19,21 @@ def _payload(token: str) -> str:
 
 
 def _decode(payload: str):
+    if not payload:
+        return None
+    if payload.startswith("msg_") or payload.startswith("msM_"):
+        return payload.split("_", 1)[1]
     try:
-        raw = base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)).decode("ascii")
-        prefix, token = raw.split("_", 1)
-        if prefix == "msg" and token:
-            return token
+        pad = (4 - len(payload) % 4) % 4
+        raw = base64.urlsafe_b64decode(payload + "=" * pad).decode("utf-8", errors="ignore")
+        if "_" in raw:
+            prefix, token = raw.split("_", 1)
+            if prefix.lower() in ("msg", "msm", "file", "filep") and token:
+                return token
+        return raw
     except Exception:
         pass
-    return None
+    return payload
 
 
 def _batch_active(client, user_id):
@@ -127,10 +134,17 @@ async def capture_single(client, message):
 async def open_single(client, message):
     if len(message.command) != 2:
         return
-    token = _decode(message.command[1])
-    if not token or mongo_db is None:
+    if mongo_db is None:
         return
-    record = mongo_db.share_links.find_one({"bot_id": client.me.id, "token": token})
+    payload_val = message.command[1]
+    token = _decode(payload_val)
+    record = None
+    if token:
+        record = mongo_db.share_links.find_one({"bot_id": client.me.id, "token": token})
+    if not record:
+        record = mongo_db.share_links.find_one({"bot_id": client.me.id, "token": payload_val})
+    if not record and "_" in payload_val:
+        record = mongo_db.share_links.find_one({"bot_id": client.me.id, "token": payload_val.split("_", 1)[1]})
     if not record:
         await message.reply("❌ This link is invalid or expired.")
         raise StopPropagation

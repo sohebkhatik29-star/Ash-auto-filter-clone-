@@ -242,25 +242,60 @@ async def start(client, message):
         from clone_plugins import clone_settings_ui as cset
         return await cset.settings(client, message)
 
+    # 1. Custom batch routing (plain or decoded)
     if data.startswith("batch_"):
         from clone_plugins import custom_batch
         return await custom_batch.batch_start(client, message)
 
+    # 2. Channel batch routing (plain or decoded)
     if data.startswith("cbatch_"):
         from clone_plugins import channel_batch
         return await channel_batch.batch_start_deliver(client, message)
 
+    # 3. Special link routing (plain or decoded)
     if data.startswith("special_"):
         from clone_plugins import special_link
         return await special_link.open_special(client, message)
 
+    # 4. Single message / file link routing
+    if data.startswith("msg_") or data.startswith("msM_"):
+        from clone_plugins import single_link
+        return await single_link.open_single(client, message)
+
+    # 5. Check if base64 encoded payload
     try:
-        raw_dec = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode("ascii")
-        if raw_dec.startswith("msg_"):
+        pad = (4 - len(data) % 4) % 4
+        raw_dec = base64.urlsafe_b64decode(data + "=" * pad).decode("utf-8", errors="ignore")
+        if raw_dec.startswith("batch_"):
+            message.command[1] = raw_dec
+            from clone_plugins import custom_batch
+            return await custom_batch.batch_start(client, message)
+        if raw_dec.startswith("cbatch_"):
+            message.command[1] = raw_dec
+            from clone_plugins import channel_batch
+            return await channel_batch.batch_start_deliver(client, message)
+        if raw_dec.startswith("special_"):
+            message.command[1] = raw_dec
+            from clone_plugins import special_link
+            return await special_link.open_special(client, message)
+        if raw_dec.startswith("msg_") or raw_dec.startswith("msM_"):
             from clone_plugins import single_link
             return await single_link.open_single(client, message)
     except Exception:
         pass
+
+    # 6. Check single_link database directly by token
+    if mongo_db is not None:
+        try:
+            if mongo_db.share_links.find_one({"bot_id": client.me.id, "token": data}):
+                from clone_plugins import single_link
+                return await single_link.open_single(client, message)
+            if mongo_db.custom_batch_links.find_one({"bot_id": client.me.id, "token": data}):
+                message.command[1] = f"batch_{data}"
+                from clone_plugins import custom_batch
+                return await custom_batch.batch_start(client, message)
+        except Exception:
+            pass
         
     if data.startswith("verify_") or data.startswith("verify-"):
         token_str = data.split("_", 1)[1] if data.startswith("verify_") else data.split("-", 1)[1]
