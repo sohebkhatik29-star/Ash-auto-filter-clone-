@@ -94,8 +94,9 @@ async def capture_single(client, message):
         await message.reply("❌ Database is not configured.")
         raise StopPropagation
 
+    from config import LOG_CHANNEL
     rec = bot_record(client)
-    db_ch = rec.get("database_channel")
+    db_ch = rec.get("database_channel") or LOG_CHANNEL
     source_chat_id = int(message.chat.id)
     source_message_id = int(message.id)
 
@@ -108,14 +109,25 @@ async def capture_single(client, message):
             pass
 
     token = secrets.token_urlsafe(18)
-    mongo_db.share_links.update_one(
-        {"bot_id": client.me.id, "token": token},
-        {"$set": {"bot_id": client.me.id, "token": token, "source_chat_id": source_chat_id, "source_message_id": source_message_id, "owner_id": int(message.from_user.id), "created_at": int(time.time())}},
-        upsert=True,
-    )
+    b64_tok = _payload(token)
+    msg_tok = f"msg_{token}"
+
+    doc = {
+        "bot_id": client.me.id,
+        "token": token,
+        "alt_tokens": [token, msg_tok, b64_tok],
+        "source_chat_id": source_chat_id,
+        "source_message_id": source_message_id,
+        "owner_id": int(message.from_user.id),
+        "created_at": int(time.time())
+    }
+    # Index under all possible token representations
+    mongo_db.share_links.update_one({"token": token}, {"$set": doc}, upsert=True)
+    mongo_db.share_links.update_one({"token": msg_tok}, {"$set": doc}, upsert=True)
+    mongo_db.share_links.update_one({"token": b64_tok}, {"$set": doc}, upsert=True)
+
     username = (await client.get_me()).username
-    original = f"https://t.me/{username}?start={_payload(token)}"
-    link = original
+    link = f"https://t.me/{username}?start=msg_{token}" 
     markup = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📋 Copy Link 📋", url=f"https://t.me/share/url?url={link}"),

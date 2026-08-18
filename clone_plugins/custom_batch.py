@@ -251,14 +251,17 @@ async def _generate(client, query, session):
     token = secrets.token_urlsafe(18)
     rec = cmd.bot_record(client)
     protected = bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
-    links.insert_one({
+    doc = {
         "token": token,
+        "alt_tokens": [token, f"batch_{token}"],
         "bot_id": client.me.id,
         "owner_id": int(session["user_id"]),
         "messages": messages,
         "protected": protected,
         "created_at": int(time.time()),
-    })
+    }
+    links.update_one({"token": token}, {"$set": doc}, upsert=True)
+    links.update_one({"token": f"batch_{token}"}, {"$set": doc}, upsert=True)
 
     username = (await client.get_me()).username
     url = f"https://t.me/{username}?start=batch_{token}"
@@ -277,8 +280,13 @@ async def _generate(client, query, session):
         f"📦 <b>Messages:</b> {len(messages)}\n\n"
         f"🔗 <b>Link:</b>\n{shown}"
     )
-    await client.send_message(int(session["user_id"]), text)
-    mongo_db.custom_batch_sessions.delete_one({"_id": session["_id"]})
+    markup = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📋 Copy Link 📋", url=f"https://t.me/share/url?url={shown}"),
+            InlineKeyboardButton("📢 SHARE URL 📢", url=f"https://t.me/share/url?url={shown}")
+        ]
+    ])
+    await client.send_message(int(session["user_id"]), text, reply_markup=markup, disable_web_page_preview=True)
     key = (int(client.me.id), int(session["user_id"]))
     task = _INDEX_TASKS.pop(key, None)
     if task and not task.done():
