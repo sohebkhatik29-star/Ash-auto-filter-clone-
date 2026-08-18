@@ -508,14 +508,47 @@ async def base_site_handler(client, m: Message):
 # Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
 # Ask Doubt on telegram @movies_1780
 
+async def safe_edit_menu(query: CallbackQuery, text: str, reply_markup=None):
+    try:
+        await query.answer()
+    except Exception:
+        pass
+    msg = query.message
+    if not msg:
+        return
+    try:
+        if getattr(msg, "photo", None) or getattr(msg, "media", None):
+            await msg.edit_caption(caption=text, reply_markup=reply_markup, parse_mode=enums.ParseMode.HTML)
+        else:
+            await msg.edit_text(text=text, reply_markup=reply_markup, parse_mode=enums.ParseMode.HTML)
+    except Exception:
+        try:
+            await msg.delete()
+        except Exception:
+            pass
+        await msg.reply_text(text=text, reply_markup=reply_markup, parse_mode=enums.ParseMode.HTML)
+
+
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
-    if query.data == "close_data":
-        await query.message.delete()
-    elif query.data in ("settings", "master_settings", "settings_back", "my_clone", "my_clones", "add_clone_prompt") or query.data.startswith(("master_", "manage_clone:", "cm:", "cmdelete:", "protect_", "caption_", "button_", "start_pic_", "link_shortener", "delete_shortener")):
+    data = query.data or ""
+    if data == "close_data":
+        try:
+            await query.answer()
+            await query.message.delete()
+        except Exception:
+            pass
+        return
+
+    elif data in ("settings", "master_settings", "settings_back", "my_clone", "my_clones", "add_clone_prompt", "clone", "google_backup", "google_connect", "link_shortener", "delete_shortener", "add_shortener", "custom_caption", "custom_button", "protect_menu", "start_photo_menu") or data.startswith(("master_", "manage_clone:", "cm:", "cmdelete:", "protect_", "caption_", "button_", "start_pic_", "link_shortener", "delete_shortener", "log_channel", "database_channel")):
         from plugins.master_settings import callbacks as master_cb
         return await master_cb(client, query)
-    elif query.data == "m_buy_prem":
+
+    elif data == "m_buy_prem":
+        try:
+            await query.answer()
+        except Exception:
+            pass
         master_cfg = await get_master_config(client)
         p_text = master_cfg.get("premium_plan_text") or "<b>Please contact the bot admin to purchase a premium plan.</b>"
         p_photo = master_cfg.get("premium_plan_photo")
@@ -530,90 +563,56 @@ async def cb_handler(client: Client, query: CallbackQuery):
             except Exception:
                 pass
         return await query.message.reply(full_text)
-    elif query.data == "about":
+
+    elif data == "about":
         buttons = [[
-            InlineKeyboardButton('Hᴏᴍᴇ', callback_data='start'),
-            InlineKeyboardButton('🔒 Cʟᴏsᴇ', callback_data='close_data')
+            InlineKeyboardButton("Hᴏᴍᴇ", callback_data="start"),
+            InlineKeyboardButton("🔒 Cʟᴏsᴇ", callback_data="close_data")
         ]]
-        await client.edit_message_media(
-            query.message.chat.id, 
-            query.message.id, 
-            InputMediaPhoto(random.choice(PICS))
-        )
-        reply_markup = InlineKeyboardMarkup(buttons)
         me2 = (await client.get_me()).mention
-        await query.message.edit_text(
+        await safe_edit_menu(
+            query,
             text=script.ABOUT_TXT.format(me2),
-            reply_markup=reply_markup,
-            parse_mode=enums.ParseMode.HTML
+            reply_markup=InlineKeyboardMarkup(buttons)
         )
 
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
-    
-    elif query.data == "start":
+    elif data == "start":
         buttons = [
-            [InlineKeyboardButton('⚙️ SETTINGS', callback_data='master_settings'), InlineKeyboardButton('🤖 MY CLONE BOT', callback_data='my_clones')],
-            [InlineKeyboardButton('💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ', url='https://www.youtube.com/@tech_as_0')],
-            [InlineKeyboardButton('🔍 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ', url=tg_link(SUPPORT_GROUP, 'ash_movie_j')), InlineKeyboardButton('🤖 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ', url=tg_link(UPDATE_CHANNEL, 'MoviesGroupG3'))],
-            [InlineKeyboardButton('💁‍♀️ ʜᴇʟᴘ', callback_data='help'), InlineKeyboardButton('😊 ᴀʙᴏᴜᴛ', callback_data='about')]
+            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="master_settings"), InlineKeyboardButton("🤖 MY CLONE BOT", callback_data="my_clones")],
+            [InlineKeyboardButton("💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ", url="https://www.youtube.com/@tech_as_0")],
+            [InlineKeyboardButton("🔍 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ", url=tg_link(SUPPORT_GROUP, "ash_movie_j")), InlineKeyboardButton("🤖 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))],
+            [InlineKeyboardButton("💁‍♀️ ʜᴇʟᴘ", callback_data="help"), InlineKeyboardButton("😊 ᴀʙᴏᴜᴛ", callback_data="about")]
         ]
-        reply_markup = InlineKeyboardMarkup(buttons)
-        await client.edit_message_media(
-            query.message.chat.id, 
-            query.message.id, 
-            InputMediaPhoto(random.choice(PICS))
-        )
         me2 = (await client.get_me()).mention
-        await query.message.edit_text(
+        await safe_edit_menu(
+            query,
             text=script.START_TXT.format(query.from_user.mention, me2),
-            reply_markup=reply_markup,
-            parse_mode=enums.ParseMode.HTML
+            reply_markup=InlineKeyboardMarkup(buttons)
         )
 
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
-    
-    elif query.data == "clone":
+    elif data == "clone":
         buttons = [[
-            InlineKeyboardButton('Hᴏᴍᴇ', callback_data='start'),
-            InlineKeyboardButton('🔒 Cʟᴏsᴇ', callback_data='close_data')
+            InlineKeyboardButton("Hᴏᴍᴇ", callback_data="start"),
+            InlineKeyboardButton("🔒 Cʟᴏsᴇ", callback_data="close_data")
         ]]
-        await client.edit_message_media(
-            query.message.chat.id, 
-            query.message.id, 
-            InputMediaPhoto(random.choice(PICS))
-        )
-        reply_markup = InlineKeyboardMarkup(buttons)
-        await query.message.edit_text(
+        await safe_edit_menu(
+            query,
             text=script.CLONE_TXT.format(query.from_user.mention),
-            reply_markup=reply_markup,
-            parse_mode=enums.ParseMode.HTML
-        )          
-
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
-    
-    elif query.data == "help":
-        buttons = [[
-            InlineKeyboardButton('Hᴏᴍᴇ', callback_data='start'),
-            InlineKeyboardButton('🔒 Cʟᴏsᴇ', callback_data='close_data')
-        ]]
-        await client.edit_message_media(
-            query.message.chat.id, 
-            query.message.id, 
-            InputMediaPhoto(random.choice(PICS))
+            reply_markup=InlineKeyboardMarkup(buttons)
         )
-        reply_markup = InlineKeyboardMarkup(buttons)
-        await query.message.edit_text(
+
+    elif data == "help":
+        buttons = [[
+            InlineKeyboardButton("Hᴏᴍᴇ", callback_data="start"),
+            InlineKeyboardButton("🔒 Cʟᴏsᴇ", callback_data="close_data")
+        ]]
+        await safe_edit_menu(
+            query,
             text=script.HELP_TXT,
-            reply_markup=reply_markup,
-            parse_mode=enums.ParseMode.HTML
-        )  
-        
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    else:
+        try:
+            await query.answer()
+        except Exception:
+            pass

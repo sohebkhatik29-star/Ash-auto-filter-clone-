@@ -1689,7 +1689,7 @@ def register(client):
     client.add_handler(
         CallbackQueryHandler(
             callbacks,
-            filters.regex(r"^(settings|master_settings|settings_back|log_channel|master_log_channel|master_set_log_channel|master_delete_log_channel|database_channel|master_database_channel|master_set_database_channel|master_delete_database_channel|my_clone|my_clones|add_clone_prompt|clone|google_backup|master_google_backup|google_connect|link_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_toggle_on|protect_toggle_off|start_photo_menu|start_pic_edit|start_pic_see|start_pic_delete|manage_clone:\d+|cm:\d+:[a-z_]+|cmdelete:\d+|master_token_verification:\d+|master_v_[a-z_]+:\d+|master_premium_plan|master_prem_[a-z_]+|master_prem_val:\d+:[a-z0-9]+|master_fsub_[a-z_]+|master_auto_delete_[a-z_]+|master_ad_[a-z_]+|master_ad_set:\d+)$"),
+            filters.regex(r"^(settings|master_|settings_back|log_channel|database_channel|my_clone|my_clones|add_clone_prompt|clone|google_backup|google_connect|link_shortener|delete_shortener|add_shortener|custom_caption|caption_|custom_button|button_|protect_|start_photo_menu|start_pic_|manage_clone|cm:|cmdelete:)"),
         ),
         group=-1,
     )

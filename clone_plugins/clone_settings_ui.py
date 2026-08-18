@@ -1598,6 +1598,6 @@ async def callbacks(client, query):
 
 def register(client):
     client.add_handler(MessageHandler(settings, filters.command("settings") & filters.private), group=0)
-    client.add_handler(CallbackQueryHandler(callbacks, filters.regex(r"^(settings|settings_back|log_channel|set_log_channel|delete_log_channel|database_channel|set_database_channel|delete_database_channel|admins_menu|add_admin_prompt|admin_info:\d+|adm_tgl:\d+:[a-z_]+|adm_trans:\d+|adm_rem:\d+|link_shortener|add_shortener|delete_shortener|protect_menu|protect_toggle|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|clone_my_clone_info|cset_token_verification:\d+|cset_v_[a-z_]+:\d+|cset_premium_plan|cset_prem_[a-z_]+|cset_prem_val:\d+:[a-z0-9]+|cset_fsub_[a-z_]+|cset_auto_delete_[a-z_]+|cset_ad_[a-z_]+|cset_ad_set:\d+)$")), group=0)
+    client.add_handler(CallbackQueryHandler(callbacks, filters.regex(r"^(settings|settings_back|log_channel|set_log_channel|delete_log_channel|database_channel|set_database_channel|delete_database_channel|admins_menu|add_admin_prompt|admin_info:|adm_tgl:|adm_trans:|adm_rem:|link_shortener|add_shortener|delete_shortener|protect_menu|protect_toggle|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|clone_my_clone_info|cset_)")), group=0)
     return client
 
