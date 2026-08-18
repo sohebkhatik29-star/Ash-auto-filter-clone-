@@ -155,6 +155,11 @@ async def check_master_fsub(client, user_id, original_payload):
 
 @Client.on_message(filters.command("start") & filters.incoming)
 async def start(client, message):
+    try:
+        from plugins.master_settings import cancel_user_listeners
+        cancel_user_listeners(client, message.chat.id, message.from_user.id)
+    except Exception:
+        pass
     username = client.me.username
     if not await db.is_user_exist(message.from_user.id):
         await db.add_user(message.from_user.id, message.from_user.first_name)
@@ -526,6 +531,11 @@ async def safe_edit_menu(query: CallbackQuery, text: str, reply_markup=None):
 
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
+    try:
+        from plugins.master_settings import cancel_user_listeners
+        cancel_user_listeners(client, query.message.chat.id if query.message else query.from_user.id, query.from_user.id)
+    except Exception:
+        pass
     data = query.data or ""
     if data == "close_data":
         try:

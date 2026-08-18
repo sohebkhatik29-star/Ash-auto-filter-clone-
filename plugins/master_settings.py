@@ -13,18 +13,50 @@ import re
 import time
 
 
-def cancel_user_listeners(client, chat_id):
+import asyncio
+
+def cancel_user_listeners(client, chat_id, user_id=None):
+    if user_id is None:
+        user_id = chat_id
     try:
-        if hasattr(client, "cancel_listener"):
-            client.cancel_listener(chat_id=chat_id)
+        if hasattr(client, "stop_listening"):
+            try:
+                client.stop_listening(chat_id=chat_id, user_id=user_id)
+            except Exception:
+                try:
+                    client.stop_listening(chat_id=chat_id)
+                except Exception:
+                    pass
     except Exception:
         pass
-    try:
-        listeners = getattr(client, "_listeners", None) or getattr(client, "listeners", None)
-        if isinstance(listeners, dict) and chat_id in listeners:
-            del listeners[chat_id]
-    except Exception:
-        pass
+    for attr in ("_listeners", "listeners"):
+        try:
+            listeners_dict = getattr(client, attr, None)
+            if isinstance(listeners_dict, dict):
+                for key in list(listeners_dict.keys()):
+                    match = False
+                    if key == chat_id or (user_id and key == user_id):
+                        match = True
+                    elif isinstance(key, tuple):
+                        if chat_id in key or (user_id and user_id in key):
+                            match = True
+                    elif str(chat_id) in str(key) or (user_id and str(user_id) in str(key)):
+                        match = True
+
+                    if match:
+                        item = listeners_dict.pop(key, None)
+                        if item:
+                            futures = item if isinstance(item, (list, tuple, set)) else [item]
+                            for fut in futures:
+                                try:
+                                    if hasattr(fut, "cancel"):
+                                        fut.cancel()
+                                    elif hasattr(fut, "set_exception"):
+                                        fut.set_exception(asyncio.CancelledError())
+                                except Exception:
+                                    pass
+        except Exception:
+            pass
 
 
 async def edit_or_reply(query_or_msg, text, reply_markup=None, disable_web_page_preview=False):
