@@ -246,7 +246,7 @@ async def batch_start_deliver(client, message):
         raise StopPropagation
 
     token = message.command[1][7:]
-    record = mongo_db.channel_batch_links.find_one({"bot_id": client.me.id, "token": token})
+    record = mongo_db.channel_batch_links.find_one({"token": token}) or mongo_db.channel_batch_links.find_one({"token": message.command[1]})
     if not record:
         await message.reply("❌ Invalid or expired batch link.")
         raise StopPropagation

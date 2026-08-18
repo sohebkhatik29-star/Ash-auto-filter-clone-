@@ -137,18 +137,33 @@ async def open_single(client, message):
     if mongo_db is None:
         return
     payload_val = message.command[1]
-    token = _decode(payload_val)
+    candidates = [payload_val]
+    if "_" in payload_val:
+        candidates.append(payload_val.split("_", 1)[1])
+    try:
+        pad = (4 - len(payload_val) % 4) % 4
+        dec = base64.urlsafe_b64decode(payload_val + "=" * pad).decode("utf-8", errors="ignore")
+        if dec:
+            candidates.append(dec)
+            if "_" in dec:
+                candidates.append(dec.split("_", 1)[1])
+    except Exception:
+        pass
+
     record = None
-    if token:
-        record = mongo_db.share_links.find_one({"token": token})
+    for cand in candidates:
+        if cand:
+            record = mongo_db.share_links.find_one({"token": cand})
+            if record:
+                break
+
     if not record:
-        record = mongo_db.share_links.find_one({"token": payload_val})
-    if not record and "_" in payload_val:
-        clean = payload_val.split("_", 1)[1]
-        record = mongo_db.share_links.find_one({"token": clean})
+        token = _decode(payload_val)
+        if token:
+            record = mongo_db.share_links.find_one({"token": token})
+
     if not record:
-        # If payload specifically belonged to single link, reply error, otherwise return
-        if payload_val.startswith("msg_") or payload_val.startswith("msM_"):
+        if payload_val.startswith("msg_") or payload_val.startswith("msM_") or payload_val.startswith("bXNN") or payload_val.startswith("bXNn"):
             await message.reply("❌ This link is invalid or expired.")
             raise StopPropagation
         return

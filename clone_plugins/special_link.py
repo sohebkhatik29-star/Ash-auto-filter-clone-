@@ -408,9 +408,7 @@ async def special_link_callbacks(client, query):
         if "_" in rest:
             token, extra_arg = rest.rsplit("_", 1)
 
-    record = mongo_db.special_links.find_one({"bot_id": client.me.id, "token": token})
-    if not record:
-        record = mongo_db.special_links.find_one({"bot_id": client.me.id, "$or": [{"token": token}, {"short_token": token}]})
+    record = mongo_db.special_links.find_one({"token": token}) or mongo_db.special_links.find_one({"short_token": token}) or mongo_db.special_links.find_one({"token": payload})
     if not record:
         return await query.answer("Special link not found or expired.", show_alert=True)
 
@@ -658,9 +656,7 @@ async def special_link_start(client, message):
         raise StopPropagation
 
     token = payload.split("_", 1)[1]
-    record = mongo_db.special_links.find_one({"bot_id": client.me.id, "token": token})
-    if not record:
-        record = mongo_db.special_links.find_one({"bot_id": client.me.id, "$or": [{"token": token}, {"short_token": token}]})
+    record = mongo_db.special_links.find_one({"token": token}) or mongo_db.special_links.find_one({"short_token": token}) or mongo_db.special_links.find_one({"token": payload})
 
     if not record:
         await message.reply("❌ Invalid or expired special link.")

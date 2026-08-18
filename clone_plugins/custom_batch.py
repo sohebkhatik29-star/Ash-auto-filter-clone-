@@ -346,12 +346,30 @@ async def batch_start(client, message):
         raise StopPropagation
 
     raw_cmd = message.command[1]
-    token = raw_cmd[6:] if raw_cmd.startswith("batch_") else raw_cmd
-    record = mongo_db.custom_batch_links.find_one({"token": token})
-    if not record:
-        record = mongo_db.custom_batch_links.find_one({"token": raw_cmd})
-    if not record and "_" in raw_cmd:
-        record = mongo_db.custom_batch_links.find_one({"token": raw_cmd.split("_", 1)[1]})
+    candidates = [raw_cmd]
+    if raw_cmd.startswith("batch_"):
+        candidates.append(raw_cmd[6:])
+    if "_" in raw_cmd:
+        candidates.append(raw_cmd.split("_", 1)[1])
+    try:
+        pad = (4 - len(raw_cmd) % 4) % 4
+        dec = base64.urlsafe_b64decode(raw_cmd + "=" * pad).decode("utf-8", errors="ignore")
+        if dec:
+            candidates.append(dec)
+            if dec.startswith("batch_"):
+                candidates.append(dec[6:])
+            if "_" in dec:
+                candidates.append(dec.split("_", 1)[1])
+    except Exception:
+        pass
+
+    record = None
+    for cand in candidates:
+        if cand:
+            record = mongo_db.custom_batch_links.find_one({"token": cand})
+            if record:
+                break
+
     if not record:
         await message.reply("❌ Invalid or expired batch link.")
         raise StopPropagation
