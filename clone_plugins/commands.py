@@ -229,11 +229,15 @@ async def start(client, message):
         ]
         caption = script.CLONE_START_TXT.format(message.from_user.mention, me.mention)
         start_photo = rec.get("start_pic") or random.choice(PICS)
-        try: return await message.reply_photo(photo=start_photo, caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
+        try:
+            return await message.reply_photo(photo=start_photo, caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
         except Exception:
-            try: return await message.reply_photo(photo=random.choice(PICS), caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
-            except Exception: return await message.reply(caption, reply_markup=InlineKeyboardMarkup(buttons))
-        data = message.command[1]
+            try:
+                return await message.reply_photo(photo=random.choice(PICS), caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
+            except Exception:
+                return await message.reply(caption, reply_markup=InlineKeyboardMarkup(buttons))
+
+    data = message.command[1]
     if data.lower() in ("clone", "settings"):
         from clone_plugins import clone_settings_ui as cset
         return await cset.settings(client, message)
