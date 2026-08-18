@@ -1,3 +1,4 @@
+from clone_plugins.sessions import start_user_session, is_user_session_active, clear_user_session, cancel_all_listeners
 # ASH FILE STORE & CLONE MANAGER - SETTINGS UI
 import asyncio
 import time
@@ -144,6 +145,10 @@ def admin_info_markup(adm):
 import asyncio
 
 def cancel_user_listeners(client, chat_id, user_id=None):
+    cancel_all_listeners(client, chat_id, user_id)
+    return
+    # old
+def _old_cancel_user_listeners(client, chat_id, user_id=None):
     if user_id is None:
         user_id = chat_id
     try:
@@ -995,6 +1000,7 @@ async def callbacks(client, query):
     if data.startswith("cset_v_shortner:"):
         slot = int(data.split(":")[1])
         await query.answer()
+        session_id = start_user_session(user_id, f"cset_v_shortner_site:{slot}")
         prompt_text = (
             "<b>SEND ME A SHORTLINK URL...</b>\n\n"
             "<b>FORMAT :</b>\n"
@@ -1009,19 +1015,31 @@ async def callbacks(client, query):
         try:
             site_msg = await client.listen(chat_id=user_id, timeout=120)
         except Exception:
-            return
+            raise StopPropagation
+
+        if not is_user_session_active(user_id, session_id):
+            raise StopPropagation
 
         site_raw = (site_msg.text or "").strip()
-        try: await site_msg.delete()
-        except Exception: pass
+        try:
+            await site_msg.delete()
+        except Exception:
+            pass
+
+        if site_raw.startswith("/") and site_raw.lower() != "/cancel":
+            clear_user_session(user_id)
+            raise StopPropagation
 
         if site_raw.lower() == "/cancel":
+            clear_user_session(user_id)
             return await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"cset_token_verification:{slot}")]]))
 
         site_clean = site_raw.replace("https://", "").replace("http://", "").split("/")[0].strip()
         if not site_clean or "." not in site_clean:
+            clear_user_session(user_id)
             return await edit_or_reply(query, "❌ <b>Invalid site URL.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"cset_token_verification:{slot}")]]))
 
+        session_id_2 = start_user_session(user_id, f"cset_v_shortner_api:{slot}")
         await edit_or_reply(query, 
             "<b>SEND ME SHORTLINK API...</b>\n\n"
             "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>",
@@ -1030,40 +1048,65 @@ async def callbacks(client, query):
         try:
             api_msg = await client.listen(chat_id=user_id, timeout=120)
         except Exception:
-            return
+            raise StopPropagation
 
+        if not is_user_session_active(user_id, session_id_2):
+            raise StopPropagation
+
+        clear_user_session(user_id)
         api_raw = (api_msg.text or "").strip()
-        try: await api_msg.delete()
-        except Exception: pass
+        try:
+            await api_msg.delete()
+        except Exception:
+            pass
+
+        if api_raw.startswith("/") and api_raw.lower() != "/cancel":
+            raise StopPropagation
 
         if api_raw.lower() == "/cancel":
             return await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"cset_token_verification:{slot}")]]))
 
-        is_valid = await validate_shortener_token(site_clean, api_raw)
-        if not is_valid:
-            return await edit_or_reply(query, 
-                "❌ <b>The given Shortener Api Token is invalid</b>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"cset_token_verification:{slot}")]])
-            )
+        if not api_raw:
+            return await edit_or_reply(query, "❌ <b>Invalid API key.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"cset_token_verification:{slot}")]]))
 
-        r = record(client)
+        api = api_raw
+        site = site_clean
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
         v_cfg = r.get(v_key, {})
-        v_cfg["site"] = site_clean
-        v_cfg["api"] = api_raw
-        save(client, **{v_key: v_cfg, "base_site": site_clean, "shortener_api": api_raw})
+        v_cfg["site"] = site
+        v_cfg["api"] = api
+        v_cfg["is_on"] = True
+        save(client, **{v_key: v_cfg})
 
-        confirm_text = (
-            "✅ <b>SHORTNER SET HO GAYI!</b>\n\n"
-            f"🌐 <b>Website:</b> <code>{site_clean}</code>\n"
-            f"🔑 <b>API Token:</b> <code>{api_raw}</code>"
+        prefix = "VERIFY" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
+        next_slot = (slot % 3) + 1
+        next_name = "SECOND VERIFICATION" if slot == 1 else ("THIRD VERIFICATION" if slot == 2 else "FIRST VERIFICATION")
+        status_text = "VERIFY IS ON - ✅"
+
+        site_val = site
+        api_val = api
+        tut_val = v_cfg.get("tutorial") or "Not set"
+        mins_val = v_cfg.get("time_minutes", 480)
+        time_str_val = format_time_minutes(mins_val)
+
+        text = (
+            "<b>MANAGE YOUR TOKEN VERIFICATION SETTINGS FROM HERE GIVEN BELOW BUTTONS</b>\n\n"
+            f"<b>Slot {slot} Shortener Website :</b> <code>{site_val}</code>\n"
+            f"<b>Slot {slot} API Token :</b> <code>{api_val}</code>\n"
+            f"<b>Slot {slot} Tutorial Link :</b> <code>{tut_val}</code>\n"
+            f"<b>Slot {slot} Verification Time :</b> <code>{time_str_val}</code>"
         )
-        confirm_markup = InlineKeyboardMarkup([
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"🔗 {prefix} SHORTNER", callback_data=f"cset_v_shortner:{slot}")],
+            [InlineKeyboardButton(f"🎬 {prefix} TUTORIAL", callback_data=f"cset_v_tutorial:{slot}")],
+            [InlineKeyboardButton(f"⏳ {prefix} TIME", callback_data=f"cset_v_time:{slot}")],
+            [InlineKeyboardButton(f"⏰ {next_name}", callback_data=f"cset_token_verification:{next_slot}")],
+            [InlineKeyboardButton(f"🔒 {status_text}", callback_data=f"cset_v_toggle:{slot}")],
             [InlineKeyboardButton("➕ ADD NEW SHORTNER", callback_data=f"cset_v_shortner:{slot}")],
-            [InlineKeyboardButton("‹ BACK", callback_data=f"cset_token_verification:{slot}")]
+            [InlineKeyboardButton("‹ BACK", callback_data="cset:home")]
         ])
-        return await edit_or_reply(query, confirm_text, reply_markup=confirm_markup)
-
+        await edit_or_reply(query, text, reply_markup=markup, disable_web_page_preview=True)
+        raise StopPropagation
     if data.startswith("cset_v_tutorial:"):
         slot = int(data.split(":")[1])
         r = record(client)
@@ -1269,6 +1312,7 @@ async def callbacks(client, query):
 
     if data == "cset_set_upi":
         await query.answer()
+        session_id = start_user_session(user_id, "cset_set_upi")
         prompt_text = (
             "<b>PLEASE SEND YOUR UPI ID...</b>\n\n"
             "💳 <i>Example:</i> <code>ash@upi</code> or <code>username@okhdfcbank</code>\n\n"
@@ -1278,26 +1322,38 @@ async def callbacks(client, query):
         try:
             u_msg = await client.listen(chat_id=user_id, timeout=120)
         except Exception:
-            return
+            raise StopPropagation
+
+        if not is_user_session_active(user_id, session_id):
+            raise StopPropagation
 
         u_raw = (u_msg.text or "").strip()
         try: await u_msg.delete()
         except Exception: pass
 
+        if u_raw.startswith("/") and u_raw.lower() != "/cancel":
+            clear_user_session(user_id)
+            raise StopPropagation
+
         if u_raw.lower() == "/cancel":
-            return await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="cset_qr_upi_menu")]]))
+            clear_user_session(user_id)
+            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="cset_qr_upi_menu")]]))
+            raise StopPropagation
 
         if not u_raw or " " in u_raw:
-            return await edit_or_reply(query, "❌ <b>Invalid UPI ID format.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="cset_qr_upi_menu")]]))
+            clear_user_session(user_id)
+            await edit_or_reply(query, "❌ <b>Invalid UPI ID format.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="cset_qr_upi_menu")]]))
+            raise StopPropagation
 
+        clear_user_session(user_id)
         save(client, premium_upi_id=u_raw)
         confirm_text = f"✅ <b>UPI ID SET HO GAYI:</b> <code>{u_raw}</code>"
         confirm_markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("💳 CHANGE UPI ID", callback_data="cset_set_upi")],
             [InlineKeyboardButton("‹ BACK", callback_data="cset_qr_upi_menu")]
         ])
-        return await edit_or_reply(query, confirm_text, reply_markup=confirm_markup)
-
+        await edit_or_reply(query, confirm_text, reply_markup=confirm_markup)
+        raise StopPropagation
     if data == "cset_prem_toggle":
         r = record(client)
         new_on = not bool(r.get("premium_is_on", False))

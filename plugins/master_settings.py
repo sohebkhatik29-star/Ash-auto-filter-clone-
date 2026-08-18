@@ -1,3 +1,4 @@
+from plugins.sessions import start_user_session, is_user_session_active, clear_user_session, cancel_all_listeners
 from pyrogram import Client, filters, StopPropagation
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -16,6 +17,10 @@ import time
 import asyncio
 
 def cancel_user_listeners(client, chat_id, user_id=None):
+    cancel_all_listeners(client, chat_id, user_id)
+    return
+    # old
+def _old_cancel_user_listeners(client, chat_id, user_id=None):
     if user_id is None:
         user_id = chat_id
     try:
@@ -875,6 +880,7 @@ async def callbacks(client, query):
     if data.startswith("master_v_shortner:"):
         slot = int(data.split(":")[1])
         await query.answer()
+        session_id = start_user_session(query.from_user.id, f"master_v_shortner_site:{slot}")
         prompt_text = (
             "<b>SEND ME A SHORTLINK URL...</b>\n\n"
             "<b>FORMAT :</b>\n"
@@ -891,21 +897,31 @@ async def callbacks(client, query):
         except Exception:
             raise StopPropagation
 
+        if not is_user_session_active(query.from_user.id, session_id):
+            raise StopPropagation
+
         site_raw = (site_msg.text or "").strip()
         try:
             await site_msg.delete()
         except Exception:
             pass
 
+        if site_raw.startswith("/") and site_raw.lower() != "/cancel":
+            clear_user_session(query.from_user.id)
+            raise StopPropagation
+
         if site_raw.lower() == "/cancel":
-            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]]))
+            clear_user_session(query.from_user.id)
+            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]]) )
             raise StopPropagation
 
         site_clean = site_raw.replace("https://", "").replace("http://", "").split("/")[0].strip()
         if not site_clean or "." not in site_clean:
-            await edit_or_reply(query, "❌ <b>Invalid site URL.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]]))
+            clear_user_session(query.from_user.id)
+            await edit_or_reply(query, "❌ <b>Invalid site URL.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]]) )
             raise StopPropagation
 
+        session_id_2 = start_user_session(query.from_user.id, f"master_v_shortner_api:{slot}")
         await edit_or_reply(query, 
             "<b>SEND ME SHORTLINK API...</b>\n\n"
             "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>",
@@ -916,43 +932,66 @@ async def callbacks(client, query):
         except Exception:
             raise StopPropagation
 
+        if not is_user_session_active(query.from_user.id, session_id_2):
+            raise StopPropagation
+
+        clear_user_session(query.from_user.id)
         api_raw = (api_msg.text or "").strip()
         try:
             await api_msg.delete()
         except Exception:
             pass
 
+        if api_raw.startswith("/") and api_raw.lower() != "/cancel":
+            raise StopPropagation
+
         if api_raw.lower() == "/cancel":
-            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]]))
+            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]]) )
             raise StopPropagation
 
-        is_valid = await validate_shortener_token(site_clean, api_raw)
-        if not is_valid:
-            await edit_or_reply(query, 
-                "❌ <b>The given Shortener Api Token is invalid</b>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]])
-            )
+        if not api_raw:
+            await edit_or_reply(query, "❌ <b>Invalid API key.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]]) )
             raise StopPropagation
 
-        user = await get_user(query.from_user.id)
+        api = api_raw
+        site = site_clean
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        v_cfg = user.get(v_key, {})
-        v_cfg["site"] = site_clean
-        v_cfg["api"] = api_raw
-        await update_user_info(query.from_user.id, {v_key: v_cfg, "base_site": site_clean, "shortener_api": api_raw})
+        u_data = await get_user(query.from_user.id)
+        v_cfg = (u_data or {}).get(v_key, {})
+        v_cfg["site"] = site
+        v_cfg["api"] = api
+        v_cfg["is_on"] = True
+        await update_user_info(query.from_user.id, {v_key: v_cfg})
 
-        confirm_text = (
-            "✅ <b>SHORTNER SET HO GAYI!</b>\n\n"
-            f"🌐 <b>Website:</b> <code>{site_clean}</code>\n"
-            f"🔑 <b>API Token:</b> <code>{api_raw}</code>"
+        prefix = "VERIFY" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
+        next_slot = (slot % 3) + 1
+        next_name = "SECOND VERIFICATION" if slot == 1 else ("THIRD VERIFICATION" if slot == 2 else "FIRST VERIFICATION")
+        status_text = "VERIFY IS ON - ✅"
+
+        site_val = site
+        api_val = api
+        tut_val = v_cfg.get("tutorial") or "Not set"
+        mins_val = v_cfg.get("time_minutes", 480)
+        time_str_val = format_time_minutes(mins_val)
+
+        text = (
+            "<b>MANAGE YOUR TOKEN VERIFICATION SETTINGS FROM HERE GIVEN BELOW BUTTONS</b>\n\n"
+            f"<b>Slot {slot} Shortener Website :</b> <code>{site_val}</code>\n"
+            f"<b>Slot {slot} API Token :</b> <code>{api_val}</code>\n"
+            f"<b>Slot {slot} Tutorial Link :</b> <code>{tut_val}</code>\n"
+            f"<b>Slot {slot} Verification Time :</b> <code>{time_str_val}</code>"
         )
-        confirm_markup = InlineKeyboardMarkup([
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"🔗 {prefix} SHORTNER", callback_data=f"master_v_shortner:{slot}")],
+            [InlineKeyboardButton(f"🎬 {prefix} TUTORIAL", callback_data=f"master_v_tutorial:{slot}")],
+            [InlineKeyboardButton(f"⏳ {prefix} TIME", callback_data=f"master_v_time:{slot}")],
+            [InlineKeyboardButton(f"⏰ {next_name}", callback_data=f"master_token_verification:{next_slot}")],
+            [InlineKeyboardButton(f"🔒 {status_text}", callback_data=f"master_v_toggle:{slot}")],
             [InlineKeyboardButton("➕ ADD NEW SHORTNER", callback_data=f"master_v_shortner:{slot}")],
-            [InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]
+            [InlineKeyboardButton("‹ BACK", callback_data="master_settings")]
         ])
-        await edit_or_reply(query, confirm_text, reply_markup=confirm_markup)
+        await edit_or_reply(query, text, reply_markup=markup, disable_web_page_preview=True)
         raise StopPropagation
-
     if data.startswith("master_v_tutorial:"):
         slot = int(data.split(":")[1])
         user = await get_user(query.from_user.id)
@@ -978,9 +1017,12 @@ async def callbacks(client, query):
     if data.startswith("master_v_set_tut:"):
         slot = int(data.split(":")[1])
         await query.answer()
-        await edit_or_reply(query, 
-            "<b>SEND ME A TUTORIAL LINK...</b>\n\n"
-            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>",
+        session_id = start_user_session(query.from_user.id, f"master_v_tut:{slot}")
+        prompt_text = (
+            "<b>SEND ME TUTORIAL LINK...</b>\n\n"
+            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
+        )
+        await edit_or_reply(query, prompt_text,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_v_tutorial:{slot}")]])
         )
         try:
@@ -988,28 +1030,35 @@ async def callbacks(client, query):
         except Exception:
             raise StopPropagation
 
+        if not is_user_session_active(query.from_user.id, session_id):
+            raise StopPropagation
+
+        clear_user_session(query.from_user.id)
         t_raw = (t_msg.text or "").strip()
-        try:
-            await t_msg.delete()
-        except Exception:
-            pass
+        try: await t_msg.delete()
+        except Exception: pass
+
+        if t_raw.startswith("/") and t_raw.lower() != "/cancel":
+            raise StopPropagation
 
         if t_raw.lower() == "/cancel":
             await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_v_tutorial:{slot}")]]))
             raise StopPropagation
 
-        user = await get_user(query.from_user.id)
+        if not t_raw.startswith("http"):
+            await edit_or_reply(query, "❌ <b>Invalid Tutorial URL.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_v_tutorial:{slot}")]]))
+            raise StopPropagation
+
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        v_cfg = user.get(v_key, {})
+        u_data = await get_user(query.from_user.id)
+        v_cfg = (u_data or {}).get(v_key, {})
         v_cfg["tutorial"] = t_raw
         await update_user_info(query.from_user.id, {v_key: v_cfg})
 
-        await edit_or_reply(query, 
-            "<b>SUCCESSFULLY SET TUTORIAL LINK ✅</b>",
+        await edit_or_reply(query, f"✅ <b>Slot {slot} Tutorial Link Updated:</b>\n<code>{t_raw}</code>",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_v_tutorial:{slot}")]])
         )
         raise StopPropagation
-
     if data.startswith("master_v_del_tut:"):
         slot = int(data.split(":")[1])
         user = await get_user(query.from_user.id)
@@ -1047,9 +1096,19 @@ async def callbacks(client, query):
     if data.startswith("master_v_set_time:"):
         slot = int(data.split(":")[1])
         await query.answer()
-        await edit_or_reply(query, 
-            "<b>SEND ME A TIME IN LIKE THIS - 1h OR 15m</b>\n\n"
-            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>",
+        session_id = start_user_session(query.from_user.id, f"master_v_time:{slot}")
+        prompt_text = (
+            "<b>SEND ME TIME IN GIVEN FORMAT...</b>\n\n"
+            "<b>FORMAT :</b>\n"
+            "• <code>5m</code> (5 Minutes)\n"
+            "• <code>8h</code> (8 Hours)\n"
+            "• <code>1d</code> (1 Day)\n"
+            "• <code>1w</code> (1 Week)\n"
+            "• <code>1mo</code> (1 Month)\n"
+            "• <code>1y</code> (1 Year)\n\n"
+            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
+        )
+        await edit_or_reply(query, prompt_text,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_v_time:{slot}")]])
         )
         try:
@@ -1057,52 +1116,32 @@ async def callbacks(client, query):
         except Exception:
             raise StopPropagation
 
+        if not is_user_session_active(query.from_user.id, session_id):
+            raise StopPropagation
+
+        clear_user_session(query.from_user.id)
         tm_raw = (tm_msg.text or "").strip()
-        try:
-            await tm_msg.delete()
-        except Exception:
-            pass
+        try: await tm_msg.delete()
+        except Exception: pass
+
+        if tm_raw.startswith("/") and tm_raw.lower() != "/cancel":
+            raise StopPropagation
 
         if tm_raw.lower() == "/cancel":
             await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_v_time:{slot}")]]))
             raise StopPropagation
 
-        mins = parse_time_string(tm_raw)
-        user = await get_user(query.from_user.id)
+        minutes = parse_time_string(tm_raw)
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        v_cfg = user.get(v_key, {})
-        v_cfg["time_minutes"] = mins
+        u_data = await get_user(query.from_user.id)
+        v_cfg = (u_data or {}).get(v_key, {})
+        v_cfg["time_minutes"] = minutes
         await update_user_info(query.from_user.id, {v_key: v_cfg})
 
-        formatted = format_time_minutes(mins)
-        await edit_or_reply(query, 
-            f"🧭 <b>SUCCESSFULLY SET VERIFY TIME - {formatted}</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]])
+        await edit_or_reply(query, f"✅ <b>Slot {slot} Verification Time Updated:</b> <code>{format_time_minutes(minutes)}</code>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_v_time:{slot}")]])
         )
         raise StopPropagation
-
-    # ---------------- PREMIUM PLAN ----------------
-    if data == "master_premium_plan":
-        user = await get_user(query.from_user.id)
-        prem_on = bool(user.get("premium_is_on", False))
-        prem_status = "PREMIUM IS ON - ✅" if prem_on else "PREMIUM IS OFF - ❌"
-        text = (
-            "<b>HERE YOU CAN MANAGE YOUR PREMIUM SETTINGS HERE</b>\n\n"
-            "<b>THIS FEATURE WORK ONLY WHEN TOKEN VERIFICATION IS ENABLED</b>"
-        )
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📝 PREMIUM PLAN TEXT 📝", callback_data="master_prem_text")],
-            [InlineKeyboardButton("➕ ADD PREMIUM USER ➕", callback_data="master_prem_add")],
-            [InlineKeyboardButton("➖ REMOVE PREMIUM USER ➖", callback_data="master_prem_rem")],
-            [InlineKeyboardButton("👥 PREMIUM USERS LIST 👥", callback_data="master_prem_list")],
-            [InlineKeyboardButton("💳 SET / MANAGE QR & UPI 🖼️", callback_data="master_qr_upi_menu")],
-            [InlineKeyboardButton(f"🔒 {prem_status}", callback_data="master_prem_toggle")],
-            [InlineKeyboardButton("‹ BACK", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
-
     if data == "master_qr_upi_menu":
         user = await get_user(query.from_user.id)
         p_photo = user.get("premium_plan_photo")
@@ -1124,6 +1163,51 @@ async def callbacks(client, query):
         await query.answer()
         raise StopPropagation
 
+    if data == "master_del_qr":
+        await update_user_info(query.from_user.id, {"premium_plan_photo": None})
+        await query.answer("QR Code Photo deleted.", show_alert=True)
+        return await callbacks(client, type('Q', (), {'data': 'master_qr_upi_menu', 'from_user': query.from_user, 'message': query.message, 'answer': query.answer})())
+
+    if data == "master_del_upi":
+        await update_user_info(query.from_user.id, {"premium_upi_id": None})
+        await query.answer("UPI ID deleted.", show_alert=True)
+        return await callbacks(client, type('Q', (), {'data': 'master_qr_upi_menu', 'from_user': query.from_user, 'message': query.message, 'answer': query.answer})())
+
+    if data == "master_set_qr":
+        await query.answer()
+        session_id = start_user_session(query.from_user.id, "master_set_qr")
+        prompt_text = (
+            "<b>PLEASE SEND YOUR QR PHOTO...</b>\n\n"
+            "📸 <i>Send the image or QR code photo you want to display to users.</i>\n\n"
+            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
+        )
+        await edit_or_reply(query, prompt_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]]))
+        try:
+            q_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
+        except Exception:
+            raise StopPropagation
+
+        if not is_user_session_active(query.from_user.id, session_id):
+            raise StopPropagation
+
+        clear_user_session(query.from_user.id)
+        if q_msg.text and q_msg.text.lower() == "/cancel":
+            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]]))
+            raise StopPropagation
+
+        if not q_msg.photo:
+            await edit_or_reply(query, "❌ <b>Invalid format. Please send a photo.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]]))
+            raise StopPropagation
+
+        photo_id = q_msg.photo.file_id
+        await update_user_info(query.from_user.id, {"premium_qr_photo": photo_id})
+        confirm_text = "✅ <b>QR PHOTO SET HO GAYI !</b>"
+        confirm_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📸 CHANGE QR PHOTO", callback_data="master_set_qr")],
+            [InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]
+        ])
+        await edit_or_reply(query, confirm_text, reply_markup=confirm_markup)
+        raise StopPropagation
     if data == "master_del_qr":
         await update_user_info(query.from_user.id, {"premium_plan_photo": None})
         await query.answer("QR Code Photo deleted.", show_alert=True)
@@ -1177,6 +1261,7 @@ async def callbacks(client, query):
 
     if data == "master_set_upi":
         await query.answer()
+        session_id = start_user_session(query.from_user.id, "master_set_upi")
         prompt_text = (
             "<b>PLEASE SEND YOUR UPI ID...</b>\n\n"
             "💳 <i>Example:</i> <code>ash@upi</code> or <code>username@okhdfcbank</code>\n\n"
@@ -1188,18 +1273,28 @@ async def callbacks(client, query):
         except Exception:
             raise StopPropagation
 
+        if not is_user_session_active(query.from_user.id, session_id):
+            raise StopPropagation
+
         u_raw = (u_msg.text or "").strip()
         try: await u_msg.delete()
         except Exception: pass
 
+        if u_raw.startswith("/") and u_raw.lower() != "/cancel":
+            clear_user_session(query.from_user.id)
+            raise StopPropagation
+
         if u_raw.lower() == "/cancel":
+            clear_user_session(query.from_user.id)
             await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]]))
             raise StopPropagation
 
         if not u_raw or " " in u_raw:
+            clear_user_session(query.from_user.id)
             await edit_or_reply(query, "❌ <b>Invalid UPI ID format.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]]))
             raise StopPropagation
 
+        clear_user_session(query.from_user.id)
         await update_user_info(query.from_user.id, {"premium_upi_id": u_raw})
         confirm_text = f"✅ <b>UPI ID SET HO GAYI:</b> <code>{u_raw}</code>"
         confirm_markup = InlineKeyboardMarkup([
