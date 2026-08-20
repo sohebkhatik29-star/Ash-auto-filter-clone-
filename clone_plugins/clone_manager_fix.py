@@ -62,8 +62,7 @@ def manage_clones_markup(uid):
     return InlineKeyboardMarkup(rows)
 
 
-# master_manager imports this helper at callback time, so this replaces only
-# the clone-list menu without changing the other settings menus.
+# Replace only the clone-list menu used by the existing manager UI.
 master_settings.manage_clones_markup = manage_clones_markup
 
 
@@ -165,6 +164,24 @@ async def create_clone_prompt(client, query):
     asyncio.create_task(_create_clone(client, user_id))
 
 
+@Client.on_callback_query(filters.regex(r"^clone_my_bots$"))
+async def clone_my_bots(client, query):
+    """Open the owner's clone list directly from a cloned bot."""
+    user_id = int(query.from_user.id)
+    m = _db()
+    if m is None:
+        return await query.answer("Database is unavailable.", show_alert=True)
+
+    # This callback is intended only for cloned bots.
+    rec = m.bots.find_one({"bot_id": int(client.me.id)})
+    if not rec:
+        return await query.answer("This option is available from a cloned bot.", show_alert=True)
+
+    await query.answer()
+    from plugins.master_settings import send_manage_clones
+    await send_manage_clones(client, user_id)
+
+
 @Client.on_message(filters.command("start") & filters.private)
 async def clone_only_start(client, message):
     """Clone-only /start menu. Other commands and buttons stay untouched."""
@@ -184,7 +201,7 @@ async def clone_only_start(client, message):
             InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"),
             InlineKeyboardButton(
                 "🤖 MY OWN BOT",
-                url=f"https://t.me/{BOT_USERNAME}?start=my_clones",
+                callback_data="clone_my_bots",
             ),
         ],
         [
@@ -219,7 +236,7 @@ async def clone_only_start(client, message):
 
 @Client.on_message(filters.command("start") & filters.private)
 async def master_my_clones_start(client, message):
-    """Deep-link target used by MY OWN BOT on every clone."""
+    """Deep-link target retained for backwards compatibility."""
     if len(message.command) != 2 or message.command[1].lower() != "my_clones":
         return
 
