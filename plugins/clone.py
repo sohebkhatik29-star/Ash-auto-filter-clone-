@@ -13,6 +13,13 @@ except Exception:
 mongo_client = MongoClient(DB_URI) if DB_URI else None
 mongo_db = mongo_client["ash_clone_bots"] if mongo_client else None
 
+# Focused clone-manager UI fix. This is intentionally imported after mongo_db
+# exists so it can safely access the clone database and register its handlers.
+try:
+    import clone_plugins.clone_manager_fix
+except Exception:
+    logging.exception("Unable to load focused clone manager fix")
+
 
 def clone_commands(include_owner=False):
     commands = [
@@ -65,6 +72,15 @@ async def clone(client, message):
     if not CLONE_MODE or mongo_db is None:
         return await message.reply_text("Clone mode is disabled or database is not configured.")
 
+    # Hard per-user limit: maximum five clone records, regardless of whether
+    # creation was started from /clone or the manager's ADD BOT button.
+    try:
+        current_count = mongo_db.bots.count_documents({"user_id": int(message.from_user.id)})
+        if current_count >= 5:
+            return await message.reply_text("❌ <b>You can create maximum 5 clone bots.</b>")
+    except Exception:
+        pass
+
     prompt = (
         "1) create a bot using @BotFather\n"
         "2) Then you will get a message with bot token\n"
@@ -81,6 +97,11 @@ async def clone(client, message):
 
     msg = await message.reply_text("<b>👨‍💻 Creating your clone...</b>")
     try:
+        # Re-check immediately before creating to prevent two fast requests
+        # from crossing the five-bot limit.
+        if mongo_db.bots.count_documents({"user_id": int(message.from_user.id)}) >= 5:
+            return await msg.edit_text("❌ <b>You can create maximum 5 clone bots.</b>")
+
         vj = Client(f"clone_{message.from_user.id}_{int(bot_token.split(':')[0])}", API_ID, API_HASH, bot_token=bot_token, plugins={})
         await vj.start()
         register_clone_handlers(vj)
