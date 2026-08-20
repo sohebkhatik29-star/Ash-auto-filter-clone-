@@ -1,68 +1,55 @@
-from plugins.sessions import start_user_session, is_user_session_active, clear_user_session, cancel_all_listeners
-from pyrogram import Client, filters, StopPropagation
+# ASH FILE STORE - MASTER BOT SETTINGS UI
+import asyncio
+import time
+import re
+import os
+import psutil
+import datetime
+from pyrogram import filters, Client
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from config import ADMINS, SUPPORT_GROUP, UPDATE_CHANNEL, BOT_USERNAME, PICS, tg_link
-from Script import script
-from clone_plugins.master_manager import docs_for, list_markup, manage_clone, clone_manage_action, clone_delete, get_bot
-from plugins.users_api import (
-    get_user, update_user_info, validate_shortener_token,
+from pyrogram.types import (
+    InlineKeyboardMarkup, InlineKeyboardButton,
+    ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+)
+from clone_plugins.sessions import start_user_session, is_user_session_active, clear_user_session, cancel_all_listeners
+from clone_plugins.users_api import (
+    get_user, update_user_info, get_short_link, validate_shortener_token,
     parse_time_string, format_time_minutes, is_user_premium
 )
-import random
-import re
-import time
+from config import ADMINS, BOT_USERNAME
 
+_START_TIME = time.time()
 
-import asyncio
+def db():
+    from plugins.clone import mongo_db
+    return mongo_db
+
+def master_record():
+    m = db()
+    if m is None:
+        return {}
+    return m.master_settings.find_one({"type": "master_config"}) or {}
+
+def save_master(**data):
+    m = db()
+    if m is not None:
+        m.master_settings.update_one({"type": "master_config"}, {"$set": data}, upsert=True)
+
+def is_admin(uid):
+    try:
+        return int(uid) in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]
+    except Exception:
+        return False
+
+def docs_for(uid):
+    m = db()
+    if m is None:
+        return []
+    q = {} if is_admin(uid) else {"user_id": int(uid)}
+    return list(m.bots.find(q, {"token": 0}).sort("bot_id", 1))
 
 def cancel_user_listeners(client, chat_id, user_id=None):
     cancel_all_listeners(client, chat_id, user_id)
-    return
-    # old
-def _old_cancel_user_listeners(client, chat_id, user_id=None):
-    if user_id is None:
-        user_id = chat_id
-    try:
-        if hasattr(client, "stop_listening"):
-            try:
-                client.stop_listening(chat_id=chat_id, user_id=user_id)
-            except Exception:
-                try:
-                    client.stop_listening(chat_id=chat_id)
-                except Exception:
-                    pass
-    except Exception:
-        pass
-    for attr in ("_listeners", "listeners"):
-        try:
-            listeners_dict = getattr(client, attr, None)
-            if isinstance(listeners_dict, dict):
-                for key in list(listeners_dict.keys()):
-                    match = False
-                    if key == chat_id or (user_id and key == user_id):
-                        match = True
-                    elif isinstance(key, tuple):
-                        if chat_id in key or (user_id and user_id in key):
-                            match = True
-                    elif str(chat_id) in str(key) or (user_id and str(user_id) in str(key)):
-                        match = True
-
-                    if match:
-                        item = listeners_dict.pop(key, None)
-                        if item:
-                            futures = item if isinstance(item, (list, tuple, set)) else [item]
-                            for fut in futures:
-                                try:
-                                    if hasattr(fut, "cancel"):
-                                        fut.cancel()
-                                    elif hasattr(fut, "set_exception"):
-                                        fut.set_exception(asyncio.CancelledError())
-                                except Exception:
-                                    pass
-        except Exception:
-            pass
-
 
 async def edit_or_reply(query_or_msg, text, reply_markup=None, disable_web_page_preview=False):
     msg = getattr(query_or_msg, "message", None) or query_or_msg
@@ -83,21 +70,22 @@ async def edit_or_reply(query_or_msg, text, reply_markup=None, disable_web_page_
         except Exception:
             return await msg.reply_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
 
+# ----------------- MARKUPS & MENUS ----------------- #
 
 def master_settings_markup():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🤖 MY CLONE BOT ↗", callback_data="my_clone")],
         [InlineKeyboardButton("💳 PREMIUM PLAN", callback_data="master_premium_plan")],
+        [InlineKeyboardButton("🎟️ FREE USAGE LIMIT", callback_data="master_free_limit_menu")],
+        [InlineKeyboardButton("🌍 REFER AND EARN", callback_data="master_refer_earn")],
         [InlineKeyboardButton("🔗 LINK SHORTNER", callback_data="link_shortener")],
-        [InlineKeyboardButton("⏰ TOKEN VERIFICATION", callback_data="master_token_verification:1")],
-        [InlineKeyboardButton("🍿 CUSTOM CAPTION", callback_data="custom_caption")],
-        [InlineKeyboardButton("📢 CUSTOM FORCE SUBSCRIBE", callback_data="master_fsub_menu")],
-        [InlineKeyboardButton("🔘 CUSTOM BUTTON", callback_data="custom_button")],
-        [InlineKeyboardButton("♻️ AUTO DELETE", callback_data="master_auto_delete_menu")],
+        [InlineKeyboardButton("⏰ TOKEN VERIFICATION", callback_data="master_token_main")],
+        [InlineKeyboardButton("📢 FORCE SUBSCRIBE", callback_data="master_fsub_menu")],
+        [InlineKeyboardButton("🍿 CAPTION", callback_data="custom_caption"), InlineKeyboardButton("🖼️ THUMBNAIL", callback_data="custom_thumbnail")],
+        [InlineKeyboardButton("🔘 BUTTON", callback_data="custom_button"), InlineKeyboardButton("♻️ AUTO DELETE", callback_data="master_auto_delete_menu")],
+        [InlineKeyboardButton("♾️ PERMANENT LINK", callback_data="master_permanent_link")],
         [InlineKeyboardButton("🔒 PROTECT CONTENT", callback_data="protect_menu")],
-        [InlineKeyboardButton("‹ BACK", callback_data="settings_back")],
+        [InlineKeyboardButton("‹ BACK", callback_data="settings_back")]
     ])
-
 
 def manage_clones_markup(uid):
     docs = docs_for(uid)
@@ -105,1718 +93,364 @@ def manage_clones_markup(uid):
     for d in docs:
         bid = int(d["bot_id"])
         name = d.get("name") or d.get("username") or str(bid)
-        rows.append([InlineKeyboardButton(f"{name}", callback_data=f"manage_clone:{bid}")])
-    rows.append([InlineKeyboardButton("➕ Add Clone", callback_data="add_clone_prompt")])
-    rows.append([InlineKeyboardButton("‹ back", callback_data="master_settings")])
+        rows.append([InlineKeyboardButton(f"🤖 @{name} ↗", callback_data=f"manage_clone:{bid}")])
+    rows.append([InlineKeyboardButton("➕ CREATE CLONE ➕", callback_data="create_clone_prompt")])
+    rows.append([InlineKeyboardButton("‹ BACK", callback_data="settings_back")])
     return InlineKeyboardMarkup(rows)
 
+def master_token_verification_main_markup():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("1️⃣ FIRST VERIFICATION", callback_data="master_token_verification:1")],
+        [InlineKeyboardButton("2️⃣ SECOND VERIFICATION", callback_data="master_token_verification:2")],
+        [InlineKeyboardButton("3️⃣ THIRD VERIFICATION", callback_data="master_token_verification:3")],
+        [InlineKeyboardButton("📢 VERIFY LOG CHANNEL", callback_data="master_verify_log_channel")],
+        [InlineKeyboardButton("‹ BACK", callback_data="settings")]
+    ])
 
-async def send_manage_clones(client, message, user_id=None):
-    uid = user_id or message.from_user.id
-    text = (
-        "✨ <b>Manage Clone's</b>\n\n"
-        "You can now manage and create your very own identical clone bot, "
-        "mirroring all my awesome features, using the given buttons."
-    )
-    markup = manage_clones_markup(uid)
-    if hasattr(message, "reply_text"):
-        return await message.reply_text(text, reply_markup=markup)
-    return await message.reply(text, reply_markup=markup)
+def master_single_token_verification_markup(slot: int, is_on: bool):
+    prefix = "FIRST" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
+    status_icon = "✅" if is_on else "❌"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"🔗 {prefix} VERIFY SHORTNER", callback_data=f"m_v_shortner:{slot}")],
+        [InlineKeyboardButton(f"🍿 {prefix} VERIFY TUTORIAL", callback_data=f"m_v_tutorial:{slot}")],
+        [InlineKeyboardButton(f"⏰ {prefix} VERIFY TIME", callback_data=f"m_v_time:{slot}")],
+        [InlineKeyboardButton("👥 TOTAL USER VERIFIED TODAY", callback_data=f"m_v_stats:{slot}")],
+        [InlineKeyboardButton(f"🔒 {prefix} VERIFY - {status_icon}", callback_data=f"m_v_toggle:{slot}")],
+        [InlineKeyboardButton("‹ BACK", callback_data="master_token_main")]
+    ])
 
+# ----------------- BUTTON BUILDER WIZARD ----------------- #
 
-async def send_settings_menu(client, message):
-    text = "⚙️ <b>Settings</b>\n\nCustomize your settings as your need"
-    if hasattr(message, "reply_text"):
-        return await message.reply_text(
-            text,
-            reply_markup=master_settings_markup(),
+async def run_master_button_builder(client, user_id, b_type: str, back_callback: str):
+    sess_token = start_user_session(user_id, f"build_m_btn_{b_type}")
+    target_field = "start_buttons" if b_type == "start" else ("premium_buttons" if b_type == "premium" else "custom_buttons")
+    
+    rows = []
+    row_idx = 1
+    
+    while is_user_session_active(user_id, sess_token):
+        count_kb = ReplyKeyboardMarkup(
+            [[KeyboardButton("1️⃣ One Button"), KeyboardButton("2️⃣ Two Buttons")]],
+            resize_keyboard=True, one_time_keyboard=True
         )
-    return await message.reply(
-        text,
-        reply_markup=master_settings_markup(),
+        msg_text = f"🎯 <b>ROW {row_idx}</b>\n\n<b>How many buttons do you want in this row?</b>\n\n<i>Please choose an option using the keyboard below.</i>"
+        await client.send_message(
+            chat_id=user_id,
+            text=msg_text,
+            reply_markup=count_kb
+        )
+        
+        btn_count = 0
+        while is_user_session_active(user_id, sess_token):
+            try:
+                ans = await client.listen(chat_id=user_id, timeout=120)
+            except Exception:
+                await client.send_message(chat_id=user_id, text="❌ <b>Timeout. Process cancelled.</b>", reply_markup=ReplyKeyboardRemove())
+                clear_user_session(user_id)
+                return
+            txt = (ans.text or "").strip()
+            if txt == "/cancel":
+                await client.send_message(chat_id=user_id, text="❌ <b>Process cancelled.</b>", reply_markup=ReplyKeyboardRemove())
+                clear_user_session(user_id)
+                return
+            if "1" in txt or "One" in txt:
+                btn_count = 1
+                break
+            elif "2" in txt or "Two" in txt:
+                btn_count = 2
+                break
+            else:
+                await client.send_message(
+                    chat_id=user_id,
+                    text="❌ <b>INVALID CHOICE</b>\n\n<i>Please select an option using the keyboard.</i>",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=back_callback)]])
+                )
+        
+        if not is_user_session_active(user_id, sess_token):
+            return
+            
+        row_buttons = []
+        for b_i in range(1, btn_count + 1):
+            p_text = f"🔤 <b>BUTTON {b_i}</b>\n\nSend the button text.\n\n<b>Maximum length: 64 characters</b>"
+            await client.send_message(chat_id=user_id, text=p_text, reply_markup=ReplyKeyboardRemove())
+            b_text = ""
+            while is_user_session_active(user_id, sess_token):
+                try:
+                    ans = await client.listen(chat_id=user_id, timeout=120)
+                except Exception:
+                    await client.send_message(chat_id=user_id, text="❌ <b>Timeout. Process cancelled.</b>", reply_markup=ReplyKeyboardRemove())
+                    clear_user_session(user_id)
+                    return
+                b_text = (ans.text or "").strip()
+                if b_text == "/cancel":
+                    await client.send_message(chat_id=user_id, text="❌ <b>Process cancelled.</b>", reply_markup=ReplyKeyboardRemove())
+                    clear_user_session(user_id)
+                    return
+                if len(b_text) > 64:
+                    b_text = b_text[:64]
+                break
+            
+            p_url = f"🔗 <b>BUTTON {b_i}</b>\n\nSend the button URL.\n\n<b>Examples:</b>\nhttps://t.me/vj_botz\nhttps://google.com"
+            await client.send_message(chat_id=user_id, text=p_url, reply_markup=ReplyKeyboardRemove())
+            b_url = ""
+            while is_user_session_active(user_id, sess_token):
+                try:
+                    ans = await client.listen(chat_id=user_id, timeout=120)
+                except Exception:
+                    await client.send_message(chat_id=user_id, text="❌ <b>Timeout. Process cancelled.</b>", reply_markup=ReplyKeyboardRemove())
+                    clear_user_session(user_id)
+                    return
+                b_url = (ans.text or "").strip()
+                if b_url == "/cancel":
+                    await client.send_message(chat_id=user_id, text="❌ <b>Process cancelled.</b>", reply_markup=ReplyKeyboardRemove())
+                    clear_user_session(user_id)
+                    return
+                if not (b_url.startswith("http://") or b_url.startswith("https://")):
+                    await client.send_message(
+                        chat_id=user_id,
+                        text="❌ <b>INVALID URL</b>\n\nPlease send a valid URL starting with:\n• https://\n• http://",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=back_callback)]])
+                    )
+                    continue
+                break
+            
+            row_buttons.append({"text": b_text, "url": b_url})
+        
+        style_kb = ReplyKeyboardMarkup(
+            [[KeyboardButton("🔵 Primary"), KeyboardButton("⚪ Default")],
+             [KeyboardButton("🟢 Success"), KeyboardButton("🔴 Danger")]],
+            resize_keyboard=True, one_time_keyboard=True
+        )
+        st_text = f"🎨 <b>ROW {row_idx}</b>\n\nSelect a button style.\n\n<i>Choose one of the options below.</i>"
+        await client.send_message(chat_id=user_id, text=st_text, reply_markup=style_kb)
+        try:
+            ans_style = await client.listen(chat_id=user_id, timeout=120)
+            style_name = (ans_style.text or "Default").strip()
+        except Exception:
+            style_name = "Default"
+            
+        rows.append({"buttons": row_buttons, "style": style_name})
+        
+        next_row_kb = ReplyKeyboardMarkup(
+            [[KeyboardButton("✅ Yes"), KeyboardButton("❌ No")]],
+            resize_keyboard=True, one_time_keyboard=True
+        )
+        await client.send_message(
+            chat_id=user_id,
+            text="➕ <b>ADD NEW ROW</b>\n\n<b>Do you want to add another row?</b>",
+            reply_markup=next_row_kb
+        )
+        try:
+            ans_more = await client.listen(chat_id=user_id, timeout=120)
+            more_txt = (ans_more.text or "").strip()
+        except Exception:
+            more_txt = "No"
+            
+        if "Yes" in more_txt or "✅" in more_txt:
+            row_idx += 1
+            continue
+        else:
+            break
+            
+    clear_user_session(user_id)
+    save_master(**{target_field: rows})
+    await client.send_message(
+        chat_id=user_id,
+        text="<b>SUCCESSFULLY BUTTON ADDED ✅</b>",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=back_callback)]])
     )
 
+# ----------------- MASTER CALLBACKS ----------------- #
 
 async def settings(client, message):
-    await send_settings_menu(client, message)
-    raise StopPropagation
-
+    text = (
+        "🌟 <b>AVAILABLE PLANS • 03 DAYS - 40 ...</b>\n\n"
+        "<b>NOTE: THE SETTINGS BELOW WILL ONLY WORK FOR LINKS CREATED BY THIS TELEGRAM ACCOUNT. THEY WILL NOT AFFECT LINKS CREATED BY OTHER ACCOUNTS.</b>"
+    )
+    await message.reply(text, reply_markup=master_settings_markup())
 
 async def callbacks(client, query):
-    data = query.data or ""
+    data = query.data
+    user_id = query.from_user.id
     try:
-        cancel_user_listeners(client, query.from_user.id)
+        cancel_user_listeners(client, user_id)
     except Exception:
         pass
-
-    if data in ("settings", "master_settings"):
-        text = "⚙️ <b>Settings</b>\n\nCustomize your settings as your need"
-        await edit_or_reply(query, text, reply_markup=master_settings_markup())
-        await query.answer()
-        raise StopPropagation
-
-    if data in ("my_clone", "my_clones"):
+    
+    r = master_record()
+    me = await client.get_me()
+    
+    if data in ("settings", "settings_back"):
         text = (
-            "✨ <b>Manage Clone's</b>\n\n"
-            "You can now manage and create your very own identical clone bot, "
-            "mirroring all my awesome features, using the given buttons."
+            "🌟 <b>AVAILABLE PLANS • 03 DAYS - 40 ...</b>\n\n"
+            "<b>NOTE: THE SETTINGS BELOW WILL ONLY WORK FOR LINKS CREATED BY THIS TELEGRAM ACCOUNT. THEY WILL NOT AFFECT LINKS CREATED BY OTHER ACCOUNTS.</b>"
         )
-        markup = manage_clones_markup(query.from_user.id)
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
+        return await edit_or_reply(query, text, reply_markup=master_settings_markup())
 
-    if data in ("add_clone_prompt", "clone"):
-        prompt_text = (
-            "1) create a bot using @BotFather\n"
-            "2) Then you will get a message with bot token\n"
-            "3) Send that bot token to me"
-        )
-        await edit_or_reply(query, 
-            prompt_text,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ back", callback_data="my_clones")]])
-        )
-        await query.answer()
-        try:
-            token_msg = await client.listen(chat_id=query.from_user.id, timeout=180)
-        except Exception:
-            return
-        
-        raw_text = (token_msg.text or "").strip()
-        if raw_text.lower() == "/cancel":
-            await edit_or_reply(query, 
-                "<b>Cancelled 🚫</b>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ back", callback_data="my_clones")]])
-            )
-            raise StopPropagation
-        
-        match = re.search(r"\b(\d+:[A-Za-z0-9_-]+)\b", raw_text)
-        if not match:
-            await edit_or_reply(query, 
-                "❌ <b>Could not read the bot token. Please forward the token message from @BotFather.</b>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ back", callback_data="my_clones")]])
-            )
-            raise StopPropagation
-        
-        bot_token = match.group(1)
-        await edit_or_reply(query, "<b>👨‍💻 Cloning your bot...</b>")
-        try:
-            from plugins.clone import set_clone_menu, register_clone_handlers, mongo_db
-            from config import API_ID, API_HASH
-            vj = Client(f"clone_{query.from_user.id}_{int(match.group(1).split(':')[0])}", API_ID, API_HASH, bot_token=bot_token, plugins={})
-            await vj.start()
-            register_clone_handlers(vj)
-            bot = await vj.get_me()
-            if mongo_db is not None:
-                mongo_db.bots.update_one({"bot_id": bot.id}, {"$set": {
-                    "bot_id": bot.id, "is_bot": True, "user_id": query.from_user.id,
-                    "name": bot.first_name, "token": bot_token, "username": bot.username,
-                    "force_channels": [], "custom_caption": None, "custom_buttons": [],
-                    "protect_content": False, "no_forward": False, "auto_delete_enabled": False,
-                    "auto_delete_minutes": 15, "access_token_enabled": False, "access_token_hours": 1,
-                    "moderators": [], "mode": "private", "deactivated": False, "hide_owner": False
-                }}, upsert=True)
-            await set_clone_menu(vj, query.from_user.id)
-            await edit_or_reply(query, 
-                "✨ <b>Sucessfully Cloned Your Bot</b>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="my_clones")]])
-            )
-        except Exception as e:
-            await edit_or_reply(query, 
-                f"⚠️ <b>Bot Error:</b>\n\n<code>{e}</code>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ back", callback_data="my_clones")]])
-            )
-        raise StopPropagation
-
-    if data in ("google_backup", "master_google_backup"):
+    if data in ("my_clones", "my_clone", "clone_menu"):
         text = (
-            "<b>Clone Backup</b>\n\n"
-            "You can connect a google account to retrieve ownership and data of clones in this tg account, "
-            "if this account is deleted or you loose access to it, use /recover to restore them."
+            "✨ <b>CLONE MENU</b>\n\n"
+            "<b>WELCOME TO YOUR CLONE BOT MANAGEMENT HUB! CUSTOMIZE YOUR BOT SETTINGS OR MANAGE ITS STATUS USING THE OPTIONS BELOW.</b>\n\n"
+            "🚀 <b>QUICK COMMANDS</b>\n\n"
+            "🪄 <b>/activate</b> - ACTIVATE YOUR CLONE BOT\n"
+            "🗑️ <b>/delete</b> - PERMANENTLY DELETE YOUR CLONE BOT\n\n"
+            "🤖 <b>BOT CUSTOMIZATION</b>\n\n"
+            "📲 <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
         )
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Connect With Google", callback_data="google_connect")],
-            [InlineKeyboardButton("‹ back", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
+        return await edit_or_reply(query, text, reply_markup=manage_clones_markup(user_id))
 
-    if data == "google_connect":
-        await query.answer("Google Drive backup is stored securely in MongoDB database.", show_alert=True)
-        raise StopPropagation
-
-    if data in ("log_channel", "master_log_channel"):
-        user = await get_user(query.from_user.id)
-        log_ch = user.get("log_channel")
-        log_title = user.get("log_channel_title")
-        if log_ch:
-            status_text = f"<b>YOUR LOG CHANNEL - {log_title or log_ch}</b>"
-        else:
-            status_text = "<b>YOU DIDN'T ADDED ANY LOG CHANNEL ❗</b>"
-
+    if data in ("master_token_main", "master_token_verification"):
         text = (
-            "📢 <b>LOG CHANNEL:</b>\n\n"
-            "<b>\"WHAT IS LOG CHANNEL ??\"</b>\n"
-            "IF NEW USERS START YOUR BOT THEN BOT NOTIFIES YOU.\n\n"
-            f"{status_text}"
+            "⏰ <b>TOKEN VERIFICATION:</b>\n\n"
+            "<b>TOKEN VERIFICATION: A SYSTEM REQUIRING USERS TO WATCH ADS OR SOLVE CAPTCHAS ON EXTERNAL SITES TO UNLOCK BOT ACCESS FOR TIME THAT BOT OWNER SET AND ALSO ALLOWING BOT OWNERS TO EARN MONEY WHENEVER A USER CLICKS.</b>"
         )
-        markup = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("SET CHANNEL", callback_data="master_set_log_channel"),
-                InlineKeyboardButton("DELETE CHANNEL", callback_data="master_delete_log_channel")
-            ],
-            [InlineKeyboardButton("‹ BACK", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
+        return await edit_or_reply(query, text, reply_markup=master_token_verification_main_markup())
 
-    if data == "master_set_log_channel":
-        await query.answer()
-        me = client.me or (await client.get_me())
-        prompt_text = (
-            "<b>FORWARD LOG CHANNEL ANY MESSAGE TO ME,\n"
-            f"AND MAKE SURE @{me.username} IS ADMIN IN YOUR CHANNEL.</b>\n\n"
-            "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
-        )
-        await edit_or_reply(query, 
-            prompt_text,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_log_channel")]])
-        )
-        try:
-            ch_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
-        except Exception:
-            raise StopPropagation
-
-        ch_raw = (ch_msg.text or "").strip()
-        try:
-            await ch_msg.delete()
-        except Exception:
-            pass
-
-        if ch_raw.lower() == "/cancel":
-            await edit_or_reply(query, 
-                "❌ <b>Process Cancelled.</b>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_log_channel")]])
-            )
-            raise StopPropagation
-
-        channel_id = None
-        channel_title = None
-
-        if ch_msg.forward_from_chat:
-            channel_id = ch_msg.forward_from_chat.id
-            channel_title = ch_msg.forward_from_chat.title
-        elif ch_raw.startswith("-100") or (ch_raw.startswith("-") and ch_raw[1:].isdigit()):
-            channel_id = int(ch_raw)
-        elif ch_raw.isdigit():
-            channel_id = int(f"-100{ch_raw}")
-        elif ch_raw.startswith("@"):
-            try:
-                chat = await client.get_chat(ch_raw)
-                channel_id = chat.id
-                channel_title = chat.title
-            except Exception:
-                pass
-
-        if not channel_id:
-            await edit_or_reply(query, 
-                "❌ <b>Invalid Channel! Please forward a message directly from your channel.</b>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_log_channel")]])
-            )
-            raise StopPropagation
-
-        try:
-            chat = await client.get_chat(channel_id)
-            channel_title = chat.title or channel_title or str(channel_id)
-            await client.send_message(
-                chat_id=channel_id,
-                text=f"⚡ <b>Log channel successfully connected with @{me.username}!</b>"
-            )
-        except Exception as err:
-            await edit_or_reply(query, 
-                f"❌ <b>Failed to connect channel!</b>\n\nMake sure <b>@{me.username}</b> is an <b>ADMIN</b> in the channel with post permissions.\n\n<code>Error: {err}</code>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_log_channel")]])
-            )
-            raise StopPropagation
-
-        await update_user_info(query.from_user.id, {"log_channel": channel_id, "log_channel_title": channel_title})
-        await edit_or_reply(query, 
-            f"⚡ <b>SUCCESSFULLY ADDED YOUR LOG CHANNEL - {channel_title}</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_log_channel")]])
-        )
-        raise StopPropagation
-
-    if data == "master_delete_log_channel":
-        await update_user_info(query.from_user.id, {"log_channel": None, "log_channel_title": None})
-        await query.answer("🗑️ Successfully deleted your log channel", show_alert=False)
-        await edit_or_reply(query, 
-            "🗑️ <b>SUCCESSFULLY DELETED LOG CHANNEL</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_log_channel")]])
-        )
-        raise StopPropagation
-
-    if data in ("database_channel", "master_database_channel"):
-        user = await get_user(query.from_user.id)
-        db_ch = user.get("database_channel")
-        db_title = user.get("database_channel_title")
-        if db_ch:
-            status_text = f"<b>YOUR DATABASE CHANNEL - {db_title or db_ch}</b>"
-        else:
-            status_text = "<b>YOU DIDN'T ADDED ANY DATABASE CHANNEL ❗</b>"
-
-        text = (
-            "☁️ <b>DATABASE CHANNEL:</b>\n\n"
-            "<b>WHAT IS DATABASE CHANNEL ❓</b>\n\n"
-            "<b>DATABASE CHANNEL MEANS WHEN YOU STORE ANYTHING IN FILE STORE BOT ALL MESSAGES BOT WILL STORE IN YOUR DATABASE CHANNEL IF YOU DELETE THAT MESSAGE THEN BOT CAN NOT GIVE IT TO ANYONE.</b>\n\n"
-            f"{status_text}"
-        )
-        markup = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("SET CHANNEL", callback_data="master_set_database_channel"),
-                InlineKeyboardButton("DELETE CHANNEL", callback_data="master_delete_database_channel")
-            ],
-            [InlineKeyboardButton("‹ BACK", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
-
-    if data == "master_set_database_channel":
-        await query.answer()
-        me = client.me or (await client.get_me())
-        prompt_text = (
-            "<b>FORWARD DATABASE CHANNEL ANY MESSAGE TO ME,\n"
-            f"AND MAKE SURE @{me.username} IS ADMIN IN YOUR CHANNEL.</b>\n\n"
-            "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
-        )
-        await edit_or_reply(query, 
-            prompt_text,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_database_channel")]])
-        )
-        try:
-            ch_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
-        except Exception:
-            raise StopPropagation
-
-        ch_raw = (ch_msg.text or "").strip()
-        try:
-            await ch_msg.delete()
-        except Exception:
-            pass
-
-        if ch_raw.lower() == "/cancel":
-            await edit_or_reply(query, 
-                "❌ <b>Process Cancelled.</b>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_database_channel")]])
-            )
-            raise StopPropagation
-
-        channel_id = None
-        channel_title = None
-
-        if ch_msg.forward_from_chat:
-            channel_id = ch_msg.forward_from_chat.id
-            channel_title = ch_msg.forward_from_chat.title
-        elif ch_raw.startswith("-100") or (ch_raw.startswith("-") and ch_raw[1:].isdigit()):
-            channel_id = int(ch_raw)
-        elif ch_raw.isdigit():
-            channel_id = int(f"-100{ch_raw}")
-        elif ch_raw.startswith("@"):
-            try:
-                chat = await client.get_chat(ch_raw)
-                channel_id = chat.id
-                channel_title = chat.title
-            except Exception:
-                pass
-
-        if not channel_id:
-            await edit_or_reply(query, 
-                "❌ <b>Invalid Channel! Please forward a message directly from your channel.</b>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_database_channel")]])
-            )
-            raise StopPropagation
-
-        try:
-            chat = await client.get_chat(channel_id)
-            channel_title = chat.title or channel_title or str(channel_id)
-            await client.send_message(
-                chat_id=channel_id,
-                text=f"⚡ <b>Database channel successfully connected with @{me.username}!</b>"
-            )
-        except Exception as err:
-            await edit_or_reply(query, 
-                f"❌ <b>Failed to connect channel!</b>\n\nMake sure <b>@{me.username}</b> is an <b>ADMIN</b> in the channel with post permissions.\n\n<code>Error: {err}</code>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_database_channel")]])
-            )
-            raise StopPropagation
-
-        await update_user_info(query.from_user.id, {"database_channel": channel_id, "database_channel_title": channel_title})
-        await edit_or_reply(query, 
-            f"⚡ <b>SUCCESSFULLY ADDED YOUR DATABASE CHANNEL - {channel_title}</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_database_channel")]])
-        )
-        raise StopPropagation
-
-    if data == "master_delete_database_channel":
-        await update_user_info(query.from_user.id, {"database_channel": None, "database_channel_title": None})
-        await query.answer("🗑️ Successfully deleted your database channel", show_alert=False)
-        await edit_or_reply(query, 
-            "🗑️ <b>SUCCESSFULLY DELETED DATABASE CHANNEL</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_database_channel")]])
-        )
-        raise StopPropagation
-
-    if data == "link_shortener":
-        user = await get_user(query.from_user.id)
-        site = user.get("base_site")
-        api = user.get("shortener_api")
-        if not (site and api):
-            text = (
-                "<b>HERE YOU CAN MANAGE YOUR BOT URL SHORTNER DETAILS</b>\n\n"
-                "<b>Website -</b> <code>Not set</code>\n"
-                "<b>API Token -</b> <code>Not set</code>"
-            )
-            markup = InlineKeyboardMarkup([
-                [InlineKeyboardButton("➕ ADD SHORTNER", callback_data="master_add_shortener")],
-                [InlineKeyboardButton("‹ BACK", callback_data="master_settings")]
-            ])
-            await edit_or_reply(query, text, reply_markup=markup)
-            await query.answer()
-            raise StopPropagation
-
-        text = (
-            "<b>HERE YOU CAN MANAGE YOUR BOT URL SHORTNER DETAILS</b>\n\n"
-            f"<b>Website -</b> <code>{site}</code>\n"
-            f"<b>API Token -</b> <code>{api}</code>"
-        )
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("➕ ADD NEW SHORTNER", callback_data="master_add_shortener")],
-            [InlineKeyboardButton("🗑️ DELETE SHORTNER", callback_data="delete_shortener")],
-            [InlineKeyboardButton("‹ BACK", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
-
-    if data == "master_add_shortener":
-        await query.answer()
-        prompt_text = (
-            "<b>SEND ME A SHORTLINK URL...</b>\n\n"
-            "<b>FORMAT :</b>\n"
-            "<code>https://ashlink.online</code> - ❌\n"
-            "<code>ashlink.online</code> - ✅\n\n"
-            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
-        )
-        await edit_or_reply(query, prompt_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]]))
-        try:
-            site_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
-        except Exception:
-            raise StopPropagation
-
-        site_raw = (site_msg.text or "").strip()
-        try:
-            await site_msg.delete()
-        except Exception:
-            pass
-
-        if site_raw.lower() == "/cancel":
-            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]]))
-            raise StopPropagation
-
-        site_clean = site_raw.replace("https://", "").replace("http://", "").split("/")[0].strip()
-        if not site_clean or "." not in site_clean:
-            await edit_or_reply(query, "❌ <b>Invalid site URL.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]]))
-            raise StopPropagation
-
-        await edit_or_reply(query, 
-            "<b>SEND ME SHORTLINK API...</b>\n\n"
-            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]])
-        )
-        try:
-            api_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
-        except Exception:
-            raise StopPropagation
-
-        api_raw = (api_msg.text or "").strip()
-        try:
-            await api_msg.delete()
-        except Exception:
-            pass
-
-        if api_raw.lower() == "/cancel":
-            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]]))
-            raise StopPropagation
-
-        is_valid = await validate_shortener_token(site_clean, api_raw)
-        if not is_valid:
-            await edit_or_reply(query, 
-                "❌ <b>The given Shortener Api Token is invalid</b>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]])
-            )
-            raise StopPropagation
-
-        await update_user_info(query.from_user.id, {"base_site": site_clean, "shortener_api": api_raw})
-        confirm_text = (
-            "✅ <b>SHORTNER SET HO GAYI!</b>\n\n"
-            f"🌐 <b>Website:</b> <code>{site_clean}</code>\n"
-            f"🔑 <b>API Token:</b> <code>{api_raw}</code>"
-        )
-        confirm_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("➕ ADD NEW SHORTNER", callback_data="master_add_shortener")],
-            [InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]
-        ])
-        await edit_or_reply(query, confirm_text, reply_markup=confirm_markup)
-        raise StopPropagation
-
-    if data == "delete_shortener":
-        await update_user_info(query.from_user.id, {"base_site": None, "shortener_api": None})
-        await query.answer("✨ Successfully deleted your link shortener provider", show_alert=False)
-        text = "✨ <b>SUCCESSFULLY DELETED YOUR LINK SHORTENER PROVIDER</b>"
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("‹ BACK", callback_data="link_shortener")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        raise StopPropagation
-
-    if data == "custom_caption":
-        user = await get_user(query.from_user.id)
-        text = (
-            "<b>Custom Caption:</b>\n"
-            "You can add a custom caption to your media messages instead of its original caption\n\n"
-            "<b>Fillings:</b>\n"
-            "• {file_name} : File Name\n"
-            "• {file_size} : File Size\n"
-            "• {caption} : Orginal Caption"
-        )
-        cap = user.get("custom_caption")
-        if cap:
-            text += f"\n\n<b>Current:</b> <code>{cap}</code>"
-        markup = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("Edit", callback_data="caption_edit"),
-                InlineKeyboardButton("See", callback_data="caption_see"),
-                InlineKeyboardButton("Delete", callback_data="caption_delete")
-            ],
-            [InlineKeyboardButton("‹ back", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
-
-    if data == "caption_see":
-        user = await get_user(query.from_user.id)
-        cap = user.get("custom_caption")
-        if cap:
-            text = (
-                "<b>👀 Current Custom Caption:</b>\n\n"
-                f"<code>{cap}</code>\n\n"
-                "<b>Fillings:</b>\n"
-                "• {file_name} : File Name\n"
-                "• {file_size} : File Size\n"
-                "• {caption} : Orginal Caption"
-            )
-        else:
-            text = (
-                "<b>👀 Current Custom Caption:</b>\n\n"
-                "<i>No custom caption set. Default caption will be used.</i>\n\n"
-                "<b>Fillings:</b>\n"
-                "• {file_name} : File Name\n"
-                "• {file_size} : File Size\n"
-                "• {caption} : Orginal Caption"
-            )
-        await query.answer()
-        markup = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("Edit", callback_data="caption_edit"),
-                InlineKeyboardButton("Delete", callback_data="caption_delete")
-            ],
-            [InlineKeyboardButton("‹ back", callback_data="custom_caption")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        raise StopPropagation
-
-    if data == "caption_delete":
-        await update_user_info(query.from_user.id, {"custom_caption": None})
-        await query.answer("Custom caption deleted.", show_alert=True)
-        text = (
-            "<b>Custom Caption:</b>\n"
-            "You can add a custom caption to your media messages instead of its original caption\n\n"
-            "<b>Fillings:</b>\n"
-            "• {file_name} : File Name\n"
-            "• {file_size} : File Size\n"
-            "• {caption} : Orginal Caption"
-        )
-        markup = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("Edit", callback_data="caption_edit"),
-                InlineKeyboardButton("See", callback_data="caption_see"),
-                InlineKeyboardButton("Delete", callback_data="caption_delete")
-            ],
-            [InlineKeyboardButton("‹ back", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        raise StopPropagation
-
-    if data == "caption_edit":
-        await query.answer("Send /caption <Your Text> to update caption.", show_alert=True)
-        raise StopPropagation
-
-    if data == "custom_button":
-        text = "<b>Custom Button:</b>\nYou can add a custom button to your message"
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("➕", callback_data="button_add")],
-            [InlineKeyboardButton("‹ back", callback_data="master_settings"), InlineKeyboardButton("Delete", callback_data="button_delete")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
-
-    if data == "button_add":
-        await query.answer("Send /button <Button Text> - <URL> to set custom button.", show_alert=True)
-        raise StopPropagation
-
-    if data == "button_delete":
-        await update_user_info(query.from_user.id, {"custom_buttons": []})
-        await query.answer("Custom button deleted.", show_alert=True)
-        raise StopPropagation
-
-    if data == "protect_menu":
-        user = await get_user(query.from_user.id)
-        is_on = bool(user.get("protect_content", False))
-        status_str = "ENABLED ✅" if is_on else "DISABLED ❌"
-        text = (
-            "<b>Protect Content</b>\n"
-            "Restrict other users from forwarding contents from your shareable link.\n\n"
-            "<b>Available Mode's:</b>\n"
-            "1) Enable: Forwarding is blocked. Once you create a link with this mode, the restriction remains even if you later disabled this feature.\n"
-            "2) Disable: Forwarding restrictions depend on whether the \"no forward\" feature is currently enabled in the bot. If enabled, no forward is restricted. This applies to all links, including those created before; if disabled, forwarding is allowed.\n\n"
-            f"- status: {status_str}"
-        )
-        btn = InlineKeyboardButton("Disable ❌", callback_data="protect_toggle_off") if is_on else InlineKeyboardButton("Enable ✅", callback_data="protect_toggle_on")
-        markup = InlineKeyboardMarkup([
-            [btn],
-            [InlineKeyboardButton("‹ back", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
-
-    if data in ("protect_toggle_on", "protect_toggle_off"):
-        val = (data == "protect_toggle_on")
-        await update_user_info(query.from_user.id, {"protect_content": val})
-        status_str = "ENABLED ✅" if val else "DISABLED ❌"
-        text = (
-            "<b>Protect Content</b>\n"
-            "Restrict other users from forwarding contents from your shareable link.\n\n"
-            "<b>Available Mode's:</b>\n"
-            "1) Enable: Forwarding is blocked. Once you create a link with this mode, the restriction remains even if you later disabled this feature.\n"
-            "2) Disable: Forwarding restrictions depend on whether the \"no forward\" feature is currently enabled in the bot. If enabled, no forward is restricted. This applies to all links, including those created before; if disabled, forwarding is allowed.\n\n"
-            f"- status: {status_str}"
-        )
-        btn = InlineKeyboardButton("Disable ❌", callback_data="protect_toggle_off") if val else InlineKeyboardButton("Enable ✅", callback_data="protect_toggle_on")
-        markup = InlineKeyboardMarkup([
-            [btn],
-            [InlineKeyboardButton("‹ back", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
-
-    if data == "start_photo_menu":
-        user = await get_user(query.from_user.id)
-        has_pic = bool(user.get("start_pic"))
-        status_str = "CUSTOM PHOTO SET ✅" if has_pic else "DEFAULT PHOTO 🖼️"
-        text = (
-            "<b>Start Message Photo:</b>\n"
-            "You can set a custom photo/banner that appears on /start command.\n\n"
-            f"• <b>Status:</b> {status_str}\n\n"
-            "• <b>Set/Edit:</b> Send <code>/set_pic https://example.com/image.jpg</code> or reply to a photo with <code>/set_pic</code>\n"
-            "• <b>See:</b> View your current start photo\n"
-            "• <b>Delete:</b> Reset to default photo"
-        )
-        markup = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("Edit", callback_data="start_pic_edit"),
-                InlineKeyboardButton("See", callback_data="start_pic_see"),
-                InlineKeyboardButton("Delete", callback_data="start_pic_delete")
-            ],
-            [InlineKeyboardButton("‹ back", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
-
-    if data == "start_pic_edit":
-        await query.answer("Send /set_pic <Image_URL> or reply to a photo with /set_pic", show_alert=True)
-        raise StopPropagation
-
-    if data == "start_pic_see":
-        user = await get_user(query.from_user.id)
-        pic = user.get("start_pic")
-        if pic:
-            try:
-                await client.send_photo(chat_id=query.from_user.id, photo=pic, caption="🖼️ <b>Your Custom Start Photo</b>")
-                await query.answer()
-            except Exception:
-                await query.answer(f"Photo URL:\n{pic}", show_alert=True)
-        else:
-            await query.answer("You are currently using the default start photo.", show_alert=True)
-        raise StopPropagation
-
-    if data == "start_pic_delete":
-        await update_user_info(query.from_user.id, {"start_pic": None})
-        await query.answer("Start photo reset to default.", show_alert=True)
-        text = (
-            "<b>Start Message Photo:</b>\n"
-            "You can set a custom photo/banner that appears on /start command.\n\n"
-            "• <b>Status:</b> DEFAULT PHOTO 🖼️\n\n"
-            "• <b>Set/Edit:</b> Send <code>/set_pic https://example.com/image.jpg</code> or reply to a photo with <code>/set_pic</code>\n"
-            "• <b>See:</b> View your current start photo\n"
-            "• <b>Delete:</b> Reset to default photo"
-        )
-        markup = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("Edit", callback_data="start_pic_edit"),
-                InlineKeyboardButton("See", callback_data="start_pic_see"),
-                InlineKeyboardButton("Delete", callback_data="start_pic_delete")
-            ],
-            [InlineKeyboardButton("‹ back", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        raise StopPropagation
-
-    # ---------------- TOKEN VERIFICATION ----------------
     if data.startswith("master_token_verification:"):
         slot = int(data.split(":")[1])
-        user = await get_user(query.from_user.id)
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        v_cfg = user.get(v_key, {})
+        v_cfg = r.get(v_key, {})
         is_on = bool(v_cfg.get("is_on", False))
-        
-        site = v_cfg.get("site") or user.get("base_site") or "Not set"
-        api = v_cfg.get("api") or user.get("shortener_api") or "Not set"
-        tut = v_cfg.get("tutorial") or "Not set"
-        mins = v_cfg.get("time_minutes", 480)
-        time_str = format_time_minutes(mins)
+        prefix = "FIRST" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
+        text = f"⏰ <b>{prefix} TOKEN VERIFICATION:</b>"
+        return await edit_or_reply(query, text, reply_markup=master_single_token_verification_markup(slot, is_on))
 
-        prefix = "VERIFY" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
-        next_slot = (slot % 3) + 1
-        next_name = "SECOND VERIFICATION" if slot == 1 else ("THIRD VERIFICATION" if slot == 2 else "FIRST VERIFICATION")
-        status_text = "VERIFY IS ON - ✅" if is_on else "VERIFY IS OFF - ❌"
-
-        text = (
-            "<b>MANAGE YOUR TOKEN VERIFICATION SETTINGS FROM HERE GIVEN BELOW BUTTONS</b>\n\n"
-            f"<b>Slot {slot} Shortener Website :</b> <code>{site}</code>\n"
-            f"<b>Slot {slot} API Token :</b> <code>{api}</code>\n"
-            f"<b>Slot {slot} Tutorial Link :</b> <code>{tut}</code>\n"
-            f"<b>Slot {slot} Verification Time :</b> <code>{time_str}</code>"
-        )
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"🔗 {prefix} SHORTNER", callback_data=f"master_v_shortner:{slot}")],
-            [InlineKeyboardButton(f"🎬 {prefix} TUTORIAL", callback_data=f"master_v_tutorial:{slot}")],
-            [InlineKeyboardButton(f"⏳ {prefix} TIME", callback_data=f"master_v_time:{slot}")],
-            [InlineKeyboardButton(f"⏰ {next_name}", callback_data=f"master_token_verification:{next_slot}")],
-            [InlineKeyboardButton(f"🔒 {status_text}", callback_data=f"master_v_toggle:{slot}")],
-            [InlineKeyboardButton("➕ ADD NEW SHORTNER", callback_data=f"master_v_shortner:{slot}")],
-            [InlineKeyboardButton("‹ BACK", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup, disable_web_page_preview=True)
-        await query.answer()
-        raise StopPropagation
-
-    if data.startswith("master_v_toggle:"):
+    if data.startswith("m_v_toggle:"):
         slot = int(data.split(":")[1])
-        user = await get_user(query.from_user.id)
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        v_cfg = user.get(v_key, {})
-        curr_state = bool(v_cfg.get("is_on", False))
-        
-        site = v_cfg.get("site") or user.get("base_site")
-        api = v_cfg.get("api") or user.get("shortener_api")
-        tut = v_cfg.get("tutorial")
-        
-        if not curr_state and (not site or not api):
-            await query.answer("PLEASE ADD SHORTLINK AND API TOKEN FIRST, THEN TURN ME ON", show_alert=True)
-            raise StopPropagation
-        
-        new_state = not curr_state
+        v_cfg = r.get(v_key, {})
+        new_state = not bool(v_cfg.get("is_on", False))
         v_cfg["is_on"] = new_state
-        await update_user_info(query.from_user.id, {v_key: v_cfg})
-        
-        prefix = "VERIFY" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
-        next_slot = (slot % 3) + 1
-        next_name = "SECOND VERIFICATION" if slot == 1 else ("THIRD VERIFICATION" if slot == 2 else "FIRST VERIFICATION")
-        status_text = "VERIFY IS ON - ✅" if new_state else "VERIFY IS OFF - ❌"
+        save_master(**{v_key: v_cfg})
+        prefix = "FIRST" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
+        text = f"⏰ <b>{prefix} TOKEN VERIFICATION:</b>"
+        await query.answer(f"Verification {'Enabled' if new_state else 'Disabled'}!")
+        return await edit_or_reply(query, text, reply_markup=master_single_token_verification_markup(slot, new_state))
 
-        site_val = v_cfg.get("site") or user.get("base_site") or "Not set"
-        api_val = v_cfg.get("api") or user.get("shortener_api") or "Not set"
-        tut_val = v_cfg.get("tutorial") or "Not set"
-        mins_val = v_cfg.get("time_minutes", 480)
-        time_str_val = format_time_minutes(mins_val)
-
-        text = (
-            "<b>MANAGE YOUR TOKEN VERIFICATION SETTINGS FROM HERE GIVEN BELOW BUTTONS</b>\n\n"
-            f"<b>Slot {slot} Shortener Website :</b> <code>{site_val}</code>\n"
-            f"<b>Slot {slot} API Token :</b> <code>{api_val}</code>\n"
-            f"<b>Slot {slot} Tutorial Link :</b> <code>{tut_val}</code>\n"
-            f"<b>Slot {slot} Verification Time :</b> <code>{time_str_val}</code>"
-        )
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"🔗 {prefix} SHORTNER", callback_data=f"master_v_shortner:{slot}")],
-            [InlineKeyboardButton(f"🎬 {prefix} TUTORIAL", callback_data=f"master_v_tutorial:{slot}")],
-            [InlineKeyboardButton(f"⏳ {prefix} TIME", callback_data=f"master_v_time:{slot}")],
-            [InlineKeyboardButton(f"⏰ {next_name}", callback_data=f"master_token_verification:{next_slot}")],
-            [InlineKeyboardButton(f"🔒 {status_text}", callback_data=f"master_v_toggle:{slot}")],
-            [InlineKeyboardButton("➕ ADD NEW SHORTNER", callback_data=f"master_v_shortner:{slot}")],
-            [InlineKeyboardButton("‹ BACK", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup, disable_web_page_preview=True)
-        await query.answer()
-        raise StopPropagation
-
-    if data.startswith("master_v_shortner:"):
+    if data.startswith("m_v_stats:"):
         slot = int(data.split(":")[1])
-        await query.answer()
-        session_id = start_user_session(query.from_user.id, f"master_v_shortner_site:{slot}")
-        prompt_text = (
-            "<b>SEND ME A SHORTLINK URL...</b>\n\n"
-            "<b>FORMAT :</b>\n"
-            "<code>https://ashlink.online</code> - ❌\n"
-            "<code>ashlink.online</code> - ✅\n\n"
-            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
-        )
-        await edit_or_reply(query, 
-            prompt_text,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]])
-        )
-        try:
-            site_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
-        except Exception:
-            raise StopPropagation
+        today_count = r.get(f"verified_today_{slot}", 0)
+        bot_title = me.first_name or me.username or "ALL LINK SAHRE"
+        return await query.answer(f"{bot_title}\n\nTotal Verified Today - {today_count}", show_alert=True)
 
-        if not is_user_session_active(query.from_user.id, session_id):
-            raise StopPropagation
-
-        site_raw = (site_msg.text or "").strip()
-        try:
-            await site_msg.delete()
-        except Exception:
-            pass
-
-        if site_raw.startswith("/") and site_raw.lower() != "/cancel":
-            clear_user_session(query.from_user.id)
-            raise StopPropagation
-
-        if site_raw.lower() == "/cancel":
-            clear_user_session(query.from_user.id)
-            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]]) )
-            raise StopPropagation
-
-        site_clean = site_raw.replace("https://", "").replace("http://", "").split("/")[0].strip()
-        if not site_clean or "." not in site_clean:
-            clear_user_session(query.from_user.id)
-            await edit_or_reply(query, "❌ <b>Invalid site URL.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]]) )
-            raise StopPropagation
-
-        session_id_2 = start_user_session(query.from_user.id, f"master_v_shortner_api:{slot}")
-        await edit_or_reply(query, 
-            "<b>SEND ME SHORTLINK API...</b>\n\n"
-            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]])
-        )
-        try:
-            api_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
-        except Exception:
-            raise StopPropagation
-
-        if not is_user_session_active(query.from_user.id, session_id_2):
-            raise StopPropagation
-
-        clear_user_session(query.from_user.id)
-        api_raw = (api_msg.text or "").strip()
-        try:
-            await api_msg.delete()
-        except Exception:
-            pass
-
-        if api_raw.startswith("/") and api_raw.lower() != "/cancel":
-            raise StopPropagation
-
-        if api_raw.lower() == "/cancel":
-            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]]) )
-            raise StopPropagation
-
-        if not api_raw:
-            await edit_or_reply(query, "❌ <b>Invalid API key.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]]) )
-            raise StopPropagation
-
-        api = api_raw
-        site = site_clean
-        v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        u_data = await get_user(query.from_user.id)
-        v_cfg = (u_data or {}).get(v_key, {})
-        v_cfg["site"] = site
-        v_cfg["api"] = api
-        v_cfg["is_on"] = True
-        await update_user_info(query.from_user.id, {v_key: v_cfg})
-
-        prefix = "VERIFY" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
-        next_slot = (slot % 3) + 1
-        next_name = "SECOND VERIFICATION" if slot == 1 else ("THIRD VERIFICATION" if slot == 2 else "FIRST VERIFICATION")
-        status_text = "VERIFY IS ON - ✅"
-
-        site_val = site
-        api_val = api
-        tut_val = v_cfg.get("tutorial") or "Not set"
-        mins_val = v_cfg.get("time_minutes", 480)
-        time_str_val = format_time_minutes(mins_val)
-
+    if data in ("custom_button", "master_custom_button"):
+        btns = r.get("custom_buttons", [])
+        has_btns = bool(btns)
         text = (
-            "<b>MANAGE YOUR TOKEN VERIFICATION SETTINGS FROM HERE GIVEN BELOW BUTTONS</b>\n\n"
-            f"<b>Slot {slot} Shortener Website :</b> <code>{site_val}</code>\n"
-            f"<b>Slot {slot} API Token :</b> <code>{api_val}</code>\n"
-            f"<b>Slot {slot} Tutorial Link :</b> <code>{tut_val}</code>\n"
-            f"<b>Slot {slot} Verification Time :</b> <code>{time_str_val}</code>"
+            "🔘 <b>MESSAGE BUTTON:</b>\n\n"
+            "<b>CREATE CUSTOM URL BUTTONS FOR YOUR STORED MESSAGE. THE BUTTONS YOU ADD WILL BE SHOWN BELOW EVERY MESSAGE.</b>\n\n"
+            "• <b>UP TO TWO BUTTONS PER ROW</b>\n"
+            "• <b>MULTIPLE ROWS SUPPORTED</b>\n"
+            "• <b>THREE STYLES / BUTTON COLOUR AVAILABLE (RED, GREEN AND BLUE)</b>\n\n"
+            "<b>FOLLOW THE NEXT STEPS TO BUILD YOUR BUTTONS</b>"
         )
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"🔗 {prefix} SHORTNER", callback_data=f"master_v_shortner:{slot}")],
-            [InlineKeyboardButton(f"🎬 {prefix} TUTORIAL", callback_data=f"master_v_tutorial:{slot}")],
-            [InlineKeyboardButton(f"⏳ {prefix} TIME", callback_data=f"master_v_time:{slot}")],
-            [InlineKeyboardButton(f"⏰ {next_name}", callback_data=f"master_token_verification:{next_slot}")],
-            [InlineKeyboardButton(f"🔒 {status_text}", callback_data=f"master_v_toggle:{slot}")],
-            [InlineKeyboardButton("➕ ADD NEW SHORTNER", callback_data=f"master_v_shortner:{slot}")],
-            [InlineKeyboardButton("‹ BACK", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup, disable_web_page_preview=True)
-        raise StopPropagation
-    if data.startswith("master_v_tutorial:"):
-        slot = int(data.split(":")[1])
-        user = await get_user(query.from_user.id)
-        v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        v_cfg = user.get(v_key, {})
-        tut = v_cfg.get("tutorial") or "Not set"
+        first_btn = InlineKeyboardButton("SEE BUTTON", callback_data="m_btn_see") if has_btns else InlineKeyboardButton("ADD BUTTON", callback_data="m_btn_add")
+        rows = [
+            [first_btn, InlineKeyboardButton("REMOVE BUTTON", callback_data="m_btn_rem")],
+        ]
+        if has_btns:
+            rows.insert(1, [InlineKeyboardButton("ADD BUTTON", callback_data="m_btn_add")])
+        rows.append([InlineKeyboardButton("‹ BACK", callback_data="settings")])
+        return await edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup(rows))
 
-        text = (
-            "<b>HERE YOU CAN MANAGE YOUR BOT TOKEN VERIFICATION LINK SHORTNER TUTORIAL VIDEO LINK FOR HOW TO OPEN LINK.</b>\n\n"
-            f"<b>LINK -</b> {tut}"
-        )
-        markup = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("SET TUTORIAL", callback_data=f"master_v_set_tut:{slot}"),
-                InlineKeyboardButton("DELETE TUTORIAL", callback_data=f"master_v_del_tut:{slot}")
-            ],
-            [InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup, disable_web_page_preview=True)
+    if data == "m_btn_add":
         await query.answer()
-        raise StopPropagation
+        asyncio.create_task(run_master_button_builder(client, user_id, "custom", "custom_button"))
+        return
 
-    if data.startswith("master_v_set_tut:"):
-        slot = int(data.split(":")[1])
-        await query.answer()
-        session_id = start_user_session(query.from_user.id, f"master_v_tut:{slot}")
-        prompt_text = (
-            "<b>SEND ME TUTORIAL LINK...</b>\n\n"
-            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
+    if data == "m_btn_rem":
+        save_master(custom_buttons=[])
+        await query.answer("Buttons removed successfully!")
+        return await edit_or_reply(
+            query,
+            "<b>SUCCESSFULLY REMOVED BUTTONS ✅</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="custom_button")]])
         )
-        await edit_or_reply(query, prompt_text,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_v_tutorial:{slot}")]])
+
+    if data == "m_btn_see":
+        btns = r.get("custom_buttons", [])
+        rows = []
+        for r_item in btns:
+            row_btns = []
+            if isinstance(r_item, dict) and "buttons" in r_item:
+                for b in r_item["buttons"]:
+                    row_btns.append(InlineKeyboardButton(b["text"], url=b["url"]))
+            elif isinstance(r_item, dict) and "text" in r_item:
+                row_btns.append(InlineKeyboardButton(r_item["text"], url=r_item.get("url", "https://t.me")))
+            if row_btns:
+                rows.append(row_btns)
+        rows.append([InlineKeyboardButton("‹ BACK", callback_data="custom_button")])
+        return await edit_or_reply(
+            query,
+            "<b>HERE ARE YOUR CONFIGURED BUTTONS:</b>",
+            reply_markup=InlineKeyboardMarkup(rows)
         )
-        try:
-            t_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
-        except Exception:
-            raise StopPropagation
 
-        if not is_user_session_active(query.from_user.id, session_id):
-            raise StopPropagation
-
-        clear_user_session(query.from_user.id)
-        t_raw = (t_msg.text or "").strip()
-        try: await t_msg.delete()
-        except Exception: pass
-
-        if t_raw.startswith("/") and t_raw.lower() != "/cancel":
-            raise StopPropagation
-
-        if t_raw.lower() == "/cancel":
-            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_v_tutorial:{slot}")]]))
-            raise StopPropagation
-
-        if not t_raw.startswith("http"):
-            await edit_or_reply(query, "❌ <b>Invalid Tutorial URL.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_v_tutorial:{slot}")]]))
-            raise StopPropagation
-
-        v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        u_data = await get_user(query.from_user.id)
-        v_cfg = (u_data or {}).get(v_key, {})
-        v_cfg["tutorial"] = t_raw
-        await update_user_info(query.from_user.id, {v_key: v_cfg})
-
-        await edit_or_reply(query, f"✅ <b>Slot {slot} Tutorial Link Updated:</b>\n<code>{t_raw}</code>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_v_tutorial:{slot}")]])
-        )
-        raise StopPropagation
-    if data.startswith("master_v_del_tut:"):
-        slot = int(data.split(":")[1])
-        user = await get_user(query.from_user.id)
-        v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        v_cfg = user.get(v_key, {})
-        v_cfg["tutorial"] = None
-        await update_user_info(query.from_user.id, {v_key: v_cfg})
-        await query.answer("Tutorial link deleted.", show_alert=True)
-        await edit_or_reply(query, 
-            "🗑️ <b>SUCCESSFULLY DELETED TUTORIAL LINK</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_v_tutorial:{slot}")]])
-        )
-        raise StopPropagation
-
-    if data.startswith("master_v_time:"):
-        slot = int(data.split(":")[1])
-        user = await get_user(query.from_user.id)
-        v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        v_cfg = user.get(v_key, {})
-        mins = v_cfg.get("time_minutes", 480)
-        time_str = format_time_minutes(mins)
-
-        text = (
-            "<b>HERE YOU CAN MANAGE YOUR BOT VERIFICATION TIME SETTING.</b>\n\n"
-            f"<b>TIME -</b> {time_str}"
-        )
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("SET TIME", callback_data=f"master_v_set_time:{slot}")],
-            [InlineKeyboardButton("‹ BACK", callback_data=f"master_token_verification:{slot}")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
-
-    if data.startswith("master_v_set_time:"):
-        slot = int(data.split(":")[1])
-        await query.answer()
-        session_id = start_user_session(query.from_user.id, f"master_v_time:{slot}")
-        prompt_text = (
-            "<b>SEND ME TIME IN GIVEN FORMAT...</b>\n\n"
-            "<b>FORMAT :</b>\n"
-            "• <code>5m</code> (5 Minutes)\n"
-            "• <code>8h</code> (8 Hours)\n"
-            "• <code>1d</code> (1 Day)\n"
-            "• <code>1w</code> (1 Week)\n"
-            "• <code>1mo</code> (1 Month)\n"
-            "• <code>1y</code> (1 Year)\n\n"
-            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
-        )
-        await edit_or_reply(query, prompt_text,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_v_time:{slot}")]])
-        )
-        try:
-            tm_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
-        except Exception:
-            raise StopPropagation
-
-        if not is_user_session_active(query.from_user.id, session_id):
-            raise StopPropagation
-
-        clear_user_session(query.from_user.id)
-        tm_raw = (tm_msg.text or "").strip()
-        try: await tm_msg.delete()
-        except Exception: pass
-
-        if tm_raw.startswith("/") and tm_raw.lower() != "/cancel":
-            raise StopPropagation
-
-        if tm_raw.lower() == "/cancel":
-            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_v_time:{slot}")]]))
-            raise StopPropagation
-
-        minutes = parse_time_string(tm_raw)
-        v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        u_data = await get_user(query.from_user.id)
-        v_cfg = (u_data or {}).get(v_key, {})
-        v_cfg["time_minutes"] = minutes
-        await update_user_info(query.from_user.id, {v_key: v_cfg})
-
-        await edit_or_reply(query, f"✅ <b>Slot {slot} Verification Time Updated:</b> <code>{format_time_minutes(minutes)}</code>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=f"master_v_time:{slot}")]])
-        )
-        raise StopPropagation
-    if data == "master_qr_upi_menu":
-        user = await get_user(query.from_user.id)
-        p_photo = user.get("premium_plan_photo")
-        p_upi = user.get("premium_upi_id")
-        photo_str = "✅ Photo Set" if p_photo else "❌ Not Set"
-        upi_str = p_upi if p_upi else "Not Set"
-
-        text = (
-            "<b>MANAGE QR CODE PHOTO & UPI ID FOR PREMIUM PAYMENTS</b>\n\n"
-            f"🖼️ <b>QR Code Photo:</b> {photo_str}\n"
-            f"💳 <b>UPI ID:</b> <code>{upi_str}</code>"
-        )
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🖼️ SET QR PHOTO", callback_data="master_set_qr"), InlineKeyboardButton("🗑️ DELETE QR PHOTO", callback_data="master_del_qr")],
-            [InlineKeyboardButton("💳 SET UPI ID", callback_data="master_set_upi"), InlineKeyboardButton("🗑️ DELETE UPI ID", callback_data="master_del_upi")],
-            [InlineKeyboardButton("‹ BACK", callback_data="master_premium_plan")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
-
-    if data == "master_del_qr":
-        await update_user_info(query.from_user.id, {"premium_plan_photo": None})
-        await query.answer("QR Code Photo deleted.", show_alert=True)
-        return await callbacks(client, type('Q', (), {'data': 'master_qr_upi_menu', 'from_user': query.from_user, 'message': query.message, 'answer': query.answer})())
-
-    if data == "master_del_upi":
-        await update_user_info(query.from_user.id, {"premium_upi_id": None})
-        await query.answer("UPI ID deleted.", show_alert=True)
-        return await callbacks(client, type('Q', (), {'data': 'master_qr_upi_menu', 'from_user': query.from_user, 'message': query.message, 'answer': query.answer})())
-
-    if data == "master_set_qr":
-        await query.answer()
-        session_id = start_user_session(query.from_user.id, "master_set_qr")
-        prompt_text = (
-            "<b>PLEASE SEND YOUR QR PHOTO...</b>\n\n"
-            "📸 <i>Send the image or QR code photo you want to display to users.</i>\n\n"
-            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
-        )
-        await edit_or_reply(query, prompt_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]]))
-        try:
-            q_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
-        except Exception:
-            raise StopPropagation
-
-        if not is_user_session_active(query.from_user.id, session_id):
-            raise StopPropagation
-
-        clear_user_session(query.from_user.id)
-        if q_msg.text and q_msg.text.lower() == "/cancel":
-            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]]))
-            raise StopPropagation
-
-        if not q_msg.photo:
-            await edit_or_reply(query, "❌ <b>Invalid format. Please send a photo.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]]))
-            raise StopPropagation
-
-        photo_id = q_msg.photo.file_id
-        await update_user_info(query.from_user.id, {"premium_qr_photo": photo_id})
-        confirm_text = "✅ <b>QR PHOTO SET HO GAYI !</b>"
-        confirm_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📸 CHANGE QR PHOTO", callback_data="master_set_qr")],
-            [InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]
-        ])
-        await edit_or_reply(query, confirm_text, reply_markup=confirm_markup)
-        raise StopPropagation
-    if data == "master_del_qr":
-        await update_user_info(query.from_user.id, {"premium_plan_photo": None})
-        await query.answer("QR Code Photo deleted.", show_alert=True)
-        return await callbacks(client, type('Q', (), {'data': 'master_qr_upi_menu', 'from_user': query.from_user, 'message': query.message, 'answer': query.answer})())
-
-    if data == "master_del_upi":
-        await update_user_info(query.from_user.id, {"premium_upi_id": None})
-        await query.answer("UPI ID deleted.", show_alert=True)
-        return await callbacks(client, type('Q', (), {'data': 'master_qr_upi_menu', 'from_user': query.from_user, 'message': query.message, 'answer': query.answer})())
-
-    if data == "master_set_qr":
-        await query.answer()
-        prompt_text = (
-            "<b>PLEASE SEND YOUR QR CROP PHOTO...</b>\n\n"
-            "📸 <i>Send the cropped QR photo/image directly in this chat.</i>\n\n"
-            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
-        )
-        await edit_or_reply(query, prompt_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]]))
-        try:
-            q_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
-        except Exception:
-            raise StopPropagation
-
-        if q_msg.text and q_msg.text.strip().lower() == "/cancel":
-            try: await q_msg.delete()
-            except Exception: pass
-            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]]))
-            raise StopPropagation
-
-        photo_id = None
-        if q_msg.photo:
-            photo_id = q_msg.photo.file_id
-        elif q_msg.document and q_msg.document.mime_type and q_msg.document.mime_type.startswith("image/"):
-            photo_id = q_msg.document.file_id
-
-        try: await q_msg.delete()
-        except Exception: pass
-
-        if not photo_id:
-            await edit_or_reply(query, "❌ <b>Please send a valid cropped photo/image.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]]))
-            raise StopPropagation
-
-        await update_user_info(query.from_user.id, {"premium_plan_photo": photo_id})
-        confirm_text = "✅ <b>QR CODE PHOTO SET HO GAYI!</b>"
-        confirm_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🖼️ CHANGE QR PHOTO", callback_data="master_set_qr")],
-            [InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]
-        ])
-        await edit_or_reply(query, confirm_text, reply_markup=confirm_markup)
-        raise StopPropagation
-
-    if data == "master_set_upi":
-        await query.answer()
-        session_id = start_user_session(query.from_user.id, "master_set_upi")
-        prompt_text = (
-            "<b>PLEASE SEND YOUR UPI ID...</b>\n\n"
-            "💳 <i>Example:</i> <code>ash@upi</code> or <code>username@okhdfcbank</code>\n\n"
-            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
-        )
-        await edit_or_reply(query, prompt_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]]))
-        try:
-            u_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
-        except Exception:
-            raise StopPropagation
-
-        if not is_user_session_active(query.from_user.id, session_id):
-            raise StopPropagation
-
-        u_raw = (u_msg.text or "").strip()
-        try: await u_msg.delete()
-        except Exception: pass
-
-        if u_raw.startswith("/") and u_raw.lower() != "/cancel":
-            clear_user_session(query.from_user.id)
-            raise StopPropagation
-
-        if u_raw.lower() == "/cancel":
-            clear_user_session(query.from_user.id)
-            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]]))
-            raise StopPropagation
-
-        if not u_raw or " " in u_raw:
-            clear_user_session(query.from_user.id)
-            await edit_or_reply(query, "❌ <b>Invalid UPI ID format.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]]))
-            raise StopPropagation
-
-        clear_user_session(query.from_user.id)
-        await update_user_info(query.from_user.id, {"premium_upi_id": u_raw})
-        confirm_text = f"✅ <b>UPI ID SET HO GAYI:</b> <code>{u_raw}</code>"
-        confirm_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💳 CHANGE UPI ID", callback_data="master_set_upi")],
-            [InlineKeyboardButton("‹ BACK", callback_data="master_qr_upi_menu")]
-        ])
-        await edit_or_reply(query, confirm_text, reply_markup=confirm_markup)
-        raise StopPropagation
-
-    if data == "master_prem_toggle":
-        user = await get_user(query.from_user.id)
-        new_on = not bool(user.get("premium_is_on", False))
-        await update_user_info(query.from_user.id, {"premium_is_on": new_on})
-        prem_status = "PREMIUM IS ON - ✅" if new_on else "PREMIUM IS OFF - ❌"
-        text = (
-            "<b>HERE YOU CAN MANAGE YOUR PREMIUM SETTINGS HERE</b>\n\n"
-            "<b>THIS FEATURE WORK ONLY WHEN TOKEN VERIFICATION IS ENABLED</b>"
-        )
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📝 PREMIUM PLAN TEXT 📝", callback_data="master_prem_text")],
-            [InlineKeyboardButton("➕ ADD PREMIUM USER ➕", callback_data="master_prem_add")],
-            [InlineKeyboardButton("➖ REMOVE PREMIUM USER ➖", callback_data="master_prem_rem")],
-            [InlineKeyboardButton("👥 PREMIUM USERS LIST 👥", callback_data="master_prem_list")],
-            [InlineKeyboardButton("💳 SET / MANAGE QR & UPI 🖼️", callback_data="master_qr_upi_menu")],
-            [InlineKeyboardButton(f"🔒 {prem_status}", callback_data="master_prem_toggle")],
-            [InlineKeyboardButton("‹ BACK", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
-
-    if data == "master_prem_text":
-        user = await get_user(query.from_user.id)
-        p_text = user.get("premium_plan_text") or "Not Set"
-        p_photo = user.get("premium_plan_photo")
-        text = (
-            "<b>HERE YOU CAN MANAGE YOUR PREMIUM PLAN TEXT</b>\n\n"
-            f"<b>text -</b>\n{p_text}"
-        )
-        if p_photo:
-            text += "\n\n🖼️ <i>QR Code / UPI Photo is also set!</i>"
-        markup = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("SET PREMIUM PLAN TEXT", callback_data="master_prem_set_text"),
-                InlineKeyboardButton("DELETE PREMIUM PLAN TEXT", callback_data="master_prem_del_text")
-            ],
-            [InlineKeyboardButton("‹ BACK", callback_data="master_premium_plan")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
-
-    if data == "master_prem_set_text":
-        await query.answer()
-        prompt_text = (
-            "<b>NOW SEND ME YOUR PLAN TEXT</b>\n\n"
-            "<b>NOTE -</b>\n"
-            "PLAN TEXT MUST HAVE PRICE DETAILS OF 3 DAYS, 1 WEEK AND 1 MONTH PLAN AND CONTACT DETAILS IS MUST\n\n"
-            "<i>And Send Plan Text In Minimum Words Because Of Telegram Limit</i>\n"
-            "💡 <b>You can also send a Photo (QR Code / UPI) with caption!</b>\n\n"
-            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
-        )
-        await edit_or_reply(query, 
-            prompt_text,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_prem_text")]])
-        )
-        try:
-            pt_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
-        except Exception:
-            raise StopPropagation
-
-        if pt_msg.text and pt_msg.text.strip().lower() == "/cancel":
-            try: await pt_msg.delete()
-            except Exception: pass
-            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_prem_text")]]))
-            raise StopPropagation
-
-        photo_id = None
-        plan_str = ""
-        if pt_msg.photo:
-            photo_id = pt_msg.photo.file_id
-            plan_str = pt_msg.caption or ""
-        elif pt_msg.text:
-            plan_str = pt_msg.text.strip()
-        
-        try: await pt_msg.delete()
-        except Exception: pass
-
-        await update_user_info(query.from_user.id, {"premium_plan_text": plan_str, "premium_plan_photo": photo_id})
-        await edit_or_reply(query, 
-            "<b>SUCCESSFULLY SET PREMIUM PLAN TEXT ✅</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_prem_text")]])
-        )
-        raise StopPropagation
-
-    if data == "master_prem_del_text":
-        await update_user_info(query.from_user.id, {"premium_plan_text": None, "premium_plan_photo": None})
-        await query.answer("Premium plan text deleted.", show_alert=True)
-        await edit_or_reply(query, 
-            "🗑️ <b>SUCCESSFULLY DELETED PREMIUM PLAN TEXT</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_prem_text")]])
-        )
-        raise StopPropagation
-
-    if data == "master_prem_add":
-        await query.answer()
-        await edit_or_reply(query, 
-            "<b>NOW SEND ME USER ID</b>\n\n"
-            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_premium_plan")]])
-        )
-        try:
-            uid_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
-        except Exception:
-            raise StopPropagation
-
-        uid_raw = (uid_msg.text or "").strip()
-        try: await uid_msg.delete()
-        except Exception: pass
-
-        if uid_raw.lower() == "/cancel":
-            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_premium_plan")]]))
-            raise StopPropagation
-
-        if not uid_raw.isdigit():
-            await edit_or_reply(query, 
-                "<b>Not A Valid Integer, Start your process again.</b>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_prem_add")]])
-            )
-            raise StopPropagation
-
-        target_uid = int(uid_raw)
-        text = (
-            "<b>CHOOSE YOUR PLAN VALIDITY FOR THIS USER</b>\n\n"
-            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
-        )
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("3 Days", callback_data=f"master_prem_val:{target_uid}:3d")],
-            [InlineKeyboardButton("1 Week", callback_data=f"master_prem_val:{target_uid}:1w")],
-            [InlineKeyboardButton("1 Month", callback_data=f"master_prem_val:{target_uid}:1mo")],
-            [InlineKeyboardButton("Custom Time", callback_data=f"master_prem_val:{target_uid}:custom")],
-            [InlineKeyboardButton("‹ BACK", callback_data="master_premium_plan")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        raise StopPropagation
-
-    if data.startswith("master_prem_val:"):
-        _, target_uid_s, val_code = data.split(":")
-        target_uid = int(target_uid_s)
-        now = int(time.time())
-
-        if val_code == "custom":
-            await query.answer()
-            await edit_or_reply(query, 
-                "<b>SEND ME CUSTOM VALIDITY LIKE - 1h, 10d, 2mo, 1y</b>\n\n"
-                "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_prem_add")]])
-            )
-            try:
-                c_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
-            except Exception:
-                raise StopPropagation
-
-            c_raw = (c_msg.text or "").strip()
-            try: await c_msg.delete()
-            except Exception: pass
-
-            if c_raw.lower() == "/cancel":
-                await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_premium_plan")]]))
-                raise StopPropagation
-
-            mins = parse_time_string(c_raw)
-            exp = now + mins * 60
-            dur_str = format_time_minutes(mins)
+    # Free Limit
+    if data == "master_free_limit_menu":
+        f_limit = r.get("free_limit", {})
+        count = f_limit.get("count", 0)
+        num = f_limit.get("num", 0)
+        unit = f_limit.get("unit", "day")
+        is_on = bool(f_limit.get("enabled", False))
+        if is_on and count > 0:
+            status_desc = f"📊 <b>CURRENT FREE USAGE LIMIT:</b>\n* <b>FILES ALLOWED:</b> {count} FILES\n* <b>RESET PERIOD:</b> EVERY {num} {unit.upper()}(S)"
         else:
-            if val_code == "3d":
-                exp = now + 3 * 86400
-                dur_str = "3 Days"
-            elif val_code == "1w":
-                exp = now + 7 * 86400
-                dur_str = "1 Week"
-            else:
-                exp = now + 30 * 86400
-                dur_str = "1 Month"
-
-        user = await get_user(query.from_user.id)
-        p_users = list(user.get("premium_users", []))
-        p_users = [u for u in p_users if int(u.get("user_id", 0)) != target_uid]
-        p_users.append({"user_id": target_uid, "expires_at": exp, "added_at": now})
-        await update_user_info(query.from_user.id, {"premium_users": p_users})
-
-        await edit_or_reply(query, 
-            f"✨ <b>SUCCESSFULLY ADDED USER <code>{target_uid}</code> AS PREMIUM USER FOR {dur_str} ✅</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_premium_plan")]])
-        )
-        raise StopPropagation
-
-    if data == "master_prem_rem":
-        await query.answer()
-        await edit_or_reply(query, 
-            "<b>SEND USER ID TO REMOVE FROM PREMIUM:</b>\n\n"
-            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_premium_plan")]])
-        )
-        try:
-            r_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
-        except Exception:
-            raise StopPropagation
-
-        r_raw = (r_msg.text or "").strip()
-        try: await r_msg.delete()
-        except Exception: pass
-
-        if r_raw.lower() == "/cancel":
-            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_premium_plan")]]))
-            raise StopPropagation
-
-        if not r_raw.isdigit():
-            await edit_or_reply(query, "<b>Not A Valid Integer.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_premium_plan")]]))
-            raise StopPropagation
-
-        rem_uid = int(r_raw)
-        user = await get_user(query.from_user.id)
-        p_users = [u for u in user.get("premium_users", []) if int(u.get("user_id", 0)) != rem_uid]
-        await update_user_info(query.from_user.id, {"premium_users": p_users})
-
-        await edit_or_reply(query, 
-            f"🗑️ <b>SUCCESSFULLY REMOVED USER <code>{rem_uid}</code> FROM PREMIUM!</b>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_premium_plan")]])
-        )
-        raise StopPropagation
-
-    if data == "master_prem_list":
-        user = await get_user(query.from_user.id)
-        p_users = user.get("premium_users", [])
-        now = int(time.time())
-        lines = []
-        for pu in p_users:
-            uid = pu.get("user_id")
-            exp = int(pu.get("expires_at", 0))
-            if exp > now:
-                rem_mins = (exp - now) // 60
-                lines.append(f"• <code>{uid}</code> - Expires in: {format_time_minutes(rem_mins)}")
-        
-        if lines:
-            text = f"👥 <b>ACTIVE PREMIUM USERS:</b>\n\n" + "\n".join(lines) + f"\n\n<b>Total:</b> {len(lines)} users"
-        else:
-            text = "👥 <b>NO ACTIVE PREMIUM USERS FOUND!</b>"
-
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_premium_plan")]])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
-
-    # ---------------- FORCE SUBSCRIBE ----------------
-    if data == "master_fsub_menu":
-        user = await get_user(query.from_user.id)
-        channels = user.get("force_channels", [])
-        ch_text = "\n".join([f"• <code>{c}</code>" for c in channels]) if channels else "None"
+            status_desc = "⚠️ <b>FREE USAGE LIMIT:</b> 🚫 <b>DISABLED\n(UNLIMITED ACCESS)</b>"
+            
         text = (
-            "📢 <b>CUSTOM FORCE SUBSCRIBE:</b>\n\n"
-            "Users must join these channels to use your bot.\n\n"
-            f"<b>Connected Channels:</b>\n{ch_text}"
+            "🎟️ <b>FREE USAGE LIMIT:</b>\n\n"
+            "<b>FREE USAGE LIMIT ALLOWS YOU TO CONTROL HOW MANY FILES A USER CAN ACCESS FOR FREE THROUGH YOUR SHARE LINK. YOU CAN SET ANY CUSTOM LIMIT (E.G., DAYS, WEEKS, MONTHS, OR YEARS).</b>\n\n"
+            "⚠️ <b>NOTE:</b>\n"
+            "1. <b>IF NO LIMIT IS SET, THE FREE LIMIT FEATURE IS COMPLETELY DISABLED, AND USERS CAN ACCESS UNLIMITED FILES WITHOUT ANY RESTRICTIONS.</b>\n"
+            "2. <b>THIS FREE LIMIT FEATURE WILL ONLY WORK WHEN PREMIUM FEATURE OR TOKEN VERIFICATION FEATURE IS ENABLED.</b>\n\n"
+            "💡 <b>EXAMPLE:</b>\n"
+            "<b>IF YOU SET A LIMIT OF 5 FILES EVERY 1 MONTH, THEN A USER OPENING YOUR LINK CAN ONLY GET 5 FILES FOR FREE IN THAT MONTH. ONCE THE LIMIT IS REACHED, THEY MUST WAIT UNTIL THE MONTH RESETS TO GET MORE.</b>\n\n"
+            f"{status_desc}"
         )
-        markup = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("➕ ADD CHANNEL", callback_data="master_fsub_add"),
-                InlineKeyboardButton("🗑️ CLEAR ALL", callback_data="master_fsub_del")
-            ],
-            [InlineKeyboardButton("‹ BACK", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
-
-    if data == "master_fsub_add":
-        await query.answer()
-        me = client.me or (await client.get_me())
-        prompt_text = (
-            "<b>FORWARD A MESSAGE FROM CHANNEL TO ME,\n"
-            f"AND MAKE SURE @{me.username} IS ADMIN IN THAT CHANNEL.</b>\n\n"
-            "<code>/cancel</code> - <b>Cancel THIS PROCESS.</b>"
+        return await edit_or_reply(
+            query,
+            text,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("SET FREE USAGE LIMIT", callback_data="m_set_free_limit")],
+                [InlineKeyboardButton("DELETE FREE USAGE LIMIT", callback_data="m_del_free_limit")],
+                [InlineKeyboardButton("‹ BACK", callback_data="settings")]
+            ])
         )
-        await edit_or_reply(query, prompt_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_fsub_menu")]]))
-        try:
-            f_msg = await client.listen(chat_id=query.from_user.id, timeout=120)
-        except Exception:
-            raise StopPropagation
 
-        f_raw = (f_msg.text or "").strip()
-        try: await f_msg.delete()
-        except Exception: pass
+    if data == "m_del_free_limit":
+        save_master(free_limit={"enabled": False, "count": 0, "num": 0, "unit": "day"})
+        await query.answer("Free limit deleted!")
+        return await callbacks(client, type("Q", (), {"data": "master_free_limit_menu", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
 
-        if f_raw.lower() == "/cancel":
-            await edit_or_reply(query, "❌ <b>Process Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_fsub_menu")]]))
-            raise StopPropagation
-
-        cid = None
-        if f_msg.forward_from_chat:
-            cid = f_msg.forward_from_chat.id
-        elif f_raw.startswith("-100") or (f_raw.startswith("-") and f_raw[1:].isdigit()):
-            cid = int(f_raw)
-        elif f_raw.isdigit():
-            cid = int(f"-100{f_raw}")
-
-        if not cid:
-            await edit_or_reply(query, "❌ <b>Invalid Channel.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_fsub_menu")]]))
-            raise StopPropagation
-
-        user = await get_user(query.from_user.id)
-        chs = list(user.get("force_channels", []))
-        if cid not in chs:
-            chs.append(cid)
-            await update_user_info(query.from_user.id, {"force_channels": chs})
-
-        await edit_or_reply(query, "✅ <b>SUCCESSFULLY ADDED FORCE SUBSCRIBE CHANNEL!</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_fsub_menu")]]))
-        raise StopPropagation
-
-    if data == "master_fsub_del":
-        await update_user_info(query.from_user.id, {"force_channels": []})
-        await query.answer("Cleared force sub channels.", show_alert=True)
-        await edit_or_reply(query, "🗑️ <b>CLEARED ALL FORCE SUBSCRIBE CHANNELS</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_fsub_menu")]]))
-        raise StopPropagation
-
-    # ---------------- AUTO DELETE ----------------
-    if data == "master_auto_delete_menu":
-        user = await get_user(query.from_user.id)
-        ad_on = bool(user.get("auto_delete_enabled", False))
-        ad_mins = int(user.get("auto_delete_minutes", 15))
-        status_str = f"ENABLED ({ad_mins} mins) ✅" if ad_on else "DISABLED ❌"
-
+    # Protect & Auto Delete
+    if data == "protect_menu":
+        protect = bool(r.get("protect_content", False))
+        status_txt = "ON ✅" if protect else "OFF ❌"
+        tgl_btn = "OFF PROTECT CONTENT" if protect else "ON PROTECT CONTENT"
         text = (
-            "♻️ <b>AUTO DELETE SETTINGS:</b>\n\n"
-            "Automatically deletes files delivered by your bot after a set duration to prevent copyright issues.\n\n"
-            f"• <b>Status:</b> <code>{status_str}</code>"
+            "🔒 <b>PROTECT CONTENT:</b>\n\n"
+            "<b>PROTECT CONTENT: PREVENT USERS FROM FORWARDING AND SAVING MESSAGES SENT BY THIS BOT.</b>\n\n"
+            f"<b>PROTECT CONTENT - {status_txt}</b>"
         )
-        markup = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("5 min", callback_data="master_ad_set:5"),
-                InlineKeyboardButton("10 min", callback_data="master_ad_set:10"),
-                InlineKeyboardButton("15 min", callback_data="master_ad_set:15"),
-                InlineKeyboardButton("30 min", callback_data="master_ad_set:30")
-            ],
-            [InlineKeyboardButton("DISABLE ❌" if ad_on else "ENABLE ✅", callback_data="master_ad_toggle")],
-            [InlineKeyboardButton("‹ BACK", callback_data="master_settings")]
-        ])
-        await edit_or_reply(query, text, reply_markup=markup)
-        await query.answer()
-        raise StopPropagation
+        return await edit_or_reply(
+            query,
+            text,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(tgl_btn, callback_data="m_tgl_protect")],
+                [InlineKeyboardButton("‹ BACK", callback_data="settings")]
+            ])
+        )
 
-    if data.startswith("master_ad_set:"):
-        mins = int(data.split(":")[1])
-        await update_user_info(query.from_user.id, {"auto_delete_enabled": True, "auto_delete_minutes": mins})
-        await query.answer(f"Auto delete set to {mins} minutes!", show_alert=True)
-        return await callbacks(client, type('Q', (), {'data': 'master_auto_delete_menu', 'from_user': query.from_user, 'message': query.message, 'answer': query.answer})())
+    if data == "m_tgl_protect":
+        protect = not bool(r.get("protect_content", False))
+        save_master(protect_content=protect)
+        await query.answer(f"Protect Content {'Enabled' if protect else 'Disabled'}!")
+        return await callbacks(client, type("Q", (), {"data": "protect_menu", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
 
-    if data == "master_ad_toggle":
-        user = await get_user(query.from_user.id)
-        new_on = not bool(user.get("auto_delete_enabled", False))
-        await update_user_info(query.from_user.id, {"auto_delete_enabled": new_on})
-        await query.answer(f"Auto delete {'enabled' if new_on else 'disabled'}!", show_alert=True)
-        return await callbacks(client, type('Q', (), {'data': 'master_auto_delete_menu', 'from_user': query.from_user, 'message': query.message, 'answer': query.answer})())
-
-    if data == "settings_back":
-        buttons = [[
-            InlineKeyboardButton('💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ', url='https://www.youtube.com/@tech_as_0')
-        ],[
-            InlineKeyboardButton('🔍 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ', url=tg_link(SUPPORT_GROUP, 'ash_movie_j')),
-            InlineKeyboardButton('🤖 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ', url=tg_link(UPDATE_CHANNEL, 'MoviesGroupG3'))
-        ],[
-            InlineKeyboardButton('💁‍♀️ ʜᴇʟᴘ', callback_data='help'),
-            InlineKeyboardButton('😊 ᴀʙᴏᴜᴛ', callback_data='about')
-        ],[
-            InlineKeyboardButton('🤖 ᴄʀᴇᴀᴛᴇ ʏᴏᴜʀ ᴏᴡɴ ᴄʟᴏɴᴇ ʙᴏᴛ', callback_data='settings')
-        ]]
-        reply_markup = InlineKeyboardMarkup(buttons)
-        me = client.me or (await client.get_me())
-        caption = script.START_TXT.format(query.from_user.mention, me.mention)
-        if query.message.photo:
-            await query.message.edit_caption(caption=caption, reply_markup=reply_markup)
-        else:
-            await edit_or_reply(query, text=caption, reply_markup=reply_markup)
-        await query.answer()
-        raise StopPropagation
-
-    if data.startswith("manage_clone:"):
-        await manage_clone(client, query)
-        raise StopPropagation
-    if data.startswith("cm:"):
-        await clone_manage_action(client, query)
-        raise StopPropagation
-    if data.startswith("cmdelete:"):
-        await clone_delete(client, query)
-        raise StopPropagation
-
-
-async def set_pic_cmd(client, message):
-    user_id = message.from_user.id
-    pic_url = None
-    if message.reply_to_message and message.reply_to_message.photo:
-        pic_url = message.reply_to_message.photo.file_id
-    elif len(message.command) > 1:
-        pic_url = message.command[1].strip()
-    if not pic_url:
-        return await message.reply_text("❌ <b>Usage:</b>\nSend <code>/set_pic https://example.com/image.jpg</code> or reply to a photo with <code>/set_pic</code>")
-    await update_user_info(user_id, {"start_pic": pic_url})
-    await message.reply_text("✅ <b>Custom start photo saved successfully!</b>")
-
-
-async def del_pic_cmd(client, message):
-    user_id = message.from_user.id
-    await update_user_info(user_id, {"start_pic": None})
-    await message.reply_text("✅ <b>Start photo reset to default.</b>")
-
-
-async def get_pic_cmd(client, message):
-    user_id = message.from_user.id
-    user = await get_user(user_id)
-    pic = user.get("start_pic")
-    if pic:
-        try:
-            return await message.reply_photo(photo=pic, caption="🖼️ <b>Your Custom Start Photo</b>")
-        except Exception:
-            return await message.reply_text(f"🖼️ <b>Your Custom Start Photo URL:</b>\n{pic}")
-    await message.reply_text("ℹ️ <b>You are using default start photo.</b>")
-
-
-async def caption_cmd(client, message):
-    user_id = message.from_user.id
-    if len(message.command) == 1:
-        user = await get_user(user_id)
-        cap = user.get("custom_caption")
-        if cap:
-            return await message.reply_text(f"📝 <b>Your Custom Caption:</b>\n\n<code>{cap}</code>\n\nUse <code>/del_caption</code> to remove or <code>/caption [new text]</code> to change.")
-        return await message.reply_text("📝 <b>Custom Caption</b>\n\n<b>Usage:</b> <code>/caption Your custom caption {file_name} {file_size}</code>\n\n<b>Fillings:</b>\n• {file_name} : File Name\n• {file_size} : File Size\n• {caption} : Original Caption")
-    raw = message.text.split(None, 1)[1].strip()
-    if raw.lower() in ("off", "none", "delete", "clear"):
-        await update_user_info(user_id, {"custom_caption": None})
-        return await message.reply_text("✅ <b>Custom caption deleted successfully!</b>")
-    await update_user_info(user_id, {"custom_caption": raw})
-    await message.reply_text(f"✅ <b>Custom caption saved successfully!</b>\n\n<b>Preview:</b>\n{raw}")
-
-
-async def del_caption_cmd(client, message):
-    user_id = message.from_user.id
-    await update_user_info(user_id, {"custom_caption": None})
-    await message.reply_text("✅ <b>Custom caption deleted successfully!</b>")
-
-
-async def button_cmd(client, message):
-    user_id = message.from_user.id
-    if len(message.command) == 1:
-        user = await get_user(user_id)
-        btns = user.get("custom_buttons") or []
-        if btns:
-            btn_lines = "\n".join([f"• [{b.get('text')}]({b.get('url')})" for b in btns])
-            return await message.reply_text(f"➕ <b>Your Custom Buttons:</b>\n\n{btn_lines}\n\nUse <code>/button [Text] - [URL]</code> to add or <code>/del_button</code> to clear.", disable_web_page_preview=True)
-        return await message.reply_text("➕ <b>Custom Button</b>\n\n<b>Usage:</b> <code>/button Join Channel - https://t.me/channel</code>\nUse <code>/del_button</code> to remove.")
-    raw = message.text.split(None, 1)[1].strip()
-    if raw.lower() in ("off", "none", "delete", "clear"):
-        await update_user_info(user_id, {"custom_buttons": []})
-        return await message.reply_text("✅ <b>Custom buttons cleared!</b>")
-    if "-" not in raw:
-        return await message.reply_text("❌ <b>Invalid Format:</b>\nUse <code>/button Button Text - https://link.com</code>")
-    btn_text, btn_url = [x.strip() for x in raw.split("-", 1)]
-    if not (btn_url.startswith("http://") or btn_url.startswith("https://") or btn_url.startswith("tg://")):
-        return await message.reply_text("❌ URL must start with http://, https:// or tg://")
-    user = await get_user(user_id)
-    btns = list(user.get("custom_buttons") or [])
-    btns.append({"text": btn_text, "url": btn_url})
-    await update_user_info(user_id, {"custom_buttons": btns})
-    await message.reply_text(f"✅ <b>Custom button added:</b> [{btn_text}]({btn_url})", disable_web_page_preview=True)
-
-
-async def del_button_cmd(client, message):
-    user_id = message.from_user.id
-    await update_user_info(user_id, {"custom_buttons": []})
-    await message.reply_text("✅ <b>Custom buttons cleared!</b>")
-
-
-async def protect_cmd(client, message):
-    user_id = message.from_user.id
-    if len(message.command) == 1:
-        user = await get_user(user_id)
-        state = bool(user.get("protect_content", False))
-        return await message.reply_text(f"🛡️ <b>Protect Content:</b> <code>{'ENABLED ✅' if state else 'DISABLED ❌'}</code>\n\nUse <code>/protect on</code> or <code>/protect off</code> to toggle.")
-    arg = message.command[1].strip().lower()
-    val = arg in ("on", "enable", "1", "yes", "true")
-    await update_user_info(user_id, {"protect_content": val})
-    await message.reply_text(f"🛡️ <b>Protect Content has been {'ENABLED ✅' if val else 'DISABLED ❌'}</b>")
-
-
-async def shortener_cmd(client, message):
-    user_id = message.from_user.id
-    user = await get_user(user_id)
-    site = user.get("base_site") or "Not set"
-    api = user.get("shortener_api") or "Not set"
-    await message.reply_text(
-        f"🔗 <b>Link Shortener Settings</b>\n\n"
-        f"• <b>Base Site:</b> <code>{site}</code>\n"
-        f"• <b>API Key:</b> <code>{api}</code>\n\n"
-        f"<b>Commands to configure:</b>\n"
-        f"• <code>/base_site yoursite.com</code> (or <code>/base_site None</code> to remove)\n"
-        f"• <code>/api your_api_key</code>"
-    )
-
+    # Fallback
+    await query.answer()
 
 def register(client):
-    client.add_handler(MessageHandler(settings, filters.command("settings") & filters.private), group=-1)
-    client.add_handler(MessageHandler(set_pic_cmd, filters.command(["set_pic", "setpic"]) & filters.private), group=-1)
-    client.add_handler(MessageHandler(del_pic_cmd, filters.command(["del_pic", "delpic"]) & filters.private), group=-1)
-    client.add_handler(MessageHandler(get_pic_cmd, filters.command(["get_pic", "getpic"]) & filters.private), group=-1)
-    client.add_handler(MessageHandler(caption_cmd, filters.command(["caption", "set_caption"]) & filters.private), group=-1)
-    client.add_handler(MessageHandler(del_caption_cmd, filters.command(["del_caption", "delcaption"]) & filters.private), group=-1)
-    client.add_handler(MessageHandler(button_cmd, filters.command(["button", "set_button"]) & filters.private), group=-1)
-    client.add_handler(MessageHandler(del_button_cmd, filters.command(["del_button", "delbutton"]) & filters.private), group=-1)
-    client.add_handler(MessageHandler(protect_cmd, filters.command(["protect", "protect_content"]) & filters.private), group=-1)
-    client.add_handler(MessageHandler(shortener_cmd, filters.command("shortener") & filters.private), group=-1)
-    client.add_handler(
-        CallbackQueryHandler(
-            callbacks,
-            filters.regex(r"^(settings|master_|settings_back|log_channel|database_channel|my_clone|my_clones|add_clone_prompt|clone|google_backup|google_connect|link_shortener|delete_shortener|add_shortener|custom_caption|caption_|custom_button|button_|protect_|start_photo_menu|start_pic_|manage_clone|cm:|cmdelete:)"),
-        ),
-        group=-1,
-    )
+    client.add_handler(MessageHandler(settings, filters.command(["settings"]) & filters.private), group=2)
+    client.add_handler(CallbackQueryHandler(callbacks), group=2)
