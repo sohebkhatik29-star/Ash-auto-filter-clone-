@@ -3,7 +3,6 @@ import asyncio
 import time
 import re
 import os
-import psutil
 import datetime
 from pyrogram import filters, Client
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
