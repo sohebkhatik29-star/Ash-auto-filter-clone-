@@ -27,7 +27,7 @@ async def clean_help(client, message):
         "• /special_link — Create a special link\n"
         "• /universal_link — Create a universal link\n"
         "• /shortener — Shortener settings\n"
-        "• /settings — Customize your clone\n"
+        "• /settings — Customize bot\n"
         "• /api KEY — Set or view shortener API\n"
         "• /base_site SITE — Set or view shortener site\n"
         "• /clone — Create your own clone\n\n"
