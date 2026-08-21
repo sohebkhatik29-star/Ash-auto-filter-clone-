@@ -14,6 +14,7 @@ from AshCore.bot.clients import initialize_clients
 from AshCore.utils.keepalive import ping_server
 from plugins.clone import restart_bots
 from clone_plugins.clone_manager_fix import register_clone_manager_navigation
+from clone_plugins.master_clone_forward import register_master_clone_forward_handler
 
 logging.config.fileConfig('logging.conf')
 logging.getLogger().setLevel(logging.INFO)
@@ -84,6 +85,7 @@ async def start():
     print('\nInitializing ASH FILE STORE & CLONE MANAGER BOT')
     await StreamBot.start()
     register_clone_manager_navigation(StreamBot, master=True)
+    register_master_clone_forward_handler(StreamBot)
     bot_info = await StreamBot.get_me()
     StreamBot.username = bot_info.username
     try:
