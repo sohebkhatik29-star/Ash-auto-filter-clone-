@@ -17,17 +17,130 @@ MAX_USER_CLONES = master_manager.MAX_USER_CLONES
 manage_clones_markup = master_manager.manage_clones_markup
 master_settings.manage_clones_markup = manage_clones_markup
 
+
+def master_clone_hub_markup():
+    """The only three actions shown when entering the master clone manager."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🤖 MY CLONE BOT", callback_data="master_customize_clones")],
+        [InlineKeyboardButton("➕ ADD CLONE BOT", callback_data="create_clone_prompt")],
+        [InlineKeyboardButton("‹ BACK", callback_data="master_clone_manager_back")],
+    ])
+
+
+async def send_master_clone_hub(client, target):
+    """Show the three-button clone manager without changing any other menu."""
+    text = (
+        "🤖 <b>MY CLONE BOT</b>\n\n"
+        "Choose an option below to manage your clone bots."
+    )
+    msg = getattr(target, "message", None) or target
+    try:
+        await msg.edit_caption(caption=text, reply_markup=master_clone_hub_markup())
+    except Exception:
+        try:
+            await msg.edit_text(text=text, reply_markup=master_clone_hub_markup())
+        except Exception:
+            await client.send_message(
+                chat_id=getattr(target, "from_user", None).id if getattr(target, "from_user", None) else msg.chat.id,
+                text=text,
+                reply_markup=master_clone_hub_markup(),
+            )
+
+
+async def send_master_start_menu(client, query):
+    """Return to the existing master start menu exactly as before."""
+    me = client.me or (await client.get_me())
+    buttons = [
+        [
+            InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"),
+            InlineKeyboardButton("🤖 MY OWN BOT", callback_data="clone_my_bots"),
+        ],
+        [
+            InlineKeyboardButton("💁 HELP", callback_data="help"),
+            InlineKeyboardButton("ℹ️ ABOUT", callback_data="about"),
+        ],
+        [
+            InlineKeyboardButton(
+                "📢 UPDATE CHANNEL",
+                url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"),
+            )
+        ],
+    ]
+    caption = script.CLONE_START_TXT.format(query.from_user.mention, me.mention)
+    if query.message.photo:
+        return await query.message.edit_caption(
+            caption=caption,
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+    return await query.message.edit_text(
+        caption,
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+@Client.on_callback_query(filters.regex(r"^clone_my_bots$"))
+async def clone_my_bots_entry(client, query):
+    """
+    This is the single entry point for MY OWN BOT.
+
+    From a clone: open the master bot's clone manager.
+    From the master: show the new three-button clone manager.
+    """
+    me = client.me or (await client.get_me())
+    is_clone = bool(me and me.username and me.username.lower() != BOT_USERNAME.lower())
+
+    if is_clone:
+        try:
+            await query.answer(
+                url=f"https://t.me/{BOT_USERNAME}?start=my_clones"
+            )
+        except Exception:
+            pass
+        raise StopPropagation
+
+    await query.answer()
+    await send_master_clone_hub(client, query)
+    raise StopPropagation
+
+
+@Client.on_callback_query(filters.regex(r"^master_customize_clones$"))
+async def master_customize_clones(client, query):
+    """Open the user's clone list only after MY CLONE BOT is selected."""
+    await query.answer()
+    text = (
+        "✨ <b>HERE ARE YOUR ACTIVE BOTS WITH POWERFUL CLONING AND CUSTOMIZATION</b>\n\n"
+        "📲 <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
+    )
+    await master_manager.edit_or_reply(
+        query,
+        text,
+        reply_markup=manage_clones_markup(
+            query.from_user.id,
+            back_cb="master_clone_manager_back",
+            is_clone=False,
+        ),
+    )
+    raise StopPropagation
+
+
+@Client.on_callback_query(filters.regex(r"^master_clone_manager_back$"))
+async def master_clone_manager_back(client, query):
+    """Back from the clone manager returns to the existing start menu."""
+    await query.answer()
+    await send_master_start_menu(client, query)
+    raise StopPropagation
+
+
 @Client.on_callback_query(filters.regex(r"^clone_limit$"))
 async def clone_limit(client, query):
     await query.answer("❌ You can create maximum 5 clone bots.", show_alert=True)
+    raise StopPropagation
+
 
 @Client.on_callback_query(filters.regex(r"^create_clone_prompt$"))
 async def create_clone_prompt(client, query):
     return await master_manager.handle_clone_callbacks(client, query)
 
-# IMPORTANT: do not register a second handler for clone_my_bots here.
-# master_manager.handle_clone_callbacks already handles that callback.
-# Keeping a second handler makes Telegram receive/render the same panel twice.
 
 @Client.on_message(filters.command("start") & filters.private)
 async def clone_only_start(client, message):
@@ -78,14 +191,14 @@ async def clone_only_start(client, message):
         )
     raise StopPropagation
 
+
 @Client.on_message(filters.command("start") & filters.private)
 async def master_my_clones_start(client, message):
-    """Deep-link target retained for backwards compatibility."""
+    """Deep-link target used by MY OWN BOT inside a clone."""
     if len(message.command) != 2 or message.command[1].lower() != "my_clones":
         return
     m = master_manager.db()
     if m is None or m.bots.find_one({"bot_id": client.me.id}):
         return
-    from plugins.master_settings import send_manage_clones
-    await send_manage_clones(client, message.from_user.id)
+    await send_master_clone_hub(client, message)
     raise StopPropagation
