@@ -86,16 +86,9 @@ def master_settings_markup():
         [InlineKeyboardButton("‹ BACK", callback_data="settings_back")]
     ])
 
-def manage_clones_markup(uid):
-    docs = docs_for(uid)
-    rows = []
-    for d in docs:
-        bid = int(d["bot_id"])
-        name = d.get("name") or d.get("username") or str(bid)
-        rows.append([InlineKeyboardButton(f"🤖 @{name} ↗", callback_data=f"manage_clone:{bid}")])
-    rows.append([InlineKeyboardButton("➕ CREATE CLONE ➕", callback_data="create_clone_prompt")])
-    rows.append([InlineKeyboardButton("‹ BACK", callback_data="settings_back")])
-    return InlineKeyboardMarkup(rows)
+def manage_clones_markup(uid, back_cb="settings_back"):
+    from clone_plugins import master_manager
+    return master_manager.manage_clones_markup(uid, back_cb=back_cb)
 
 def master_token_verification_main_markup():
     return InlineKeyboardMarkup([
@@ -367,12 +360,17 @@ async def callbacks(client, query):
         )
         return await edit_or_reply(query, text, reply_markup=master_settings_markup())
 
-    if data in ("my_clone", "my_clones"):
+    if data in ("my_clone", "my_clones", "clone_my_bots"):
+        from clone_plugins import master_manager
         text = (
             "✨ <b>HERE ARE YOUR ACTIVE BOTS WITH POWERFUL CLONING AND CUSTOMIZATION</b>\n\n"
             "📲 <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
         )
-        return await edit_or_reply(query, text, reply_markup=manage_clones_markup(user_id))
+        return await edit_or_reply(query, text, reply_markup=master_manager.manage_clones_markup(user_id, back_cb="settings_back"))
+
+    if data in ("create_clone_prompt", "clone_limit") or data.startswith(("manage_clone:", "cm:", "cad:", "cmdelete:")):
+        from clone_plugins import master_manager
+        return await master_manager.handle_clone_callbacks(client, query)
 
     # --- TOKEN VERIFICATION --- #
     if data in ("master_token_main", "master_token_verification"):

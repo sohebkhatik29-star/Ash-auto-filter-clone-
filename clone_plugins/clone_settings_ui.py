@@ -395,6 +395,10 @@ async def callbacks(client, query):
     r = record(client)
     me = client.me
     
+    if data in ("my_clone", "my_clones", "clone_my_bots", "create_clone_prompt", "clone_limit") or data.startswith(("manage_clone:", "cm:", "cad:", "cmdelete:")):
+        from clone_plugins import master_manager
+        return await master_manager.handle_clone_callbacks(client, query)
+
     if data in ("settings", "settings_back", "cset:home"):
         text = (
             "🌟 <b>AVAILABLE PLANS • 03 DAYS - 40 ...</b>\n\n"

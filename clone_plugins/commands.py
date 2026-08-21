@@ -223,7 +223,7 @@ async def start(client, message):
 
     if len(message.command) != 2:
         buttons = [
-            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 CREATE MY OWN CLONE", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
+            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY OWN BOT", callback_data="clone_my_bots")],
             [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
             [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
         ]
@@ -487,7 +487,7 @@ async def callbacks(client, query):
     if data == "start_back":
         me = client.me or (await client.get_me())
         buttons = [
-            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 CREATE MY OWN CLONE", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
+            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY OWN BOT", callback_data="clone_my_bots")],
             [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
             [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
         ]

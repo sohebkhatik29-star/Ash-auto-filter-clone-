@@ -10,6 +10,7 @@ from clone_plugins import single_link
 from clone_plugins import custom_batch as cbatch
 from clone_plugins import channel_batch as chbatch
 from clone_plugins import special_link
+from clone_plugins import master_manager
 
 
 async def clean_help(client, message):
@@ -45,6 +46,7 @@ async def clean_help(client, message):
 
 def register_clone_handlers(client):
     cset.register(client)
+    master_manager.register(client)
     single_link.register(client)
     cbatch.register(client, base_group=-1)
     chbatch.register(client, base_group=-3)
