@@ -238,7 +238,19 @@ async def start(client, message):
                 return await message.reply(caption, reply_markup=InlineKeyboardMarkup(buttons))
 
     data = message.command[1]
-    if data.lower() in ("clone", "settings"):
+    if data.lower() == "clone":
+        from clone_plugins.master_manager import manage_clones_markup
+        text = (
+            "👑 <b>CLONE MENU</b>\n\n"
+            "<i>\" WELCOME TO YOUR CLONE BOT MANAGEMENT HUB! CUSTOMIZE YOUR BOT SETTINGS OR MANAGE ITS STATUS USING THE OPTIONS BELOW. \"</i>\n\n"
+            "⚙️ <b>QUICK COMMANDS</b>\n\n"
+            "🚀 /activate - ACTIVATE YOUR CLONE BOT\n"
+            "🗑️ /delete - PERMANENTLY DELETE YOUR CLONE BOT\n\n"
+            "🎨 <b>BOT CUSTOMIZATION</b>\n\n"
+            "✨ <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
+        )
+        return await message.reply(text, reply_markup=manage_clones_markup(message.from_user.id, back_cb="start_back", is_clone=True))
+    if data.lower() == "settings":
         from clone_plugins import clone_settings_ui as cset
         return await cset.settings(client, message)
 
@@ -511,20 +523,34 @@ async def callbacks(client, query):
                 pass
         return await query.message.reply(full_text)
 
-    # Settings callbacks are fully handled by clone_settings_ui
+    # Settings and clone management callbacks are handled by dedicated modules
     if data in (
         "settings", "settings_back", "log_channel", "set_log_channel", "delete_log_channel",
         "database_channel", "set_database_channel", "delete_database_channel",
-        "admins_menu", "add_admin_prompt",
+        "admins_menu", "add_admin_prompt", "my_clone", "my_clones", "clone_my_bots", "create_clone_prompt", "clone_limit",
         "link_shortener", "add_shortener", "delete_shortener",
         "custom_caption", "caption_see", "caption_delete", "caption_edit",
         "custom_button", "button_add", "button_delete", "protect_menu", "protect_toggle", "protect_on", "protect_off"
-    ) or data.startswith(("admin_info:", "adm_tgl:", "adm_trans:", "adm_rem:", "clone_", "cset_")):
+    ) or data.startswith(("admin_info:", "adm_tgl:", "adm_trans:", "adm_rem:", "clone_", "cset_", "manage_clone:", "cm:", "cad:", "cmdelete:")):
         return
     try:
         await query.answer()
     except Exception:
         pass
+
+
+async def clone_command(client, message):
+    from clone_plugins.master_manager import manage_clones_markup
+    text = (
+        "👑 <b>CLONE MENU</b>\n\n"
+        "<i>\" WELCOME TO YOUR CLONE BOT MANAGEMENT HUB! CUSTOMIZE YOUR BOT SETTINGS OR MANAGE ITS STATUS USING THE OPTIONS BELOW. \"</i>\n\n"
+        "⚙️ <b>QUICK COMMANDS</b>\n\n"
+        "🚀 /activate - ACTIVATE YOUR CLONE BOT\n"
+        "🗑️ /delete - PERMANENTLY DELETE YOUR CLONE BOT\n\n"
+        "🎨 <b>BOT CUSTOMIZATION</b>\n\n"
+        "✨ <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
+    )
+    return await message.reply(text, reply_markup=manage_clones_markup(message.from_user.id, back_cb="start_back", is_clone=True))
 
 
 def register(client):
@@ -533,6 +559,7 @@ def register(client):
     client.add_handler(MessageHandler(help_command,filters.command("help")&private),group=0)
     client.add_handler(MessageHandler(id_command,filters.command("id")&private),group=0)
     client.add_handler(MessageHandler(customize_command,filters.command("customize")&private),group=0)
+    client.add_handler(MessageHandler(clone_command,filters.command("clone")&private),group=0)
     client.add_handler(MessageHandler(genlink,filters.command(["link","genlink"])&private),group=1)
     client.add_handler(MessageHandler(universal_link,filters.command("universal_link")&private),group=1)
     client.add_handler(MessageHandler(api_handler,filters.command("api")&private),group=1)

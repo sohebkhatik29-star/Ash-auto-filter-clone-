@@ -13,8 +13,6 @@ from AshCore.bot import StreamBot
 from AshCore.bot.clients import initialize_clients
 from AshCore.utils.keepalive import ping_server
 from plugins.clone import restart_bots
-from clone_plugins.clone_manager_fix import register_clone_manager_navigation
-from clone_plugins.master_clone_forward import register_master_clone_forward_handler
 
 logging.config.fileConfig('logging.conf')
 logging.getLogger().setLevel(logging.INFO)
@@ -84,21 +82,15 @@ async def setup_main_menu():
 async def start():
     print('\nInitializing ASH FILE STORE & CLONE MANAGER BOT')
     await StreamBot.start()
-    register_clone_manager_navigation(StreamBot, master=True)
-    register_master_clone_forward_handler(StreamBot)
     bot_info = await StreamBot.get_me()
     StreamBot.username = bot_info.username
     try:
         from plugins.master_settings import register as register_master_settings
-        from clone_plugins.commands import register as register_commands
-        from clone_plugins.advanced import register as register_advanced
         from clone_plugins.single_link import register as register_single_link
         from clone_plugins.custom_batch import register as register_custom_batch
         from clone_plugins.channel_batch import register as register_channel_batch
         from clone_plugins.special_link import register as register_special_link
         register_master_settings(StreamBot)
-        register_commands(StreamBot)
-        register_advanced(StreamBot)
         # The master bot also supports the same interactive single-link flow.
         register_single_link(StreamBot)
         # Custom batch, channel batch, and special link must run with high priority and stop propagation

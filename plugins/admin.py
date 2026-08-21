@@ -1,7 +1,7 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 
-from config import ADMINS
+from config import ADMINS, BOT_USERNAME
 from plugins.dbusers import db
 from plugins.clone import mongo_db
 
@@ -19,6 +19,9 @@ def admin_markup():
 
 @Client.on_message(filters.command("admin") & filters.private & filters.user(ADMINS))
 async def admin_panel(client, message):
+    me = client.me or (await client.get_me())
+    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
+        return
     await message.reply_text(
         "<b>⚙️ ADMIN PANEL</b>\n\nChoose an option below:",
         reply_markup=admin_markup(),
@@ -27,6 +30,9 @@ async def admin_panel(client, message):
 
 @Client.on_message(filters.command("stats") & filters.private & filters.user(ADMINS))
 async def admin_stats_command(client, message):
+    me = client.me or (await client.get_me())
+    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
+        return
     users = await db.total_users_count()
     clones = await mongo_db.bots.count_documents({})
     await message.reply_text(
@@ -38,6 +44,9 @@ async def admin_stats_command(client, message):
 
 @Client.on_callback_query(filters.regex(r"^admin_(stats|clones|broadcast|close)$"))
 async def admin_callbacks(client, query: CallbackQuery):
+    me = client.me or (await client.get_me())
+    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
+        return
     if query.from_user.id not in ADMINS:
         await query.answer("Not authorized.", show_alert=True)
         return

@@ -5,7 +5,7 @@
 from pyrogram.errors import InputUserDeactivated, UserNotParticipant, FloodWait, UserIsBlocked, PeerIdInvalid
 from plugins.dbusers import db
 from pyrogram import Client, filters
-from config import ADMINS
+from config import ADMINS, BOT_USERNAME
 import asyncio
 import datetime
 import time
@@ -40,6 +40,9 @@ async def broadcast_messages(user_id, message):
 
 @Client.on_message(filters.command("broadcast") & filters.user(ADMINS) & filters.reply)
 async def verupikkals(bot, message):
+    me = bot.me or (await bot.get_me())
+    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
+        return
     users = await db.get_all_users()
     b_msg = message.reply_to_message
     sts = await message.reply_text(text='**Broadcasting your messages...**')

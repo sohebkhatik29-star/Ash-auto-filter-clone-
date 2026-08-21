@@ -11,7 +11,6 @@ from clone_plugins import custom_batch as cbatch
 from clone_plugins import channel_batch as chbatch
 from clone_plugins import special_link
 from clone_plugins import master_manager
-from clone_plugins.clone_manager_fix import register_clone_manager_navigation
 
 
 async def clean_help(client, message):
@@ -46,11 +45,6 @@ async def clean_help(client, message):
 
 
 def register_clone_handlers(client):
-    # This is intentionally registered first at a higher-priority group so
-    # MY OWN BOT on a clone opens the master clone manager instead of the
-    # normal clone list handler.
-    register_clone_manager_navigation(client, master=False)
-
     cset.register(client)
     master_manager.register(client)
     single_link.register(client)
@@ -62,6 +56,7 @@ def register_clone_handlers(client):
     command_map = {
         "start": cmd.start,
         "help": clean_help,
+        "clone": cmd.clone_command,
         "getlink": single_link.genlink_prompt,
         "link": single_link.genlink_prompt,
         "genlink": single_link.genlink_prompt,

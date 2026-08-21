@@ -483,6 +483,9 @@ async def start(client, message):
 
 @Client.on_message(filters.command("help") & filters.private)
 async def help_command_handler(client, message):
+    me = client.me or (await client.get_me())
+    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
+        return
     buttons = [[
         InlineKeyboardButton('Hᴏᴍᴇ', callback_data='start'),
         InlineKeyboardButton('🔒 Cʟᴏsᴇ', callback_data='close_data')
@@ -504,12 +507,18 @@ async def help_command_handler(client, message):
 
 @Client.on_message(filters.command("settings") & filters.private)
 async def settings_cmd_handler(client, message):
+    me = client.me or (await client.get_me())
+    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
+        return
     from plugins.master_settings import send_settings_menu
     return await send_settings_menu(client, message)
 
 
 @Client.on_message(filters.command("shortener") & filters.private)
 async def shortener_cmd_handler(client, message):
+    me = client.me or (await client.get_me())
+    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
+        return
     user_id = message.from_user.id
     user = await get_user(user_id)
     if not (user.get("base_site") and user.get("shortener_api")):
@@ -538,6 +547,9 @@ async def shortener_cmd_handler(client, message):
 
 @Client.on_message(filters.command('api') & filters.private)
 async def shortener_api_handler(client, m: Message):
+    me = client.me or (await client.get_me())
+    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
+        return
     user_id = m.from_user.id
     user = await get_user(user_id)
     cmd = m.command
@@ -551,12 +563,12 @@ async def shortener_api_handler(client, m: Message):
         await update_user_info(user_id, {"shortener_api": api})
         await m.reply("<b>Shortener API updated successfully to</b> " + api)
 
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
 
 @Client.on_message(filters.command("base_site") & filters.private)
 async def base_site_handler(client, m: Message):
+    me = client.me or (await client.get_me())
+    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
+        return
     user_id = m.from_user.id
     user = await get_user(user_id)
     cmd = m.command
@@ -601,6 +613,9 @@ async def safe_edit_menu(query: CallbackQuery, text: str, reply_markup=None):
 
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
+    me = client.me or (await client.get_me())
+    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
+        return
     try:
         from plugins.master_settings import cancel_user_listeners
         cancel_user_listeners(client, query.message.chat.id if query.message else query.from_user.id, query.from_user.id)

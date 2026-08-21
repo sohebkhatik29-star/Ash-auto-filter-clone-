@@ -54,20 +54,37 @@ async def edit_or_reply(query_or_msg, text, reply_markup=None, disable_web_page_
     msg = getattr(query_or_msg, "message", None) or query_or_msg
     if not msg:
         return
-    if getattr(msg, "photo", None) or getattr(msg, "media", None):
-        try:
-            return await msg.edit_caption(caption=text, reply_markup=reply_markup)
-        except Exception:
+    try:
+        if getattr(msg, "photo", None) or getattr(msg, "media", None):
             try:
-                await msg.delete()
-            except Exception:
-                pass
-            return await msg.reply_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
-    else:
-        try:
-            return await msg.edit_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
-        except Exception:
-            return await msg.reply_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+                return await msg.edit_caption(caption=text, reply_markup=reply_markup)
+            except Exception as e:
+                err = str(e).upper()
+                if "MESSAGE_NOT_MODIFIED" in err:
+                    return msg
+                try:
+                    return await msg.edit_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+                except Exception:
+                    pass
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
+                return await msg.reply_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+        else:
+            try:
+                return await msg.edit_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+            except Exception as e:
+                err = str(e).upper()
+                if "MESSAGE_NOT_MODIFIED" in err:
+                    return msg
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
+                return await msg.reply_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+    except Exception:
+        pass
 
 # ----------------- MARKUPS & MENUS ----------------- #
 
@@ -334,13 +351,19 @@ async def send_settings_menu(client, message_or_user_id):
     return await client.send_message(uid, text, reply_markup=master_settings_markup())
 
 async def send_manage_clones(client, user_id, message=None):
+    from clone_plugins import master_manager
     text = (
-        "✨ <b>HERE ARE YOUR ACTIVE BOTS WITH POWERFUL CLONING AND CUSTOMIZATION</b>\n\n"
-        "📲 <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
+        "👑 <b>CLONE MENU</b>\n\n"
+        "<i>\" WELCOME TO YOUR CLONE BOT MANAGEMENT HUB! CUSTOMIZE YOUR BOT SETTINGS OR MANAGE ITS STATUS USING THE OPTIONS BELOW. \"</i>\n\n"
+        "⚙️ <b>QUICK COMMANDS</b>\n\n"
+        "🚀 /activate - ACTIVATE YOUR CLONE BOT\n"
+        "🗑️ /delete - PERMANENTLY DELETE YOUR CLONE BOT\n\n"
+        "🎨 <b>BOT CUSTOMIZATION</b>\n\n"
+        "✨ <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
     )
     if message:
-        return await edit_or_reply(message, text, reply_markup=manage_clones_markup(user_id))
-    return await client.send_message(user_id, text, reply_markup=manage_clones_markup(user_id))
+        return await edit_or_reply(message, text, reply_markup=master_manager.manage_clones_markup(user_id, back_cb="settings_back", is_clone=False))
+    return await client.send_message(user_id, text, reply_markup=master_manager.manage_clones_markup(user_id, back_cb="settings_back", is_clone=False))
 
 # ----------------- CALLBACK QUERY ROUTER ----------------- #
 
@@ -363,10 +386,15 @@ async def callbacks(client, query):
     if data in ("my_clone", "my_clones", "clone_my_bots"):
         from clone_plugins import master_manager
         text = (
-            "✨ <b>HERE ARE YOUR ACTIVE BOTS WITH POWERFUL CLONING AND CUSTOMIZATION</b>\n\n"
-            "📲 <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
+            "👑 <b>CLONE MENU</b>\n\n"
+            "<i>\" WELCOME TO YOUR CLONE BOT MANAGEMENT HUB! CUSTOMIZE YOUR BOT SETTINGS OR MANAGE ITS STATUS USING THE OPTIONS BELOW. \"</i>\n\n"
+            "⚙️ <b>QUICK COMMANDS</b>\n\n"
+            "🚀 /activate - ACTIVATE YOUR CLONE BOT\n"
+            "🗑️ /delete - PERMANENTLY DELETE YOUR CLONE BOT\n\n"
+            "🎨 <b>BOT CUSTOMIZATION</b>\n\n"
+            "✨ <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
         )
-        return await edit_or_reply(query, text, reply_markup=master_manager.manage_clones_markup(user_id, back_cb="settings_back"))
+        return await edit_or_reply(query, text, reply_markup=master_manager.manage_clones_markup(user_id, back_cb="settings_back", is_clone=False))
 
     if data in ("create_clone_prompt", "clone_limit") or data.startswith(("manage_clone:", "cm:", "cad:", "cmdelete:")):
         from clone_plugins import master_manager

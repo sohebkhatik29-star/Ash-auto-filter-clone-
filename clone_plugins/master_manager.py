@@ -79,20 +79,37 @@ async def edit_or_reply(query_or_msg, text, reply_markup=None, disable_web_page_
     msg = getattr(query_or_msg, "message", None) or query_or_msg
     if not msg:
         return
-    if getattr(msg, "photo", None) or getattr(msg, "media", None):
-        try:
-            return await msg.edit_caption(caption=text, reply_markup=reply_markup)
-        except Exception:
+    try:
+        if getattr(msg, "photo", None) or getattr(msg, "media", None):
             try:
-                await msg.delete()
-            except Exception:
-                pass
-            return await msg.reply_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
-    else:
-        try:
-            return await msg.edit_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
-        except Exception:
-            return await msg.reply_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+                return await msg.edit_caption(caption=text, reply_markup=reply_markup)
+            except Exception as e:
+                err = str(e).upper()
+                if "MESSAGE_NOT_MODIFIED" in err:
+                    return msg
+                try:
+                    return await msg.edit_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+                except Exception:
+                    pass
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
+                return await msg.reply_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+        else:
+            try:
+                return await msg.edit_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+            except Exception as e:
+                err = str(e).upper()
+                if "MESSAGE_NOT_MODIFIED" in err:
+                    return msg
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
+                return await msg.reply_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+    except Exception:
+        pass
 
 async def edit_setting(query, bid, title, value):
     await edit_or_reply(query, f"{title}\n\n{value}", reply_markup=action_back(bid))
@@ -108,8 +125,13 @@ async def handle_clone_callbacks(client, query):
 
     if data in ("my_clone", "my_clones", "clone_my_bots"):
         text = (
-            "✨ <b>HERE ARE YOUR ACTIVE BOTS WITH POWERFUL CLONING AND CUSTOMIZATION</b>\n\n"
-            "📲 <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
+            "👑 <b>CLONE MENU</b>\n\n"
+            "<i>\" WELCOME TO YOUR CLONE BOT MANAGEMENT HUB! CUSTOMIZE YOUR BOT SETTINGS OR MANAGE ITS STATUS USING THE OPTIONS BELOW. \"</i>\n\n"
+            "⚙️ <b>QUICK COMMANDS</b>\n\n"
+            "🚀 /activate - ACTIVATE YOUR CLONE BOT\n"
+            "🗑️ /delete - PERMANENTLY DELETE YOUR CLONE BOT\n\n"
+            "🎨 <b>BOT CUSTOMIZATION</b>\n\n"
+            "✨ <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
         )
         me = client.me or (await client.get_me())
         is_clone = bool(me and me.username and me.username.lower() != BOT_USERNAME.lower())
@@ -136,9 +158,9 @@ async def handle_clone_callbacks(client, query):
         sess_token = start_user_session(user_id, "create_clone")
         prompt_text = (
             "🤖 <b>CREATE CLONE BOT:</b>\n\n"
-            "1) Create a bot using @BotFather\n"
-            "2) Then you will get a message with bot token\n"
-            "3) Send that bot token here\n\n"
+            "1) Create a bot using @BotFather.\n"
+            "2) Forward the BotFather message containing the bot token here.\n"
+            "3) I will automatically create your clone.\n\n"
             "<i>Send /cancel to abort.</i>"
         )
         await client.send_message(
@@ -368,12 +390,18 @@ async def _listen_and_create_clone(client, user_id, sess_token):
     if not is_user_session_active(user_id, sess_token):
         return
     clear_user_session(user_id)
-    txt = (ans.text or "").strip()
+    txt = (ans.text or getattr(ans, "caption", None) or "").strip()
     if txt.lower() == "/cancel":
-        return await client.send_message(user_id, "<b>Cancelled 🚫</b>")
-    match = re.search(r"\b(\d+:[A-Za-z0-9_-]+)\b", txt)
+        return await client.send_message(user_id, "<b>Cancelled 🚫</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ MY CLONE BOTS", callback_data="my_clones")]]))
+    match = re.search(r"(\d{8,12}:[A-Za-z0-9_-]{30,50})", txt)
     if not match:
-        return await client.send_message(user_id, "<b>❌ Could not read the bot token. Please send a valid token.</b>")
+        match = re.search(r"\b(\d+:[A-Za-z0-9_-]+)\b", txt)
+    if not match:
+        return await client.send_message(
+            user_id,
+            "<b>❌ Could not read the bot token.\nPlease forward the BotFather token message again.</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ MY CLONE BOTS", callback_data="my_clones")]])
+        )
     bot_token = match.group(1)
 
     m = db()

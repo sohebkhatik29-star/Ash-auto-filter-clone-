@@ -69,60 +69,33 @@ def register_clone_handlers(client):
 
 @Client.on_message(filters.command("clone") & filters.private)
 async def clone(client, message):
+    me = client.me or (await client.get_me())
+    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
+        return
     if not CLONE_MODE or mongo_db is None:
         return await message.reply_text("Clone mode is disabled or database is not configured.")
 
-    # Hard per-user limit: maximum five clone records, regardless of whether
-    # creation was started from /clone or the manager's ADD BOT button.
-    try:
-        current_count = mongo_db.bots.count_documents({"user_id": int(message.from_user.id)})
-        if current_count >= 5:
-            return await message.reply_text("❌ <b>You can create maximum 5 clone bots.</b>")
-    except Exception:
-        pass
-
-    prompt = (
-        "1) create a bot using @BotFather\n"
-        "2) Then you will get a message with bot token\n"
-        "3) Send that bot token to me"
+    from clone_plugins.master_manager import manage_clones_markup
+    text = (
+        "👑 <b>CLONE MENU</b>\n\n"
+        "<i>\" WELCOME TO YOUR CLONE BOT MANAGEMENT HUB! CUSTOMIZE YOUR BOT SETTINGS OR MANAGE ITS STATUS USING THE OPTIONS BELOW. \"</i>\n\n"
+        "⚙️ <b>QUICK COMMANDS</b>\n\n"
+        "🚀 /activate - ACTIVATE YOUR CLONE BOT\n"
+        "🗑️ /delete - PERMANENTLY DELETE YOUR CLONE BOT\n\n"
+        "🎨 <b>BOT CUSTOMIZATION</b>\n\n"
+        "✨ <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
     )
-    token_msg = await client.ask(message.chat.id, prompt)
-    if (token_msg.text or "").strip() == "/cancel":
-        return await message.reply_text("<b>Cancelled 🚫</b>")
-
-    match = re.search(r"\b(\d+:[A-Za-z0-9_-]+)\b", token_msg.text or "")
-    if not match:
-        return await message.reply_text("<b>❌ Could not read the bot token. Please send a valid token.</b>")
-    bot_token = match.group(1)
-
-    msg = await message.reply_text("<b>👨‍💻 Creating your clone...</b>")
-    try:
-        # Re-check immediately before creating to prevent two fast requests
-        # from crossing the five-bot limit.
-        if mongo_db.bots.count_documents({"user_id": int(message.from_user.id)}) >= 5:
-            return await msg.edit_text("❌ <b>You can create maximum 5 clone bots.</b>")
-
-        vj = Client(f"clone_{message.from_user.id}_{int(bot_token.split(':')[0])}", API_ID, API_HASH, bot_token=bot_token, plugins={})
-        await vj.start()
-        register_clone_handlers(vj)
-        bot = await vj.get_me()
-        mongo_db.bots.update_one({"bot_id": bot.id}, {"$set": {
-            "bot_id": bot.id, "is_bot": True, "user_id": message.from_user.id,
-            "name": bot.first_name, "token": bot_token, "username": bot.username,
-            "force_channels": [], "custom_caption": None, "custom_buttons": [],
-            "protect_content": False, "no_forward": False, "auto_delete_enabled": False,
-            "auto_delete_minutes": 15, "access_token_enabled": False, "access_token_hours": 1,
-            "moderators": [], "mode": "private", "deactivated": False, "hide_owner": False
-        }}, upsert=True)
-        await set_clone_menu(vj, message.from_user.id)
-        await msg.edit_text("✨ <b>Sucessfully Cloned Your Bot</b>")
-    except BaseException as e:
-        logging.exception("Clone creation failed")
-        await msg.edit_text(f"⚠️ <b>Bot Error:</b>\n\n<code>{e}</code>")
+    return await message.reply_text(
+        text,
+        reply_markup=manage_clones_markup(message.from_user.id, back_cb="settings_back", is_clone=False)
+    )
 
 
 @Client.on_message(filters.command("deletecloned") & filters.private)
 async def delete_cloned_bot(client, message):
+    me = client.me or (await client.get_me())
+    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
+        return
     if not CLONE_MODE or mongo_db is None:
         return
     token_msg = await client.ask(message.chat.id, "<b>Send the bot token to delete its record.</b>")

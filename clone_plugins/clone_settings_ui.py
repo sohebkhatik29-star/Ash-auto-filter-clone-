@@ -82,20 +82,37 @@ async def edit_or_reply(query_or_msg, text, reply_markup=None, disable_web_page_
     msg = getattr(query_or_msg, "message", None) or query_or_msg
     if not msg:
         return
-    if getattr(msg, "photo", None) or getattr(msg, "media", None):
-        try:
-            return await msg.edit_caption(caption=text, reply_markup=reply_markup)
-        except Exception:
+    try:
+        if getattr(msg, "photo", None) or getattr(msg, "media", None):
             try:
-                await msg.delete()
-            except Exception:
-                pass
-            return await msg.reply_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
-    else:
-        try:
-            return await msg.edit_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
-        except Exception:
-            return await msg.reply_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+                return await msg.edit_caption(caption=text, reply_markup=reply_markup)
+            except Exception as e:
+                err = str(e).upper()
+                if "MESSAGE_NOT_MODIFIED" in err:
+                    return msg
+                try:
+                    return await msg.edit_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+                except Exception:
+                    pass
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
+                return await msg.reply_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+        else:
+            try:
+                return await msg.edit_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+            except Exception as e:
+                err = str(e).upper()
+                if "MESSAGE_NOT_MODIFIED" in err:
+                    return msg
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
+                return await msg.reply_text(text=text, reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+    except Exception:
+        pass
 
 # ----------------- MARKUPS & MENUS ----------------- #
 
@@ -396,8 +413,7 @@ async def callbacks(client, query):
     me = client.me
     
     if data in ("my_clone", "my_clones", "clone_my_bots", "create_clone_prompt", "clone_limit") or data.startswith(("manage_clone:", "cm:", "cad:", "cmdelete:")):
-        from clone_plugins import master_manager
-        return await master_manager.handle_clone_callbacks(client, query)
+        return
 
     if data in ("settings", "settings_back", "cset:home"):
         text = (
