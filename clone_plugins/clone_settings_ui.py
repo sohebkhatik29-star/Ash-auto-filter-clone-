@@ -149,17 +149,18 @@ def clone_manage_hub_markup(bot_username):
         [InlineKeyboardButton("🎁 BOT MODE", callback_data="cset_bot_mode")],
         [InlineKeyboardButton("🔄 RESTART BOT", callback_data="cset_restart_bot")],
         [InlineKeyboardButton("🚫 DELETE BOT", callback_data="cset_delete_bot")],
-        [InlineKeyboardButton("🔎 MORE FEATURES ↗", callback_data="settings")]
+        [InlineKeyboardButton("🔎 MORE FEATURES ↗", url=f"https://t.me/{BOT_USERNAME}?start=settings")]
     ])
 
 # ----------------- MAIN SETTINGS COMMAND & CALLBACKS ----------------- #
 
 async def settings(client, message):
+    me = client.me
     text = (
-        "🌟 <b>AVAILABLE PLANS • 03 DAYS - 40 ...</b>\n\n"
-        "<b>NOTE: THE SETTINGS BELOW WILL ONLY WORK FOR LINKS CREATED BY THIS TELEGRAM ACCOUNT. THEY WILL NOT AFFECT LINKS CREATED BY OTHER ACCOUNTS.</b>"
+        f"🤖 <b>YOUR CLONE BOT - @{me.username}</b>\n\n"
+        "<i>YOU CAN CUSTOMISE YOUR BOT SETTINGS FROM GIVEN BELOW BUTTONS</i>"
     )
-    await message.reply(text, reply_markup=settings_menu())
+    await message.reply(text, reply_markup=clone_manage_hub_markup(me.username))
 
 async def callbacks(client, query):
     data = query.data
@@ -179,14 +180,7 @@ async def callbacks(client, query):
     if data in ("my_clone", "my_clones", "clone_my_bots", "create_clone_prompt", "clone_limit") or data.startswith(("manage_clone:", "cm:", "cad:", "cmdelete:")):
         return
 
-    if data in ("settings", "settings_back", "cset:home"):
-        text = (
-            "🌟 <b>AVAILABLE PLANS • 03 DAYS - 40 ...</b>\n\n"
-            "<b>NOTE: THE SETTINGS BELOW WILL ONLY WORK FOR LINKS CREATED BY THIS TELEGRAM ACCOUNT. THEY WILL NOT AFFECT LINKS CREATED BY OTHER ACCOUNTS.</b>"
-        )
-        return await edit_or_reply(query, text, reply_markup=settings_menu())
-
-    if data in ("clone_my_clone_info", "start_back", "cset:hub"):
+    if data in ("settings", "settings_back", "cset:home", "clone_my_clone_info", "start_back", "cset:hub"):
         text = (
             f"🤖 <b>YOUR CLONE BOT - @{me.username}</b>\n\n"
             "<i>YOU CAN CUSTOMISE YOUR BOT SETTINGS FROM GIVEN BELOW BUTTONS</i>"
