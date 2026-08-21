@@ -155,6 +155,9 @@ async def check_master_fsub(client, user_id, original_payload):
 
 @Client.on_message(filters.command("start") & filters.incoming)
 async def start(client, message):
+    me = client.me or (await client.get_me())
+    if me and me.username and me.username.lower() != BOT_USERNAME.lower():
+        return
     try:
         from plugins.master_settings import cancel_user_listeners
         cancel_user_listeners(client, message.chat.id, message.from_user.id)

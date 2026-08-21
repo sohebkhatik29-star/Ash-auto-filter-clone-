@@ -44,7 +44,7 @@ def update_bot(bid, **values):
     if m:
         m.bots.update_one({"bot_id": int(bid)}, {"$set": values}, upsert=False)
 
-def manage_clones_markup(uid, back_cb="start_back"):
+def manage_clones_markup(uid, back_cb="start_back", is_clone=False):
     docs = docs_for(uid)
     rows = []
     for d in docs[:MAX_USER_CLONES]:
@@ -52,7 +52,10 @@ def manage_clones_markup(uid, back_cb="start_back"):
         name = d.get("name") or d.get("username") or str(bid)
         rows.append([InlineKeyboardButton(f"🤖 @{name} ↗", callback_data=f"manage_clone:{bid}")])
     if len(docs) < MAX_USER_CLONES:
-        rows.append([InlineKeyboardButton("➕ CREATE CLONE ➕", callback_data="create_clone_prompt")])
+        if is_clone:
+            rows.append([InlineKeyboardButton("➕ CREATE CLONE ➕", url=f"https://t.me/{BOT_USERNAME}?start=clone")])
+        else:
+            rows.append([InlineKeyboardButton("➕ CREATE CLONE ➕", callback_data="create_clone_prompt")])
     else:
         rows.append([InlineKeyboardButton("🚫 BOT LIMIT 5/5", callback_data="clone_limit")])
     rows.append([InlineKeyboardButton("‹ BACK", callback_data=back_cb)])
@@ -108,9 +111,10 @@ async def handle_clone_callbacks(client, query):
             "✨ <b>HERE ARE YOUR ACTIVE BOTS WITH POWERFUL CLONING AND CUSTOMIZATION</b>\n\n"
             "📲 <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
         )
-        is_clone = getattr(client, "is_bot", True) and client.me.username != BOT_USERNAME
+        me = client.me or (await client.get_me())
+        is_clone = bool(me and me.username and me.username.lower() != BOT_USERNAME.lower())
         back_cb = "start_back" if is_clone else "settings_back"
-        return await edit_or_reply(query, text, reply_markup=manage_clones_markup(user_id, back_cb=back_cb))
+        return await edit_or_reply(query, text, reply_markup=manage_clones_markup(user_id, back_cb=back_cb, is_clone=is_clone))
 
     if data == "clone_limit":
         return await query.answer("❌ You can create maximum 5 clone bots.", show_alert=True)
@@ -120,6 +124,10 @@ async def handle_clone_callbacks(client, query):
             current_count = m.bots.count_documents({"user_id": int(user_id)})
             if current_count >= MAX_USER_CLONES:
                 return await query.answer("❌ You can create maximum 5 clone bots.", show_alert=True)
+        me = client.me or (await client.get_me())
+        is_clone = bool(me and me.username and me.username.lower() != BOT_USERNAME.lower())
+        if is_clone:
+            return await query.answer(url=f"https://t.me/{BOT_USERNAME}?start=clone")
         try:
             await query.answer()
         except Exception:
