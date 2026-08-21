@@ -6,6 +6,7 @@ import logging
 import random
 import re
 from pyrogram import Client, filters, StopPropagation
+from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import ADMINS, BOT_USERNAME, PICS, UPDATE_CHANNEL, tg_link
 from Script import script
@@ -202,3 +203,56 @@ async def master_my_clones_start(client, message):
         return
     await send_master_clone_hub(client, message)
     raise StopPropagation
+
+
+def register_clone_manager_navigation(client, master=False):
+    """Explicitly register only the clone-manager handlers on the real client instance.
+
+    The decorator-based handlers above are used by the master plugin loader, but
+    dynamically-created clone clients are registered manually. This explicit
+    registration keeps this change limited to the clone-manager navigation.
+    """
+    if master:
+        client.add_handler(
+            MessageHandler(
+                master_my_clones_start,
+                filters.command("start") & filters.private,
+            ),
+            group=-100,
+        )
+        client.add_handler(
+            CallbackQueryHandler(
+                clone_my_bots_entry,
+                filters.regex(r"^clone_my_bots$"),
+            ),
+            group=-100,
+        )
+        client.add_handler(
+            CallbackQueryHandler(
+                master_customize_clones,
+                filters.regex(r"^master_customize_clones$"),
+            ),
+            group=-100,
+        )
+        client.add_handler(
+            CallbackQueryHandler(
+                create_clone_prompt,
+                filters.regex(r"^create_clone_prompt$"),
+            ),
+            group=-100,
+        )
+        client.add_handler(
+            CallbackQueryHandler(
+                master_clone_manager_back,
+                filters.regex(r"^master_clone_manager_back$"),
+            ),
+            group=-100,
+        )
+    else:
+        client.add_handler(
+            CallbackQueryHandler(
+                clone_my_bots_entry,
+                filters.regex(r"^clone_my_bots$"),
+            ),
+            group=-100,
+        )
