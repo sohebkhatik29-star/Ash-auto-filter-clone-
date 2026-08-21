@@ -118,17 +118,17 @@ async def edit_or_reply(query_or_msg, text, reply_markup=None, disable_web_page_
 
 def settings_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 PREMIUM PLAN", callback_data="cset_premium_plan")],
-        [InlineKeyboardButton("🎟️ FREE USAGE LIMIT", callback_data="cset_free_limit_menu")],
+        [InlineKeyboardButton("💸 PREMIUM PLAN", callback_data="cset_premium_plan")],
+        [InlineKeyboardButton("🆓 FREE USAGE LIMIT", callback_data="cset_free_limit_menu")],
         [InlineKeyboardButton("🌍 REFER AND EARN", callback_data="cset_refer_earn")],
-        [InlineKeyboardButton("🔗 LINK SHORTNER", callback_data="link_shortener")],
+        [InlineKeyboardButton("🖇️ LINK SHORTNER", callback_data="link_shortener")],
         [InlineKeyboardButton("⏰ TOKEN VERIFICATION", callback_data="cset_token_main")],
         [InlineKeyboardButton("📢 FORCE SUBSCRIBE", callback_data="cset_fsub_menu")],
         [InlineKeyboardButton("🍿 CAPTION", callback_data="custom_caption"), InlineKeyboardButton("🖼️ THUMBNAIL", callback_data="custom_thumbnail")],
         [InlineKeyboardButton("🔘 BUTTON", callback_data="custom_button"), InlineKeyboardButton("♻️ AUTO DELETE", callback_data="cset_auto_delete_menu")],
         [InlineKeyboardButton("♾️ PERMANENT LINK", callback_data="cset_permanent_link")],
         [InlineKeyboardButton("🔒 PROTECT CONTENT", callback_data="protect_menu")],
-        [InlineKeyboardButton("‹ BACK", callback_data="clone_my_clone_info")]
+        [InlineKeyboardButton("🪧 BACK", callback_data="clone_my_clone_info")]
     ])
 
 def clone_manage_hub_markup(bot_username):
