@@ -25,9 +25,9 @@ async def clone_limit(client, query):
 async def create_clone_prompt(client, query):
     return await master_manager.handle_clone_callbacks(client, query)
 
-@Client.on_callback_query(filters.regex(r"^clone_my_bots$"))
-async def clone_my_bots(client, query):
-    return await master_manager.handle_clone_callbacks(client, query)
+# IMPORTANT: do not register a second handler for clone_my_bots here.
+# master_manager.handle_clone_callbacks already handles that callback.
+# Keeping a second handler makes Telegram receive/render the same panel twice.
 
 @Client.on_message(filters.command("start") & filters.private)
 async def clone_only_start(client, message):
