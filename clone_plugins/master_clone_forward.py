@@ -32,21 +32,24 @@ async def _handle_create_clone_message(client, message):
     cancel_all_listeners(client, message.chat.id, user_id)
 
     if text.lower() == "/cancel":
-        return await client.send_message(user_id, "<b>Cancelled 🚫</b>")
+        await client.send_message(user_id, "<b>Cancelled 🚫</b>")
+        raise StopPropagation
 
     match = re.search(r"\b(\d+:[A-Za-z0-9_-]+)\b", text)
     if not match:
-        return await client.send_message(
+        await client.send_message(
             user_id,
             "<b>❌ Could not read the bot token. Please forward the BotFather token message again.</b>",
         )
+        raise StopPropagation
 
     bot_token = match.group(1)
     clear_user_session(user_id)
     m = master_manager.db()
 
     if m is not None and m.bots.count_documents({"user_id": user_id}) >= master_manager.MAX_USER_CLONES:
-        return await client.send_message(user_id, "❌ <b>You can create maximum 5 clone bots.</b>")
+        await client.send_message(user_id, "❌ <b>You can create maximum 5 clone bots.</b>")
+        raise StopPropagation
 
     msg = await client.send_message(user_id, "<b>👨‍💻 Creating your clone...</b>")
     try:
@@ -101,6 +104,8 @@ async def _handle_create_clone_message(client, message):
         )
     except Exception as e:
         await msg.edit_text(f"⚠️ <b>Bot Error:</b>\n\n<code>{e}</code>")
+
+    raise StopPropagation
 
 
 def register_master_clone_forward_handler(client):
