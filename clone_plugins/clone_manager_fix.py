@@ -12,6 +12,7 @@ from config import ADMINS, BOT_USERNAME, PICS, UPDATE_CHANNEL, tg_link
 from Script import script
 from plugins import master_settings
 from clone_plugins import master_manager
+from clone_plugins.sessions import start_user_session, cancel_all_listeners
 
 MAX_USER_CLONES = master_manager.MAX_USER_CLONES
 
@@ -138,9 +139,49 @@ async def clone_limit(client, query):
     raise StopPropagation
 
 
+async def create_clone_prompt_no_listener(client, query):
+    """Start master clone creation without Client.listen().
+
+    The forwarded BotFather message is handled by master_clone_forward.py.
+    Client.listen() was racing that handler and consuming the forwarded message,
+    which is why the user saw no response after forwarding BotFather's message.
+    """
+    user_id = int(query.from_user.id)
+    m = master_manager.db()
+
+    if m is not None:
+        current_count = m.bots.count_documents({"user_id": user_id})
+        if current_count >= MAX_USER_CLONES:
+            await query.answer("❌ You can create maximum 5 clone bots.", show_alert=True)
+            raise StopPropagation
+
+    await query.answer()
+    cancel_all_listeners(client, query.message.chat.id, user_id)
+    sess_token = start_user_session(user_id, "create_clone")
+
+    await client.send_message(
+        chat_id=user_id,
+        text=(
+            "🤖 <b>CREATE CLONE BOT:</b>\n\n"
+            "1) Create a bot using @BotFather.\n"
+            "2) Forward the BotFather message containing the bot token here.\n"
+            "3) I will automatically create your clone.\n\n"
+            "<i>Send /cancel to abort.</i>"
+        ),
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ CANCEL", callback_data="my_clones")]
+        ]),
+    )
+
+    # Keep a session marker only. Do NOT start Client.listen(); the dedicated
+    # forwarded-message handler must receive the BotFather message.
+    _ = sess_token
+    raise StopPropagation
+
+
 @Client.on_callback_query(filters.regex(r"^create_clone_prompt$"))
 async def create_clone_prompt(client, query):
-    return await master_manager.handle_clone_callbacks(client, query)
+    return await create_clone_prompt_no_listener(client, query)
 
 
 @Client.on_message(filters.command("start") & filters.private)
@@ -233,6 +274,17 @@ def register_clone_manager_navigation(client, master=False):
                 filters.regex(r"^master_customize_clones$"),
             ),
             group=-100,
+        )
+        # IMPORTANT: this must run before the old master_manager callback
+        # handler. It starts only the session marker; no Client.listen() task
+        # is created, so forwarded BotFather messages reach the dedicated
+        # master_clone_forward handler.
+        client.add_handler(
+            CallbackQueryHandler(
+                create_clone_prompt_no_listener,
+                filters.regex(r"^create_clone_prompt$"),
+            ),
+            group=-101,
         )
         client.add_handler(
             CallbackQueryHandler(
