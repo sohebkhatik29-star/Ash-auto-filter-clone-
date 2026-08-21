@@ -223,7 +223,7 @@ async def start(client, message):
 
     if len(message.command) != 2:
         buttons = [
-            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY OWN BOT", callback_data="clone_my_bots")],
+            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY OWN BOT", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
             [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
             [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
         ]
@@ -239,17 +239,11 @@ async def start(client, message):
 
     data = message.command[1]
     if data.lower() == "clone":
-        from clone_plugins.master_manager import manage_clones_markup
         text = (
-            "👑 <b>CLONE MENU</b>\n\n"
-            "<i>\" WELCOME TO YOUR CLONE BOT MANAGEMENT HUB! CUSTOMIZE YOUR BOT SETTINGS OR MANAGE ITS STATUS USING THE OPTIONS BELOW. \"</i>\n\n"
-            "⚙️ <b>QUICK COMMANDS</b>\n\n"
-            "🚀 /activate - ACTIVATE YOUR CLONE BOT\n"
-            "🗑️ /delete - PERMANENTLY DELETE YOUR CLONE BOT\n\n"
-            "🎨 <b>BOT CUSTOMIZATION</b>\n\n"
-            "✨ <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
+            "👑 <b>CLONE BOT CREATOR</b>\n\n"
+            "<i>To create your own clone bot or manage your existing bots, please use our Master Parent Bot.</i>"
         )
-        return await message.reply(text, reply_markup=manage_clones_markup(message.from_user.id, back_cb="start_back", is_clone=True))
+        return await message.reply(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🤖 OPEN MASTER BOT ↗", url=f"https://t.me/{BOT_USERNAME}?start=clone")]]))
     if data.lower() == "settings":
         from clone_plugins import clone_settings_ui as cset
         return await cset.settings(client, message)
@@ -499,7 +493,7 @@ async def callbacks(client, query):
     if data == "start_back":
         me = client.me or (await client.get_me())
         buttons = [
-            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY OWN BOT", callback_data="clone_my_bots")],
+            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY OWN BOT", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
             [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
             [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
         ]
@@ -540,17 +534,11 @@ async def callbacks(client, query):
 
 
 async def clone_command(client, message):
-    from clone_plugins.master_manager import manage_clones_markup
     text = (
-        "👑 <b>CLONE MENU</b>\n\n"
-        "<i>\" WELCOME TO YOUR CLONE BOT MANAGEMENT HUB! CUSTOMIZE YOUR BOT SETTINGS OR MANAGE ITS STATUS USING THE OPTIONS BELOW. \"</i>\n\n"
-        "⚙️ <b>QUICK COMMANDS</b>\n\n"
-        "🚀 /activate - ACTIVATE YOUR CLONE BOT\n"
-        "🗑️ /delete - PERMANENTLY DELETE YOUR CLONE BOT\n\n"
-        "🎨 <b>BOT CUSTOMIZATION</b>\n\n"
-        "✨ <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
+        "👑 <b>CLONE BOT CREATOR</b>\n\n"
+        "<i>To create your own clone bot or manage your existing bots, please use our Master Parent Bot.</i>"
     )
-    return await message.reply(text, reply_markup=manage_clones_markup(message.from_user.id, back_cb="start_back", is_clone=True))
+    return await message.reply(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🤖 OPEN MASTER BOT ↗", url=f"https://t.me/{BOT_USERNAME}?start=clone")]]))
 
 
 def register(client):

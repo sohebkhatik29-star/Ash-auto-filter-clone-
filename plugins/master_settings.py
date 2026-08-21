@@ -350,8 +350,12 @@ async def send_settings_menu(client, message_or_user_id):
         return await message_or_user_id.reply(text, reply_markup=master_settings_markup())
     return await client.send_message(uid, text, reply_markup=master_settings_markup())
 
-async def send_manage_clones(client, user_id, message=None):
+async def send_manage_clones(client, message_or_user_id, message=None):
     from clone_plugins import master_manager
+    uid = getattr(message_or_user_id, "from_user", None) and message_or_user_id.from_user.id or (
+        isinstance(message_or_user_id, int) and message_or_user_id or getattr(message_or_user_id, "chat", None) and message_or_user_id.chat.id
+    )
+    msg_target = message or (message_or_user_id if hasattr(message_or_user_id, "reply") else None)
     text = (
         "👑 <b>CLONE MENU</b>\n\n"
         "<i>\" WELCOME TO YOUR CLONE BOT MANAGEMENT HUB! CUSTOMIZE YOUR BOT SETTINGS OR MANAGE ITS STATUS USING THE OPTIONS BELOW. \"</i>\n\n"
@@ -361,9 +365,9 @@ async def send_manage_clones(client, user_id, message=None):
         "🎨 <b>BOT CUSTOMIZATION</b>\n\n"
         "✨ <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
     )
-    if message:
-        return await edit_or_reply(message, text, reply_markup=master_manager.manage_clones_markup(user_id, back_cb="settings_back", is_clone=False))
-    return await client.send_message(user_id, text, reply_markup=master_manager.manage_clones_markup(user_id, back_cb="settings_back", is_clone=False))
+    if msg_target:
+        return await edit_or_reply(msg_target, text, reply_markup=master_manager.manage_clones_markup(uid, back_cb="settings_back", is_clone=False))
+    return await client.send_message(uid, text, reply_markup=master_manager.manage_clones_markup(uid, back_cb="settings_back", is_clone=False))
 
 # ----------------- CALLBACK QUERY ROUTER ----------------- #
 
