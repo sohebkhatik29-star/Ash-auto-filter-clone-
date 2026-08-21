@@ -11,6 +11,7 @@ from clone_plugins import custom_batch as cbatch
 from clone_plugins import channel_batch as chbatch
 from clone_plugins import special_link
 from clone_plugins import master_manager
+from clone_plugins.clone_manager_fix import register_clone_manager_navigation
 
 
 async def clean_help(client, message):
@@ -26,7 +27,7 @@ async def clean_help(client, message):
         "• /special_link — Create a special link\n"
         "• /universal_link — Create a universal link\n"
         "• /shortener — Shortener settings\n"
-        "• /settings — Customize bot\n"
+        "• /settings — Customize your clone\n"
         "• /api KEY — Set or view shortener API\n"
         "• /base_site SITE — Set or view shortener site\n"
         "• /clone — Create your own clone\n\n"
@@ -45,6 +46,11 @@ async def clean_help(client, message):
 
 
 def register_clone_handlers(client):
+    # This is intentionally registered first at a higher-priority group so
+    # MY OWN BOT on a clone opens the master clone manager instead of the
+    # normal clone list handler.
+    register_clone_manager_navigation(client, master=False)
+
     cset.register(client)
     master_manager.register(client)
     single_link.register(client)
