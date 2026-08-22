@@ -6,13 +6,13 @@ from clone_plugins.sessions import start_user_session, is_user_session_active, c
 async def handle_database_channel_callbacks(client, query, data, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn):
     me = client.me
     if data == "database_channel":
-        db_ch = r.get("db_channel")
-        db_title = r.get("db_channel_title")
+        db_ch = r.get("db_channel") or r.get("database_channel")
+        db_title = r.get("db_channel_title") or r.get("database_channel_title")
         status_txt = f"<b>YOUR DATABASE CHANNEL - {db_title or db_ch}</b>" if db_ch else "<b>YOU DIDN'T ADDED ANY DATABASE CHANNEL ❗</b>"
         text = (
             "☁️ <b>DATABASE CHANNEL:</b>\n\n"
-            "<b>WHAT IS DATABASE CHANNEL ?</b>\n\n"
-            "<b>DATABASE CHANNEL MEANS WHEN YOU STORE ANYTHING IN FILE STORE BOT ALL MESSAGES BOT WILL STORE IN YOUR DATABASE CHANNEL. IF YOU DELETE THAT MESSAGE THEN BOT CAN NOT GIVE IT TO ANYONE.</b>\n\n"
+            "<b>WHAT IS DATABASE CHANNEL ❓</b>\n\n"
+            "<b>DATABASE CHANNEL MEANS WHEN YOU STORE ANYTHING IN FILE STORE BOT ALL MESSAGES BOT WILL STORE IN YOUR DATABASE CHANNEL IF YOU DELETE THAT MESSAGE THEN BOT CAN NOT GIVE IT TO ANYONE.</b>\n\n"
             f"{status_txt}"
         )
         return await edit_or_reply_fn(
@@ -28,9 +28,9 @@ async def handle_database_channel_callbacks(client, query, data, user_id, r, sav
         cancel_listeners_fn(client, user_id, user_id)
         sess_token = start_user_session(user_id, "set_db_ch")
         await query.answer()
-        await edit_or_reply_fn(
+        prompt_msg = await edit_or_reply_fn(
             query,
-            f"<b>FORWARD DATABASE CHANNEL ANY MESSAGE TO ME, AND MAKE SURE @{me.username} IS ADMIN IN YOUR CHANNEL.</b>\n\n/cancel - CANCEL THIS PROCESS.",
+            f"<b>FORWARD DATABASE CHANNEL ANY MESSAGE TO ME,\nAND MAKE SURE @{me.username} IS ADMIN IN YOUR CHANNEL.</b>\n\n/cancel - CANCEL THIS PROCESS.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="database_channel")]])
         )
         async def _db_worker():
@@ -42,28 +42,85 @@ async def handle_database_channel_callbacks(client, query, data, user_id, r, sav
                 return
             if not is_user_session_active(user_id, sess_token):
                 return
+
+            # Clean up prompt message so everything appears fresh at the bottom
+            try:
+                if prompt_msg:
+                    await prompt_msg.delete()
+                elif getattr(query, "message", None):
+                    await query.message.delete()
+            except Exception:
+                pass
+
             if not fwd or fwd.text == "/cancel":
                 clear_user_session(user_id)
-                return await client.send_message(chat_id=user_id, text="❌ <b>Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="database_channel")]]) )
+                return await client.send_message(
+                    chat_id=user_id,
+                    text="❌ <b>Cancelled.</b>",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="database_channel")]])
+                )
+
             fwd_chat = getattr(fwd, "forward_from_chat", None)
             if not fwd_chat:
                 clear_user_session(user_id)
-                return await client.send_message(chat_id=user_id, text="❌ <b>Must forward from a channel.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="database_channel")]]) )
-            save_fn(db_channel=fwd_chat.id, db_channel_title=fwd_chat.title)
+                return await client.send_message(
+                    chat_id=user_id,
+                    text="❌ <b>Must forward a message from your database channel.</b>",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="database_channel")]])
+                )
+
+            # Verify bot has admin rights / can send message in database channel
+            try:
+                test_msg = await client.send_message(
+                    chat_id=fwd_chat.id,
+                    text=f"🤖 <b>@{me.username} DATABASE CHANNEL CONNECTED ✅</b>"
+                )
+                try:
+                    await test_msg.delete()
+                except Exception:
+                    pass
+            except Exception:
+                clear_user_session(user_id)
+                return await client.send_message(
+                    chat_id=user_id,
+                    text=f"❌ <b>Sorry, your bot is not admin this chnaal.</b>\n\n<i>Make sure @{me.username} is admin in your channel with all permissions and try again.</i>",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="database_channel")]])
+                )
+
+            save_fn(
+                db_channel=fwd_chat.id,
+                db_channel_title=fwd_chat.title,
+                database_channel=fwd_chat.id,
+                database_channel_title=fwd_chat.title
+            )
+            r["db_channel"] = fwd_chat.id
+            r["db_channel_title"] = fwd_chat.title
+            r["database_channel"] = fwd_chat.id
+            r["database_channel_title"] = fwd_chat.title
             clear_user_session(user_id)
             return await client.send_message(
                 chat_id=user_id,
-                text=f"⚡ <b>SUCCESSFULLY ADDED YOUR DATABASE CHANNEL - {fwd_chat.title}</b>",
+                text=f"⚡️ <b>SUCCESSFULLY ADDED YOUR DATABASE CHANNEL - {fwd_chat.title}</b>",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="database_channel")]])
             )
         asyncio.create_task(_db_worker())
         return
 
     if data == "cset_del_db_ch":
-        save_fn(db_channel=None, db_channel_title=None)
+        save_fn(
+            db_channel=None,
+            db_channel_title=None,
+            database_channel=None,
+            database_channel_title=None
+        )
+        r["db_channel"] = None
+        r["db_channel_title"] = None
+        r["database_channel"] = None
+        r["database_channel_title"] = None
         await query.answer("Database channel deleted!")
         return await edit_or_reply_fn(
             query,
             "<b>SUCCESSFULLY DELETED DATABASE CHANNEL ✅</b>",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="database_channel")]])
         )
+

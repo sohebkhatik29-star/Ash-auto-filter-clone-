@@ -205,7 +205,7 @@ async def capture_message(client, message):
         try:
             from config import LOG_CHANNEL
             rec_db = cmd.bot_record(client)
-            db_ch = rec_db.get("database_channel") or LOG_CHANNEL
+            db_ch = rec_db.get("database_channel") or rec_db.get("db_channel") or LOG_CHANNEL
             if db_ch:
                 copied = await message.copy(chat_id=int(db_ch))
                 item = {"chat_id": int(db_ch), "message_id": int(copied.id)}

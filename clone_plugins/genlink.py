@@ -103,7 +103,7 @@ async def capture_interactive(client, message):
         raise StopPropagation
 
     rec = bot_record(client)
-    db_ch = rec.get("database_channel")
+    db_ch = rec.get("database_channel") or rec.get("db_channel")
     source_chat_id = int(message.chat.id)
     source_message_id = int(message.id)
 

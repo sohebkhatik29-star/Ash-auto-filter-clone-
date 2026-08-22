@@ -96,7 +96,7 @@ async def capture_single(client, message):
 
     from config import LOG_CHANNEL
     rec = bot_record(client)
-    db_ch = rec.get("database_channel") or LOG_CHANNEL
+    db_ch = rec.get("database_channel") or rec.get("db_channel") or LOG_CHANNEL
     source_chat_id = int(message.chat.id)
     source_message_id = int(message.id)
 
