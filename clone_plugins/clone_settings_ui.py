@@ -257,7 +257,7 @@ async def callbacks(client, query):
         return await handle_admins_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 
     # 18. Bot Status
-    if data == "cset_bot_status":
+    if data in ("cset_bot_status", "bot_status"):
         return await handle_bot_status_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 
     # 19. Bot Mode
