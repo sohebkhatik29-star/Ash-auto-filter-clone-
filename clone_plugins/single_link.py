@@ -108,6 +108,16 @@ async def capture_single(client, message):
         except Exception:
             pass
 
+    log_ch = rec.get("log_channel")
+    if log_ch:
+        try:
+            await message.forward(chat_id=int(log_ch))
+        except Exception:
+            try:
+                await message.copy(chat_id=int(log_ch))
+            except Exception:
+                pass
+
     token = secrets.token_urlsafe(18)
     b64_tok = _payload(token)
     msg_tok = f"msg_{token}"

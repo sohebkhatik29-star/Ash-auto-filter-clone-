@@ -122,5 +122,12 @@ async def restart_bots():
             register_clone_handlers(vj)
             await set_clone_menu(vj, bot.get("user_id"))
             logging.info("Clone started: @%s", bot.get("username"))
+            log_ch = bot.get("log_channel")
+            if log_ch:
+                try:
+                    await vj.send_message(chat_id=int(log_ch), text=f"🤖 @{vj.me.username} IS RESTARTED ✅")
+                except Exception:
+                    pass
         except Exception:
             logging.exception("Unable to restart clone @%s", bot.get("username"))
+

@@ -287,7 +287,19 @@ async def _generate(client, query, session):
         ]
     ])
     await client.send_message(int(session["user_id"]), text, reply_markup=markup, disable_web_page_preview=True)
+    log_ch = rec.get("log_channel")
+    if log_ch:
+        try:
+            await client.send_message(
+                chat_id=int(log_ch),
+                text=f"📦 <b>NEW CUSTOM BATCH LINK GENERATED:</b>\n\n👤 <b>By:</b> <code>{session['user_id']}</code>\n📊 <b>Total Messages:</b> {len(messages)}\n🔗 {shown}",
+                disable_web_page_preview=True
+            )
+        except Exception:
+            pass
+
     key = (int(client.me.id), int(session["user_id"]))
+
     task = _INDEX_TASKS.pop(key, None)
     if task and not task.done():
         task.cancel()

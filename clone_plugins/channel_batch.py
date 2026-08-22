@@ -235,7 +235,18 @@ async def capture_batch_step(client, message):
             reply_markup=markup,
             disable_web_page_preview=True,
         )
+        log_ch = rec.get("log_channel")
+        if log_ch:
+            try:
+                await client.send_message(
+                    chat_id=int(log_ch),
+                    text=f"📦 <b>NEW BATCH LINK GENERATED:</b>\n\n👤 <b>By:</b> {message.from_user.mention}\n📊 <b>Total Messages:</b> {total_msgs}\n🔗 {shown_link}",
+                    disable_web_page_preview=True
+                )
+            except Exception:
+                pass
         raise StopPropagation
+
 
 
 async def batch_start_deliver(client, message):

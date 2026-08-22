@@ -30,7 +30,7 @@ async def handle_log_channel_callbacks(client, query, data, user_id, r, save_fn,
         await query.answer()
         await edit_or_reply_fn(
             query,
-            f"<b>FORWARD LOG CHANNEL ANY MESSAGE TO ME, AND MAKE SURE @{me.username} IS ADMIN IN YOUR CHANNEL.</b>\n\n/cancel - CANCEL THIS PROCESS.",
+            f"<b>FORWARD LOG CHANNEL ANY MESSAGE TO ME,\nAND MAKE SURE @{me.username} IS ADMIN IN YOUR CHANNEL.</b>\n\n/cancel - CANCEL THIS PROCESS.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="log_channel")]])
         )
         async def _log_worker():
@@ -48,12 +48,13 @@ async def handle_log_channel_callbacks(client, query, data, user_id, r, save_fn,
             fwd_chat = getattr(fwd, "forward_from_chat", None)
             if not fwd_chat:
                 clear_user_session(user_id)
-                return await client.send_message(chat_id=user_id, text="❌ <b>Must forward from a channel.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="log_channel")]]) )
+                return await client.send_message(chat_id=user_id, text="❌ <b>Must forward a message from your log channel.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="log_channel")]]) )
+            
             save_fn(log_channel=fwd_chat.id, log_channel_title=fwd_chat.title)
             clear_user_session(user_id)
             return await client.send_message(
                 chat_id=user_id,
-                text=f"⚡ <b>SUCCESSFULLY ADDED YOUR LOG CHANNEL - {fwd_chat.title}</b>",
+                text=f"⚡️ <b>SUCCESSFULLY ADDED YOUR LOG CHANNEL - {fwd_chat.title}</b>",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="log_channel")]])
             )
         asyncio.create_task(_log_worker())
@@ -67,3 +68,4 @@ async def handle_log_channel_callbacks(client, query, data, user_id, r, save_fn,
             "<b>SUCCESSFULLY DELETED LOG CHANNEL ✅</b>",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="log_channel")]])
         )
+
