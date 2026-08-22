@@ -253,7 +253,7 @@ async def callbacks(client, query):
         return await handle_database_channel_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 
     # 17. Admins
-    if data in ("admins_menu", "adm_add") or data.startswith(("adm_manage:", "adm_tgl:", "adm_rem:")):
+    if data in ("admins_menu", "adm_add") or data.startswith(("adm_manage:", "adm_tgl:", "adm_rem:", "adm_transfer:", "adm_do_transfer:")):
         return await handle_admins_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 
     # 18. Bot Status
