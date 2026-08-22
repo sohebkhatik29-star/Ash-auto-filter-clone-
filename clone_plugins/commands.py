@@ -227,15 +227,38 @@ async def start(client, message):
             [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
             [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
         ]
-        caption = script.CLONE_START_TXT.format(message.from_user.mention, me.mention)
-        start_photo = rec.get("start_pic") or random.choice(PICS)
-        try:
-            return await message.reply_photo(photo=start_photo, caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
-        except Exception:
+        
+        # Add custom start buttons if configured
+        start_btns = rec.get("start_buttons", [])
+        for r_item in start_btns:
+            row_btns = []
+            if isinstance(r_item, dict) and "buttons" in r_item:
+                for b in r_item["buttons"]:
+                    row_btns.append(InlineKeyboardButton(b["text"], url=b["url"]))
+            elif isinstance(r_item, dict) and "text" in r_item:
+                row_btns.append(InlineKeyboardButton(r_item["text"], url=r_item.get("url", "https://t.me")))
+            if row_btns:
+                buttons.append(row_btns)
+
+        custom_text = rec.get("start_text")
+        if custom_text:
+            caption = custom_text.replace("{mention}", message.from_user.mention).replace("{bot_mention}", me.mention)
+        else:
+            caption = script.CLONE_START_TXT.format(message.from_user.mention, me.mention)
+
+        has_spoiler = bool(rec.get("start_pic_spoiler", False))
+        custom_pic = rec.get("start_pic")
+        start_photo = custom_pic or (random.choice(PICS) if PICS else None)
+
+        if start_photo:
             try:
-                return await message.reply_photo(photo=random.choice(PICS), caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
+                return await message.reply_photo(photo=start_photo, caption=caption, reply_markup=InlineKeyboardMarkup(buttons), has_spoiler=has_spoiler)
             except Exception:
-                return await message.reply(caption, reply_markup=InlineKeyboardMarkup(buttons))
+                try:
+                    return await message.reply_photo(photo=start_photo, caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
+                except Exception:
+                    pass
+        return await message.reply(caption, reply_markup=InlineKeyboardMarkup(buttons))
 
     data = message.command[1]
     if data.lower() == "clone":

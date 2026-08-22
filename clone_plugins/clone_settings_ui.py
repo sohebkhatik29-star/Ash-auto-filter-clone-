@@ -241,7 +241,7 @@ async def callbacks(client, query):
         return await handle_monetization_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 
     # 14. Start Message
-    if data in ("cset_start_msg_menu", "cset_start_text", "cset_set_start_text", "cset_def_start_text", "cset_start_pic", "cset_set_start_pic", "cset_del_start_pic", "cset_tgl_start_spoiler"):
+    if data in ("cset_start_msg_menu", "cset_start_text", "cset_set_start_text", "cset_def_start_text", "cset_start_pic", "cset_set_start_pic", "cset_del_start_pic", "cset_view_start_pic", "cset_tgl_start_spoiler", "cset_start_btn", "cset_start_button", "cset_sbtn_add", "cset_sbtn_rem", "cset_sbtn_see"):
         return await handle_start_message_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 
     # 15. Log Channel
