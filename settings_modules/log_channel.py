@@ -45,11 +45,55 @@ async def handle_log_channel_callbacks(client, query, data, user_id, r, save_fn,
             if not fwd or fwd.text == "/cancel":
                 clear_user_session(user_id)
                 return await client.send_message(chat_id=user_id, text="❌ <b>Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="log_channel")]]) )
+            
             fwd_chat = getattr(fwd, "forward_from_chat", None)
             if not fwd_chat:
                 clear_user_session(user_id)
                 return await client.send_message(chat_id=user_id, text="❌ <b>Must forward a message from your log channel.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="log_channel")]]) )
             
+            # Verify bot is admin in the channel
+            try:
+                chat_member = await client.get_chat_member(fwd_chat.id, me.id)
+                if chat_member.status not in ("administrator", "creator"):
+                    clear_user_session(user_id)
+                    return await client.send_message(
+                        chat_id=user_id,
+                        text=f"❌ <b>Sorry, your bot is not admin this chnaal.</b>\n\n<i>Make sure @{me.username} is admin in your channel with all permissions and try again.</i>",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="log_channel")]])
+                    )
+            except Exception:
+                clear_user_session(user_id)
+                return await client.send_message(
+                    chat_id=user_id,
+                    text=f"❌ <b>Sorry, your bot is not admin this chnaal.</b>\n\n<i>Make sure @{me.username} is admin in your channel with all permissions and try again.</i>",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="log_channel")]])
+                )
+
+            # Send First Time Live Connect message to the log channel
+            try:
+                user_obj = await client.get_users(user_id)
+                u_mention = user_obj.mention if user_obj else f"<code>{user_id}</code>"
+                u_name = f"@{user_obj.username}" if getattr(user_obj, "username", None) else user_obj.first_name
+            except Exception:
+                u_mention = f"<code>{user_id}</code>"
+                u_name = f"<code>{user_id}</code>"
+
+            try:
+                live_text = (
+                    f"🤖 <b>@{me.username} IS LIVE ✅</b>\n\n"
+                    f"👤 <b>Connected By:</b> {u_mention} ({u_name})\n"
+                    f"🆔 <b>Owner ID:</b> <code>{user_id}</code>\n"
+                    f"📢 <b>Log Channel:</b> {fwd_chat.title}"
+                )
+                await client.send_message(chat_id=fwd_chat.id, text=live_text)
+            except Exception:
+                clear_user_session(user_id)
+                return await client.send_message(
+                    chat_id=user_id,
+                    text=f"❌ <b>Sorry, your bot is not admin this chnaal or cannot post messages.</b>\n\n<i>Make sure @{me.username} has 'Post Messages' permission.</i>",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="log_channel")]])
+                )
+
             save_fn(log_channel=fwd_chat.id, log_channel_title=fwd_chat.title)
             clear_user_session(user_id)
             return await client.send_message(
