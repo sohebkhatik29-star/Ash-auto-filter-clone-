@@ -954,7 +954,20 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                 return
 
             dl_msg = await client.send_message(chat_id=user_id, text="<b>DOWNLOADING...</b>")
+            import os
+            os.makedirs("cache/fsub_pics", exist_ok=True)
+            local_cache_path = f"cache/fsub_pics/{target_bid or 'master'}.jpg"
+            try:
+                await client.download_media(ans, file_name=local_cache_path)
+            except Exception:
+                pass
+
             save_fn(fsub_pic=photo_file_id)
+            if target_bid and mongo_db is not None:
+                try:
+                    mongo_db.bots.update_one({"bot_id": int(target_bid)}, {"$set": {"fsub_pic": photo_file_id}}, upsert=True)
+                except Exception:
+                    pass
             r["fsub_pic"] = photo_file_id
             clear_user_session(user_id)
 
@@ -969,6 +982,11 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
     # 12. Delete Picture
     if data == "cset_fsub_del_pic":
         save_fn(fsub_pic=None)
+        if target_bid and mongo_db is not None:
+            try:
+                mongo_db.bots.update_one({"bot_id": int(target_bid)}, {"$set": {"fsub_pic": None}}, upsert=True)
+            except Exception:
+                pass
         r["fsub_pic"] = None
         await query.answer("✅ Picture deleted successfully!")
         return await handle_fsub_callbacks(client, query, "cset_fsub_pic_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)
@@ -993,6 +1011,11 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
     if data == "cset_fsub_tgl_spoiler":
         new_sp = not bool(r.get("fsub_pic_spoiler", False))
         save_fn(fsub_pic_spoiler=new_sp)
+        if target_bid and mongo_db is not None:
+            try:
+                mongo_db.bots.update_one({"bot_id": int(target_bid)}, {"$set": {"fsub_pic_spoiler": new_sp}}, upsert=True)
+            except Exception:
+                pass
         r["fsub_pic_spoiler"] = new_sp
         await query.answer(f"Spoiler {'Enabled ✅' if new_sp else 'Disabled ❌'}")
         return await handle_fsub_callbacks(client, query, "cset_fsub_pic_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)
@@ -1001,6 +1024,11 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
     if data == "cset_fsub_tgl_invert":
         new_inv = not bool(r.get("fsub_pic_invert", False))
         save_fn(fsub_pic_invert=new_inv)
+        if target_bid and mongo_db is not None:
+            try:
+                mongo_db.bots.update_one({"bot_id": int(target_bid)}, {"$set": {"fsub_pic_invert": new_inv}}, upsert=True)
+            except Exception:
+                pass
         r["fsub_pic_invert"] = new_inv
         await query.answer(f"Invert Caption {'Enabled ✅' if new_inv else 'Disabled ❌'}")
         return await handle_fsub_callbacks(client, query, "cset_fsub_pic_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)

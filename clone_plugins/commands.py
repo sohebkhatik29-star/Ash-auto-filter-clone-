@@ -175,6 +175,7 @@ async def send_fsub_prompt(client, message, payload):
     invert_cap = bool(rec.get("fsub_pic_invert", False))
 
     if fsub_pic:
+        # 1. Try sending directly (works if file path, URL, or native file_id)
         try:
             await message.reply_photo(
                 photo=fsub_pic,
@@ -195,6 +196,44 @@ async def send_fsub_prompt(client, message, payload):
                 return True
             except Exception:
                 pass
+
+        # 2. If direct send failed (e.g. cross-bot file_id), check local cache or download via Master bot
+        import os
+        bot_id = rec.get("bot_id") or (client.me.id if client.me else None)
+        local_cache_path = f"cache/fsub_pics/{bot_id}.jpg" if bot_id else None
+
+        if not local_cache_path or not os.path.exists(local_cache_path):
+            try:
+                from AshCore.bot import StreamBot
+                os.makedirs("cache/fsub_pics", exist_ok=True)
+                target_path = local_cache_path or f"cache/fsub_pics/{str(fsub_pic)[:15]}.jpg"
+                downloaded = await StreamBot.download_media(fsub_pic, file_name=target_path)
+                if downloaded and os.path.exists(downloaded):
+                    local_cache_path = downloaded
+            except Exception:
+                pass
+
+        if local_cache_path and os.path.exists(local_cache_path):
+            try:
+                await message.reply_photo(
+                    photo=local_cache_path,
+                    caption=text,
+                    reply_markup=markup,
+                    has_spoiler=has_spoiler,
+                    show_caption_above_media=invert_cap
+                )
+                return True
+            except Exception:
+                try:
+                    await message.reply_photo(
+                        photo=local_cache_path,
+                        caption=text,
+                        reply_markup=markup,
+                        has_spoiler=has_spoiler
+                    )
+                    return True
+                except Exception:
+                    pass
 
     await message.reply_text(text, reply_markup=markup, disable_web_page_preview=True)
     return True
