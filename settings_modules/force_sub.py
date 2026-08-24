@@ -8,6 +8,7 @@ from pyrogram.types import (
 )
 from clone_plugins.sessions import start_user_session, is_user_session_active, clear_user_session
 from plugins.clone import mongo_db
+from config import BOT_USERNAME
 
 # ----------------- MAIN FSUB UI TEXT & MENUS ----------------- #
 
@@ -275,7 +276,12 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
             buttons.append([InlineKeyboardButton("ON FORCE SUBSCRIBE", callback_data="cset_fsub_toggle")])
             
         buttons.append([InlineKeyboardButton("FORCE SUBSCRIBE MESSAGE", callback_data="cset_fsub_msg_menu")])
-        is_master = data.startswith("master_") or r.get("type") == "master_config"
+        is_master = (
+            data.startswith("master_") 
+            or r.get("type") == "master_config" 
+            or bool(client.me and BOT_USERNAME and client.me.username and client.me.username.lower() == BOT_USERNAME.lower())
+            or ("bot_id" not in r and "user_id" not in r)
+        )
         back_cb = "settings" if is_master else "clone_my_clone_info"
         buttons.append([InlineKeyboardButton("≼ BACK", callback_data=back_cb)])
 

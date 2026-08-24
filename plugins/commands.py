@@ -736,7 +736,14 @@ async def cb_handler(client: Client, query: CallbackQuery):
             pass
         return
 
-    elif data in ("settings", "master_settings", "settings_back", "my_clone", "my_clones", "clone_my_bots", "create_clone_prompt", "clone_limit", "add_clone_prompt", "clone", "google_backup", "google_connect", "link_shortener", "delete_shortener", "add_shortener", "custom_caption", "custom_button", "protect_menu", "start_photo_menu") or data.startswith(("master_", "manage_clone:", "cm:", "cad:", "cmdelete:", "protect_", "caption_", "button_", "start_pic_", "link_shortener", "delete_shortener", "log_channel", "database_channel")):
+    elif (
+        data in ("settings", "master_settings", "settings_back", "my_clone", "my_clones", "clone_my_bots", "create_clone_prompt", "clone_limit", "add_clone_prompt", "clone", "google_backup", "google_connect", "link_shortener", "delete_shortener", "add_shortener", "custom_caption", "custom_button", "protect_menu", "start_photo_menu")
+        or data.startswith((
+            "master_", "manage_clone:", "cm:", "cad:", "cmdelete:", "protect_", "caption_", "button_",
+            "start_pic_", "link_shortener", "delete_shortener", "log_channel", "database_channel",
+            "m_", "cset_", "cset_fsub"
+        ))
+    ):
         from plugins.master_settings import callbacks as master_cb
         return await master_cb(client, query)
 
