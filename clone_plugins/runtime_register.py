@@ -6,10 +6,7 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins import commands as cmd
 from clone_plugins import advanced as adv
 from clone_plugins import clone_settings_ui as cset
-from clone_plugins import single_link
-from clone_plugins import custom_batch as cbatch
-from clone_plugins import channel_batch as chbatch
-from clone_plugins import special_link
+from link_modules import register_all_link_modules, single_link, universal_link
 from clone_plugins import master_manager
 
 
@@ -20,7 +17,6 @@ async def clean_help(client, message):
         "• /start — Check bot / open file link\n"
         "• /help — Open this help\n"
         "• /getlink — Create a single shareable file link\n"
-        "• /link — Create a single shareable file link\n"
         "• /batch — Store multiple messages from a channel\n"
         "• /custom_batch — Create custom batch links\n"
         "• /special_link — Create a special link\n"
@@ -47,10 +43,7 @@ async def clean_help(client, message):
 def register_clone_handlers(client):
     cset.register(client)
     master_manager.register(client)
-    single_link.register(client)
-    cbatch.register(client, base_group=-1)
-    chbatch.register(client, base_group=-3)
-    special_link.register(client, base_group=-5)
+    register_all_link_modules(client, is_master=False)
 
     # Public clone commands
     command_map = {
@@ -60,7 +53,7 @@ def register_clone_handlers(client):
         "getlink": single_link.genlink_prompt,
         "link": single_link.genlink_prompt,
         "genlink": single_link.genlink_prompt,
-        "universal_link": cmd.universal_link,
+        "universal_link": universal_link.universal_link_cmd,
         "shortener": cmd.shortener,
         "api": cmd.api_handler,
         "base_site": cmd.base_site_handler,

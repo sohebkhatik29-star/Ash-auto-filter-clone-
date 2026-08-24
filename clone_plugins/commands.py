@@ -542,8 +542,31 @@ async def start(client, message):
 
 
 async def help_command(client, message):
-    text=("📚 <b>ASH FILE STORE — HELP</b>\n\n👤 <b>User Commands</b>\n• /start — Check bot / open file link\n• /help — Open this help\n• /getlink — Create a single shareable file link\n• /custom_batch — Create custom batch links\n• /shortener — Shortener settings\n• /settings — Customize bot\n• /api KEY — Set shortener API\n• /base_site SITE — Set shortener site\n• /clone — Create your own clone\n\n👑 <b>Owner / Moderator</b>\n• /admin • /stats • /broadcast\n• /ban • /unban • /force_sub\n• /caption • /button • /protect\n• /auto_delete • /no_forward • /moderator\n• /access_token • /transfer_db • /deactivate\n• /mode • /restart • /delete • /start_msg\n\n⚙️ Owner features are also available from <b>Settings → My Clone Bot</b>.")
-    await message.reply(text,reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⚙️ SETTINGS",callback_data="settings")]]))
+    text = (
+        "📚 <b>ASH FILE STORE — HELP</b>\n\n"
+        "👤 <b>User Commands</b>\n"
+        "• /start — Check bot / open file link\n"
+        "• /help — Open this help\n"
+        "• /getlink — Create a single shareable file link\n"
+        "• /batch — Store multiple messages from a channel\n"
+        "• /custom_batch — Create custom batch links\n"
+        "• /special_link — Create a special link\n"
+        "• /universal_link — Create a universal link\n"
+        "• /shortener — Shortener settings\n"
+        "• /settings — Customize bot\n"
+        "• /api KEY — Set shortener API\n"
+        "• /base_site SITE — Set shortener site\n"
+        "• /clone — Create your own clone\n\n"
+        "👑 <b>Owner / Moderator</b>\n"
+        "• /admin • /stats • /broadcast\n"
+        "• /ban • /unban • /force_sub\n"
+        "• /caption • /button • /protect\n"
+        "• /auto_delete • /no_forward • /moderator\n"
+        "• /access_token • /transfer_db • /deactivate\n"
+        "• /mode • /restart • /delete • /start_msg\n\n"
+        "⚙️ Owner features are also available from <b>Settings → My Clone Bot</b>."
+    )
+    await message.reply(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings")]]))
 
 
 async def genlink(client, message):

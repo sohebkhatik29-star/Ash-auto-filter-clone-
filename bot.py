@@ -24,8 +24,6 @@ def all_commands():
     return [
         BotCommand('start', 'Start the bot'),
         BotCommand('help', 'Show all commands'),
-        BotCommand('link', 'Create a shareable file link'),
-        BotCommand('genlink', 'Generate a file link'),
         BotCommand('getlink', 'Generate a file link'),
         BotCommand('batch', 'Create batch links'),
         BotCommand('custom_batch', 'Create custom batch links'),
@@ -86,17 +84,9 @@ async def start():
     StreamBot.username = bot_info.username
     try:
         from plugins.master_settings import register as register_master_settings
-        from clone_plugins.single_link import register as register_single_link
-        from clone_plugins.custom_batch import register as register_custom_batch
-        from clone_plugins.channel_batch import register as register_channel_batch
-        from clone_plugins.special_link import register as register_special_link
+        from link_modules import register_all_link_modules
         register_master_settings(StreamBot)
-        # The master bot also supports the same interactive single-link flow.
-        register_single_link(StreamBot)
-        # Custom batch, channel batch, and special link must run with high priority and stop propagation
-        register_custom_batch(StreamBot, base_group=-101)
-        register_channel_batch(StreamBot, base_group=-102)
-        register_special_link(StreamBot, base_group=-103)
+        register_all_link_modules(StreamBot, is_master=True)
         logging.info('ASH master command handlers loaded successfully')
     except Exception:
         logging.exception('Unable to load ASH master command handlers')
