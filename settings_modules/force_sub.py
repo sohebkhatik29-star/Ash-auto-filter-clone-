@@ -914,72 +914,69 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
 
         async def _set_pic_worker():
             try:
+                ans = await client.listen(chat_id=user_id, timeout=120)
+            except Exception:
                 try:
-                    ans = await client.listen(chat_id=user_id, timeout=120)
+                    await prompt_msg.delete()
                 except Exception:
-                    try:
-                        await prompt_msg.delete()
-                    except Exception:
-                        pass
-                    await client.send_message(
-                        chat_id=user_id,
-                        text="❌ <b>Timeout. Process cancelled.</b>",
-                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_pic_menu")]])
-                    )
-                    clear_user_session(user_id)
-                    return
-                if not is_user_session_active(user_id, sess_token):
-                    return
-                if ans.text and ans.text.strip() == "/cancel":
-                    try:
-                        await prompt_msg.delete()
-                    except Exception:
-                        pass
-                    try:
-                        await ans.delete()
-                    except Exception:
-                        pass
-                    await client.send_message(
-                        chat_id=user_id,
-                        text="❌ <b>Process Cancelled Successfully!</b>",
-                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_pic_menu")]])
-                    )
-                    clear_user_session(user_id)
-                    return
-
-                photo_file_id = None
-                if ans.photo:
-                    photo_file_id = ans.photo.file_id
-                elif ans.document and ans.document.mime_type and "image" in ans.document.mime_type:
-                    photo_file_id = ans.document.file_id
-
-                if not photo_file_id:
-                    await client.send_message(
-                        chat_id=user_id,
-                        text="⚠️ <b>Please send a valid picture file.</b>",
-                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_pic_menu")]])
-                    )
-                    clear_user_session(user_id)
-                    return
-
-                clear_user_session(user_id)
-                save_fn(fsub_pic=photo_file_id)
-                if target_bid and mongo_db is not None:
-                    try:
-                        mongo_db.bots.update_one({"bot_id": int(target_bid)}, {"$set": {"fsub_pic": photo_file_id}}, upsert=True)
-                    except Exception:
-                        pass
-                r["fsub_pic"] = photo_file_id
-
+                    pass
                 await client.send_message(
                     chat_id=user_id,
-                    text="<b>SUCCESSFULLY PICTURE SET ✅</b>",
+                    text="❌ <b>Timeout. Process cancelled.</b>",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_pic_menu")]])
                 )
-            except Exception as ex:
-                import logging
-                logging.exception(f"Error in _set_pic_worker: {ex}")
                 clear_user_session(user_id)
+                return
+            if not is_user_session_active(user_id, sess_token):
+                return
+            
+            raw_text = (ans.text or ans.caption or "").strip()
+            if raw_text == "/cancel":
+                try:
+                    await prompt_msg.delete()
+                except Exception:
+                    pass
+                try:
+                    await ans.delete()
+                except Exception:
+                    pass
+                await client.send_message(
+                    chat_id=user_id,
+                    text="❌ <b>Process Cancelled Successfully!</b>",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_pic_menu")]])
+                )
+                clear_user_session(user_id)
+                return
+
+            photo_file_id = None
+            if ans.photo:
+                photo_file_id = ans.photo.file_id
+            elif ans.document and ans.document.mime_type and "image" in ans.document.mime_type:
+                photo_file_id = ans.document.file_id
+
+            if not photo_file_id:
+                await client.send_message(
+                    chat_id=user_id,
+                    text="⚠️ <b>Please send a valid picture file.</b>",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_pic_menu")]])
+                )
+                clear_user_session(user_id)
+                return
+
+            clear_user_session(user_id)
+            save_fn(fsub_pic=photo_file_id)
+            if target_bid and mongo_db is not None:
+                try:
+                    mongo_db.bots.update_one({"bot_id": int(target_bid)}, {"$set": {"fsub_pic": photo_file_id}}, upsert=True)
+                except Exception:
+                    pass
+            r["fsub_pic"] = photo_file_id
+
+            await client.send_message(
+                chat_id=user_id,
+                text="<b>SUCCESSFULLY PICTURE SET ✅</b>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_pic_menu")]])
+            )
 
         asyncio.create_task(_set_pic_worker())
         return
