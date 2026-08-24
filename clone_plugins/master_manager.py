@@ -409,12 +409,13 @@ async def _listen_and_create_clone(client, user_id, sess_token):
 
     msg = await client.send_message(user_id, "<b>👨‍💻 Creating your clone...</b>")
     try:
-        from plugins.clone import register_clone_handlers, set_clone_menu
+        from plugins.clone import register_clone_handlers, set_clone_menu, set_clone_client
         bot_prefix = int(bot_token.split(":")[0])
         vj = Client(f"clone_{user_id}_{bot_prefix}", API_ID, API_HASH, bot_token=bot_token, plugins={})
         await vj.start()
         register_clone_handlers(vj)
         bot = await vj.get_me()
+        set_clone_client(bot.id, vj)
         if m is not None:
             m.bots.update_one(
                 {"bot_id": bot.id},

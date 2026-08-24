@@ -310,6 +310,13 @@ async def start(client, message):
     if data.lower() == "settings":
         from plugins.master_settings import send_settings_menu
         return await send_settings_menu(client, message)
+    if data.startswith("csettings_") or data.startswith("cset_") or data.startswith("clone_manage_"):
+        try:
+            bid = int(data.split("_")[-1])
+        except Exception:
+            bid = None
+        from plugins.master_settings import send_clone_settings_menu
+        return await send_clone_settings_menu(client, message, bid)
 
     # 1. Custom batch routing
     if data.startswith("batch_"):

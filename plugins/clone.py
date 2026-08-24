@@ -13,6 +13,20 @@ except Exception:
 mongo_client = MongoClient(DB_URI) if DB_URI else None
 mongo_db = mongo_client["ash_clone_bots"] if mongo_client else None
 
+CLONES = {}
+
+def get_clone_client(bot_id):
+    try:
+        return CLONES.get(int(bot_id))
+    except Exception:
+        return None
+
+def set_clone_client(bot_id, client):
+    try:
+        CLONES[int(bot_id)] = client
+    except Exception:
+        pass
+
 # Focused clone-manager UI fix. This is intentionally imported after mongo_db
 # exists so it can safely access the clone database and register its handlers.
 try:
@@ -119,6 +133,7 @@ async def restart_bots():
         try:
             vj = Client(token, API_ID, API_HASH, bot_token=token, plugins={})
             await vj.start()
+            CLONES[int(vj.me.id)] = vj
             register_clone_handlers(vj)
             await set_clone_menu(vj, bot.get("user_id"))
             logging.info("Clone started: @%s", bot.get("username"))

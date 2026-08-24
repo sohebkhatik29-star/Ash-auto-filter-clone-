@@ -375,23 +375,37 @@ async def run_fsub_button_builder(client, user_id, save_fn, cancel_listeners_fn,
 
 async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, *args, **kwargs):
     # 1. Main Force Subscribe Settings Menu
-    if data in ("master_fsub_menu", "cset_fsub_menu", "cset_fsub_main"):
+    if data in ("master_fsub_menu", "cset_fsub_menu", "cset_fsub_main") or data.startswith("cset_fsub:"):
         fsub_on = bool(r.get("fsub_enabled", False))
         channels = r.get("fsub_channels", [])
         
-        status_line = f"<b>FORCE SUBSCRIBE - {'ON ✅' if fsub_on else 'OFF ❌'}</b>"
-        text = f"{FSUB_MAIN_DESC}\n{status_line}"
+        target_bid = r.get("bot_id")
+        bot_type = "clone bot" if target_bid else "bot"
+        desc = (
+            f"<b>Force Sub</b>\n"
+            f"<i>Users can only use your {bot_type} after joining all force sub channels. Clone bots now also support join request mode.</i>\n\n"
+            f"<b>You can add up to 6 channels</b>"
+        )
+        status_line = f"\n\n<b>STATUS:</b> {'ON ✅' if fsub_on else 'OFF ❌'}"
+        text = f"{desc}{status_line}"
 
         buttons = []
         # Channel item buttons
         for idx, ch in enumerate(channels):
             if isinstance(ch, dict):
                 title = ch.get("title") or f"Channel {idx+1}"
-                buttons.append([InlineKeyboardButton(f"{title}", callback_data=f"cset_fsub_ch:{idx}")])
             else:
-                buttons.append([InlineKeyboardButton(f"Channel: {ch}", callback_data=f"cset_fsub_ch:{idx}")])
+                title = str(ch)
+            buttons.append([
+                InlineKeyboardButton(f"• {title}", callback_data=f"cset_fsub_ch:{idx}"),
+                InlineKeyboardButton("✕", callback_data=f"cset_fsub_del_ch:{idx}")
+            ])
 
-        buttons.append([InlineKeyboardButton("➕ ADD CHANNEL ➕", callback_data="cset_fsub_add")])
+        if len(channels) < 6:
+            buttons.append([InlineKeyboardButton("➕ Add Channel", callback_data="cset_fsub_add")])
+        else:
+            buttons.append([InlineKeyboardButton("🚫 LIMIT REACHED (6/6)", callback_data="cset_fsub_limit")])
+
         if fsub_on:
             buttons.append([InlineKeyboardButton("OFF FORCE SUBSCRIBE", callback_data="cset_fsub_toggle")])
         else:
@@ -399,15 +413,16 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
             
         buttons.append([InlineKeyboardButton("FORCE SUBSCRIBE MESSAGE", callback_data="cset_fsub_msg_menu")])
         is_master = (
-            data.startswith("master_") 
-            or r.get("type") == "master_config" 
-            or bool(client.me and BOT_USERNAME and client.me.username and client.me.username.lower() == BOT_USERNAME.lower())
-            or ("bot_id" not in r and "user_id" not in r)
+            not target_bid
+            and (data.startswith("master_") or r.get("type") == "master_config")
         )
-        back_cb = "settings" if is_master else "clone_my_clone_info"
-        buttons.append([InlineKeyboardButton("≼ BACK", callback_data=back_cb)])
+        back_cb = "settings" if is_master else "settings_back"
+        buttons.append([InlineKeyboardButton("‹ back", callback_data=back_cb)])
 
         return await edit_or_reply_fn(query, text, reply_markup=InlineKeyboardMarkup(buttons))
+
+    if data == "cset_fsub_limit":
+        return await query.answer("❌ You can add maximum 6 channels.", show_alert=True)
 
     # 2. Toggle FSub Status
     if data in ("m_tgl_fsub", "cset_fsub_toggle"):
@@ -455,9 +470,10 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
         channels = list(r.get("fsub_channels", []))
         if idx < len(channels):
             deleted = channels.pop(idx)
+            del_title = deleted.get("title") if isinstance(deleted, dict) else str(deleted)
             save_fn(fsub_channels=channels)
             r["fsub_channels"] = channels
-            await query.answer("✅ Channel deleted successfully!")
+            await query.answer(f"✨ Successfully {del_title} Removed From Forcesub Channels", show_alert=True)
         else:
             await query.answer("Channel not found!")
         return await handle_fsub_callbacks(client, query, "cset_fsub_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)
@@ -541,21 +557,33 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                 clear_user_session(user_id)
                 return
 
-            # Verify admin permissions
-            me = client.me or (await client.get_me())
+            # Verify admin permissions with target bot client
+            from plugins.clone import get_clone_client
+            target_bid = r.get("bot_id")
+            target_client = get_clone_client(target_bid) if target_bid else client
+            if not target_client:
+                target_client = client
+
+            target_me = target_client.me or (await target_client.get_me())
             is_admin = False
             try:
-                member = await client.get_chat_member(chat_id, me.id)
+                member = await target_client.get_chat_member(chat_id, target_me.id)
                 if member.status in (enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER):
                     is_admin = True
             except Exception:
                 is_admin = False
 
             if not is_admin:
-                err_msg = (
-                    "⚠️ <b>YOUR BOT IS NOT ADMIN IN THIS CHANNEL !</b>\n\n"
-                    "<i>Please make me admin in that channel with full rights and try again.</i>"
-                )
+                if target_bid:
+                    err_msg = (
+                        "⚠️ <b>Make Sure Your Clone Bot Is Admin In Your Force Sub Channel</b>\n\n"
+                        "<i>Please make your clone bot admin in that channel with full rights and try again.</i>"
+                    )
+                else:
+                    err_msg = (
+                        "⚠️ <b>Make Sure Your Bot Is Admin In Your Force Sub Channel</b>\n\n"
+                        "<i>Please make me admin in that channel with full rights and try again.</i>"
+                    )
                 clear_user_session(user_id)
                 return await client.send_message(
                     user_id,
@@ -633,23 +661,23 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
             invite_link = None
             try:
                 if chosen_mode == "request":
-                    inv = await client.create_chat_invite_link(chat_id, creates_join_request=True)
+                    inv = await target_client.create_chat_invite_link(chat_id, creates_join_request=True)
                     invite_link = inv.invite_link
                 else:
-                    chat_obj = await client.get_chat(chat_id)
+                    chat_obj = await target_client.get_chat(chat_id)
                     invite_link = chat_obj.invite_link
                     if not invite_link:
                         if chat_obj.username:
                             invite_link = f"https://t.me/{chat_obj.username}"
                         else:
-                            inv = await client.create_chat_invite_link(chat_id)
+                            inv = await target_client.create_chat_invite_link(chat_id)
                             invite_link = inv.invite_link
             except Exception:
                 if chat_username:
                     invite_link = f"https://t.me/{chat_username}"
                 else:
                     try:
-                        inv = await client.export_chat_invite_link(chat_id)
+                        inv = await target_client.export_chat_invite_link(chat_id)
                         invite_link = inv
                     except Exception:
                         invite_link = f"https://t.me/{chat_id}"
@@ -679,7 +707,7 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
 
             await client.send_message(
                 chat_id=user_id,
-                text="<b>SUCCESSFULLY UPDATED</b>",
+                text=f"✨ <b>Successfully Added {chat_title or 'Channel'} As Your Force Sub Channel</b>",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_menu")]]),
             )
 

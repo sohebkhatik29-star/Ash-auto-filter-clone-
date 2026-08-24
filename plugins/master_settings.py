@@ -351,6 +351,45 @@ async def send_settings_menu(client, message_or_user_id):
         return await message_or_user_id.reply(text, reply_markup=master_settings_markup())
     return await client.send_message(uid, text, reply_markup=master_settings_markup())
 
+async def send_clone_settings_menu(client, message_or_user_id, bid=None):
+    from clone_plugins import master_manager
+    uid = getattr(message_or_user_id, "from_user", None) and message_or_user_id.from_user.id or (
+        isinstance(message_or_user_id, int) and message_or_user_id or getattr(message_or_user_id, "chat", None) and message_or_user_id.chat.id
+    )
+    cancel_user_listeners(client, uid, uid)
+    m = db()
+    bot_doc = None
+    if m is not None and bid:
+        try:
+            bot_doc = m.bots.find_one({"bot_id": int(bid)})
+        except Exception:
+            bot_doc = None
+    if not bot_doc and m is not None:
+        docs = list(m.bots.find({"user_id": int(uid)}))
+        if docs:
+            bot_doc = docs[0]
+            bid = bot_doc.get("bot_id")
+    
+    if not bot_doc:
+        return await send_manage_clones(client, message_or_user_id)
+
+    # Store active editing clone in active_clone_edit
+    if m is not None and bid:
+        m.active_clone_edit.update_one({"user_id": int(uid)}, {"$set": {"bot_id": int(bid)}}, upsert=True)
+
+    bot_name = bot_doc.get("username") or bot_doc.get("name") or "Your Clone"
+    r = master_record()
+    p_days = r.get("plan_days", 3)
+    p_clones = r.get("plan_clones", 40)
+    text = (
+        f"🌟 <b>AVAILABLE PLANS • {p_days:02d} DAYS - {p_clones} ...</b>\n\n"
+        "<b>NOTE: THE SETTINGS BELOW WILL ONLY WORK FOR LINKS CREATED BY THIS TELEGRAM ACCOUNT. THEY WILL NOT AFFECT LINKS CREATED BY OTHER ACCOUNTS.</b>"
+    )
+    msg_target = getattr(message_or_user_id, "message", None) or (message_or_user_id if hasattr(message_or_user_id, "reply") else None)
+    if msg_target:
+        return await edit_or_reply(msg_target, text, reply_markup=master_manager.manage_markup(bid, back_cb="my_clones"))
+    return await client.send_message(uid, text, reply_markup=master_manager.manage_markup(bid, back_cb="my_clones"))
+
 async def send_manage_clones(client, message_or_user_id, message=None):
     from clone_plugins import master_manager
     uid = getattr(message_or_user_id, "from_user", None) and message_or_user_id.from_user.id or (
@@ -375,11 +414,42 @@ async def send_manage_clones(client, message_or_user_id, message=None):
 async def callbacks(client, query):
     user_id = query.from_user.id
     data = query.data or ""
-    r = master_record()
+    
+    # Check if target bid is in callback data (e.g. cset_prem:123456)
+    target_bid = None
+    if ":" in data:
+        last_part = data.split(":")[-1]
+        if last_part.isdigit() and len(last_part) >= 6:
+            target_bid = int(last_part)
+            
+    m = db()
+    if not target_bid and m is not None:
+        active_rec = m.active_clone_edit.find_one({"user_id": int(user_id)})
+        if active_rec:
+            target_bid = active_rec.get("bot_id")
+
+    if target_bid and m is not None:
+        target_doc = m.bots.find_one({"bot_id": int(target_bid)})
+        if target_doc:
+            r = target_doc
+            def save_master(**kwargs):
+                m.bots.update_one({"bot_id": int(target_bid)}, {"$set": kwargs}, upsert=True)
+        else:
+            r = master_record()
+    else:
+        r = master_record()
     me = await client.get_me()
 
     if data in ("settings", "settings_back", "master_settings"):
         cancel_user_listeners(client, user_id, user_id)
+        if target_bid and m is not None:
+            target_doc = m.bots.find_one({"bot_id": int(target_bid)})
+            if target_doc:
+                from clone_plugins import master_manager
+                text = (
+                    "<b>NOTE: THE SETTINGS BELOW WILL ONLY WORK FOR LINKS CREATED BY THIS TELEGRAM ACCOUNT. THEY WILL NOT AFFECT LINKS CREATED BY OTHER ACCOUNTS.</b>"
+                )
+                return await edit_or_reply(query, text, reply_markup=master_manager.manage_markup(target_bid, back_cb="my_clones"))
         p_days = r.get("plan_days", 3)
         p_clones = r.get("plan_clones", 40)
         text = (
@@ -390,6 +460,9 @@ async def callbacks(client, query):
 
     if data in ("my_clone", "my_clones", "clone_my_bots"):
         from clone_plugins import master_manager
+        # Clear active clone edit when user returns to clone menu
+        if m is not None:
+            m.active_clone_edit.delete_one({"user_id": int(user_id)})
         text = (
             "👑 <b>CLONE MENU</b>\n\n"
             "<i>\" WELCOME TO YOUR CLONE BOT MANAGEMENT HUB! CUSTOMIZE YOUR BOT SETTINGS OR MANAGE ITS STATUS USING THE OPTIONS BELOW. \"</i>\n\n"

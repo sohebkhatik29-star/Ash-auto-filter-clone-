@@ -138,7 +138,8 @@ def settings_menu():
         [InlineKeyboardButton("🪧 BACK", callback_data="clone_my_clone_info")]
     ])
 
-def clone_manage_hub_markup(bot_username):
+def clone_manage_hub_markup(bot_username, bot_id=None):
+    deep_link = f"https://t.me/{BOT_USERNAME}?start=csettings_{bot_id}" if bot_id else f"https://t.me/{BOT_USERNAME}?start=clone"
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🪙 MONETIZATION", callback_data="cset_monetization")],
         [InlineKeyboardButton("📝 START MESSAGE", callback_data="cset_start_msg_menu")],
@@ -149,18 +150,18 @@ def clone_manage_hub_markup(bot_username):
         [InlineKeyboardButton("🎁 BOT MODE", callback_data="cset_bot_mode")],
         [InlineKeyboardButton("🔄 RESTART BOT", callback_data="cset_restart_bot")],
         [InlineKeyboardButton("🚫 DELETE BOT", callback_data="cset_delete_bot")],
-        [InlineKeyboardButton("🔎 MORE FEATURES ↗", url=f"https://t.me/{BOT_USERNAME}?start=settings")]
+        [InlineKeyboardButton("🔎 MORE FEATURES ↗", url=deep_link)]
     ])
 
 # ----------------- MAIN SETTINGS COMMAND & CALLBACKS ----------------- #
 
 async def settings(client, message):
-    me = client.me
+    me = client.me or (await client.get_me())
     text = (
         f"🤖 <b>YOUR CLONE BOT - @{me.username}</b>\n\n"
         "<i>YOU CAN CUSTOMISE YOUR BOT SETTINGS FROM GIVEN BELOW BUTTONS</i>"
     )
-    await message.reply(text, reply_markup=clone_manage_hub_markup(me.username))
+    await message.reply(text, reply_markup=clone_manage_hub_markup(me.username, me.id))
 
 async def callbacks(client, query):
     data = query.data
