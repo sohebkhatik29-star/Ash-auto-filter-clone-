@@ -571,18 +571,40 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
             # Verify admin permissions with target bot client
             from plugins.clone import get_clone_client
             target_bid = r.get("bot_id")
-            target_client = get_clone_client(target_bid) if target_bid else client
-            if not target_client:
-                target_client = client
+            if not target_bid and mongo_db is not None:
+                act = mongo_db.active_clone_edit.find_one({"user_id": int(user_id)})
+                if act:
+                    target_bid = act.get("bot_id")
 
-            target_me = target_client.me or (await target_client.get_me())
+            target_client = get_clone_client(target_bid) if target_bid else None
+            
             is_admin = False
-            try:
-                member = await target_client.get_chat_member(chat_id, target_me.id)
-                if member.status in (enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER):
+            if target_client:
+                try:
+                    target_me = target_client.me or (await target_client.get_me())
+                    member = await target_client.get_chat_member(chat_id, target_me.id)
+                    if member.status in (enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER):
+                        is_admin = True
+                except Exception:
+                    is_admin = False
+            elif target_bid:
+                # Target is a clone bot, if not loaded in memory, try with direct client get_chat_member
+                try:
+                    target_me = client.me or (await client.get_me())
+                    member = await client.get_chat_member(chat_id, target_me.id)
+                    if member.status in (enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER):
+                        is_admin = True
+                except Exception:
+                    # Allow adding channel for clone bot if clone bot is added by user
                     is_admin = True
-            except Exception:
-                is_admin = False
+            else:
+                try:
+                    target_me = client.me or (await client.get_me())
+                    member = await client.get_chat_member(chat_id, target_me.id)
+                    if member.status in (enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER):
+                        is_admin = True
+                except Exception:
+                    is_admin = False
 
             if not is_admin:
                 if target_bid:
@@ -669,26 +691,27 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                 return
 
             # Obtain or create appropriate invite link
+            invite_client = target_client or client
             invite_link = None
             try:
                 if chosen_mode == "request":
-                    inv = await target_client.create_chat_invite_link(chat_id, creates_join_request=True)
+                    inv = await invite_client.create_chat_invite_link(chat_id, creates_join_request=True)
                     invite_link = inv.invite_link
                 else:
-                    chat_obj = await target_client.get_chat(chat_id)
+                    chat_obj = await invite_client.get_chat(chat_id)
                     invite_link = chat_obj.invite_link
                     if not invite_link:
                         if chat_obj.username:
                             invite_link = f"https://t.me/{chat_obj.username}"
                         else:
-                            inv = await target_client.create_chat_invite_link(chat_id)
+                            inv = await invite_client.create_chat_invite_link(chat_id)
                             invite_link = inv.invite_link
             except Exception:
                 if chat_username:
                     invite_link = f"https://t.me/{chat_username}"
                 else:
                     try:
-                        inv = await target_client.export_chat_invite_link(chat_id)
+                        inv = await invite_client.export_chat_invite_link(chat_id)
                         invite_link = inv
                     except Exception:
                         invite_link = f"https://t.me/{chat_id}"
@@ -706,6 +729,11 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
             })
 
             save_fn(fsub_channels=chs, fsub_enabled=True)
+            if target_bid and mongo_db is not None:
+                try:
+                    mongo_db.bots.update_one({"bot_id": int(target_bid)}, {"$set": {"fsub_channels": chs, "fsub_enabled": True}}, upsert=True)
+                except Exception:
+                    pass
             r["fsub_channels"] = chs
             r["fsub_enabled"] = True
             clear_user_session(user_id)

@@ -62,17 +62,18 @@ def manage_clones_markup(uid, back_cb="start_back", is_clone=False):
     return InlineKeyboardMarkup(rows)
 
 def manage_markup(bid=None, back_cb="my_clones"):
+    cb_fsub = f"cset_fsub:{bid}" if bid else "master_fsub_menu"
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💸 PREMIUM PLAN", callback_data="master_premium_plan")],
-        [InlineKeyboardButton("🆓 FREE USAGE LIMIT", callback_data="master_free_limit_menu")],
-        [InlineKeyboardButton("🌍 REFER AND EARN", callback_data="master_refer_earn")],
-        [InlineKeyboardButton("🖇️ LINK SHORTNER", callback_data="link_shortener")],
-        [InlineKeyboardButton("⏰ TOKEN VERIFICATION", callback_data="master_token_main")],
-        [InlineKeyboardButton("📢 FORCE SUBSCRIBE", callback_data="master_fsub_menu")],
-        [InlineKeyboardButton("🍿 CAPTION", callback_data="custom_caption"), InlineKeyboardButton("🖼️ THUMBNAIL", callback_data="custom_thumbnail")],
-        [InlineKeyboardButton("🔘 BUTTON", callback_data="custom_button"), InlineKeyboardButton("♻️ AUTO DELETE", callback_data="master_auto_delete_menu")],
-        [InlineKeyboardButton("♾️ PERMANENT LINK", callback_data="master_permanent_link")],
-        [InlineKeyboardButton("🔒 PROTECT CONTENT", callback_data="protect_menu")],
+        [InlineKeyboardButton("💸 PREMIUM PLAN", callback_data=f"master_premium_plan:{bid}" if bid else "master_premium_plan")],
+        [InlineKeyboardButton("🆓 FREE USAGE LIMIT", callback_data=f"master_free_limit_menu:{bid}" if bid else "master_free_limit_menu")],
+        [InlineKeyboardButton("🌍 REFER AND EARN", callback_data=f"master_refer_earn:{bid}" if bid else "master_refer_earn")],
+        [InlineKeyboardButton("🖇️ LINK SHORTNER", callback_data=f"link_shortener:{bid}" if bid else "link_shortener")],
+        [InlineKeyboardButton("⏰ TOKEN VERIFICATION", callback_data=f"master_token_main:{bid}" if bid else "master_token_main")],
+        [InlineKeyboardButton("📢 FORCE SUBSCRIBE", callback_data=cb_fsub)],
+        [InlineKeyboardButton("🍿 CAPTION", callback_data=f"custom_caption:{bid}" if bid else "custom_caption"), InlineKeyboardButton("🖼️ THUMBNAIL", callback_data=f"custom_thumbnail:{bid}" if bid else "custom_thumbnail")],
+        [InlineKeyboardButton("🔘 BUTTON", callback_data=f"custom_button:{bid}" if bid else "custom_button"), InlineKeyboardButton("♻️ AUTO DELETE", callback_data=f"master_auto_delete_menu:{bid}" if bid else "master_auto_delete_menu")],
+        [InlineKeyboardButton("♾️ PERMANENT LINK", callback_data=f"master_permanent_link:{bid}" if bid else "master_permanent_link")],
+        [InlineKeyboardButton("🔒 PROTECT CONTENT", callback_data=f"protect_menu:{bid}" if bid else "protect_menu")],
         [InlineKeyboardButton("🪧 BACK", callback_data=back_cb)]
     ])
 
@@ -179,6 +180,8 @@ async def handle_clone_callbacks(client, query):
         bid = int(data.split(":")[1])
         if not owns(user_id, bid):
             return await query.answer("❌ You can manage only your own clones.", show_alert=True)
+        if m is not None:
+            m.active_clone_edit.update_one({"user_id": int(user_id)}, {"$set": {"bot_id": int(bid)}}, upsert=True)
         text = (
             "<b>NOTE: THE SETTINGS BELOW WILL ONLY WORK FOR LINKS CREATED BY THIS TELEGRAM ACCOUNT. THEY WILL NOT AFFECT LINKS CREATED BY OTHER ACCOUNTS.</b>"
         )

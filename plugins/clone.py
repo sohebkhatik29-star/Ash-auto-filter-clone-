@@ -16,14 +16,26 @@ mongo_db = mongo_client["ash_clone_bots"] if mongo_client else None
 CLONES = {}
 
 def get_clone_client(bot_id):
-    try:
-        return CLONES.get(int(bot_id))
-    except Exception:
+    if not bot_id:
         return None
+    try:
+        bid = int(bot_id)
+        if bid in CLONES:
+            return CLONES[bid]
+    except Exception:
+        pass
+    try:
+        for k, v in CLONES.items():
+            if str(k) == str(bot_id):
+                return v
+    except Exception:
+        pass
+    return None
 
 def set_clone_client(bot_id, client):
     try:
         CLONES[int(bot_id)] = client
+        CLONES[str(bot_id)] = client
     except Exception:
         pass
 
