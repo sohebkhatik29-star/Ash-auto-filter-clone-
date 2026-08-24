@@ -432,12 +432,19 @@ async def callbacks(client, query):
         target_doc = m.bots.find_one({"bot_id": int(target_bid)})
         if target_doc:
             r = target_doc
-            def save_master(**kwargs):
-                m.bots.update_one({"bot_id": int(target_bid)}, {"$set": kwargs}, upsert=True)
         else:
             r = master_record()
     else:
         r = master_record()
+
+    def save_master(**kwargs):
+        m_inner = db()
+        if m_inner is not None:
+            if target_bid:
+                m_inner.bots.update_one({"bot_id": int(target_bid)}, {"$set": kwargs}, upsert=True)
+            else:
+                m_inner.master_settings.update_one({}, {"$set": kwargs}, upsert=True)
+
     me = await client.get_me()
 
     if data in ("settings", "settings_back", "master_settings"):

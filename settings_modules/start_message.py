@@ -204,6 +204,11 @@ async def run_start_button_builder(client, user_id, save_fn, cancel_listeners_fn
 
     await client.send_message(
         chat_id=user_id,
+        text="✨ <b>Buttons updated successfully!</b>",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    await client.send_message(
+        chat_id=user_id,
         text="<b>SUCCESSFULLY BUTTON ADDED</b>",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="cset_start_btn")]])
     )
