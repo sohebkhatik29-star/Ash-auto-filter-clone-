@@ -1211,7 +1211,14 @@ async def callbacks(client, query):
 
     # --- FORCE SUBSCRIBE --- #
     if data in ("master_fsub_menu", "m_tgl_fsub", "m_clear_fsub", "m_add_fsub") or data.startswith("cset_fsub"):
-        return await handle_fsub_callbacks(client, query, data, user_id, r, save_master, cancel_user_listeners, edit_or_reply)
+        try:
+            return await handle_fsub_callbacks(client, query, data, user_id, r, save_master, cancel_user_listeners, edit_or_reply)
+        except Exception as e:
+            try:
+                await query.answer(f"Error: {e}", show_alert=True)
+            except Exception:
+                pass
+            return
 
     # --- CAPTION --- #
     if data == "custom_caption":

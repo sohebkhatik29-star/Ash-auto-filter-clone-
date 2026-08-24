@@ -374,10 +374,21 @@ async def run_fsub_button_builder(client, user_id, save_fn, cancel_listeners_fn,
 # ----------------- MAIN CALLBACK HANDLER ----------------- #
 
 async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, *args, **kwargs):
+    try:
+        await query.answer()
+    except Exception:
+        pass
+
     # 1. Main Force Subscribe Settings Menu
     if data in ("master_fsub_menu", "cset_fsub_menu", "cset_fsub_main") or data.startswith("cset_fsub:"):
         fsub_on = bool(r.get("fsub_enabled", False))
-        channels = r.get("fsub_channels", [])
+        raw_channels = r.get("fsub_channels", [])
+        if isinstance(raw_channels, list):
+            channels = raw_channels
+        elif raw_channels:
+            channels = [raw_channels]
+        else:
+            channels = []
         
         target_bid = r.get("bot_id")
         bot_type = "clone bot" if target_bid else "bot"
