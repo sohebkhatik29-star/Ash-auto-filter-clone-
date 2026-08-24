@@ -953,15 +953,7 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                 clear_user_session(user_id)
                 return
 
-            dl_msg = await client.send_message(chat_id=user_id, text="<b>DOWNLOADING...</b>")
-            import os
-            os.makedirs("cache/fsub_pics", exist_ok=True)
-            local_cache_path = f"cache/fsub_pics/{target_bid or 'master'}.jpg"
-            try:
-                await client.download_media(ans, file_name=local_cache_path)
-            except Exception:
-                pass
-
+            clear_user_session(user_id)
             save_fn(fsub_pic=photo_file_id)
             if target_bid and mongo_db is not None:
                 try:
@@ -969,10 +961,10 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                 except Exception:
                     pass
             r["fsub_pic"] = photo_file_id
-            clear_user_session(user_id)
 
-            await dl_msg.edit_text(
-                "<b>SUCCESSFULLY PICTURE SET</b>",
+            await client.send_message(
+                chat_id=user_id,
+                text="<b>SUCCESSFULLY PICTURE SET ✅</b>",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_pic_menu")]])
             )
 
