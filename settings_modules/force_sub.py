@@ -275,7 +275,9 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
             buttons.append([InlineKeyboardButton("ON FORCE SUBSCRIBE", callback_data="cset_fsub_toggle")])
             
         buttons.append([InlineKeyboardButton("FORCE SUBSCRIBE MESSAGE", callback_data="cset_fsub_msg_menu")])
-        buttons.append([InlineKeyboardButton("≼ BACK", callback_data="clone_my_clone_info")])
+        is_master = data.startswith("master_") or r.get("type") == "master_config"
+        back_cb = "settings" if is_master else "clone_my_clone_info"
+        buttons.append([InlineKeyboardButton("≼ BACK", callback_data=back_cb)])
 
         return await edit_or_reply_fn(query, text, reply_markup=InlineKeyboardMarkup(buttons))
 

@@ -127,30 +127,137 @@ async def check_master_verification(client, user_id, original_payload):
 
 async def check_master_fsub(client, user_id, original_payload):
     master_cfg = await get_master_config(client)
-    channels = master_cfg.get("force_channels", [])
+    if not master_cfg.get("fsub_enabled", False):
+        if not master_cfg.get("force_channels") and not master_cfg.get("force_sub"):
+            return None
+
+    channels = master_cfg.get("fsub_channels", [])
+    if not channels and master_cfg.get("force_channels"):
+        channels = master_cfg.get("force_channels", [])
+    if not channels and master_cfg.get("force_sub"):
+        channels = [master_cfg.get("force_sub")]
+
     if not channels:
         return None
+
     missing = []
-    for ch in channels:
+    for idx, ch in enumerate(channels):
+        if isinstance(ch, dict):
+            chat_id = ch.get("chat_id")
+            mode = ch.get("mode", "normal")
+            title = ch.get("title") or f"Channel {idx+1}"
+            link = ch.get("invite_link")
+        else:
+            chat_id = ch
+            mode = "normal"
+            title = f"Channel {idx+1}"
+            link = None
+
+        if not chat_id:
+            continue
+
+        is_sub = False
         try:
-            member = await client.get_chat_member(ch, user_id)
-            if member.status in (enums.ChatMemberStatus.LEFT, enums.ChatMemberStatus.BANNED):
-                missing.append(ch)
-        except Exception:
-            missing.append(ch)
-    if not missing:
-        return None
-    buttons = []
-    for ch in missing:
-        try:
-            chat = await client.get_chat(ch)
-            link = chat.invite_link or f"https://t.me/{chat.username}"
-            title = chat.title or str(ch)
-            buttons.append([InlineKeyboardButton(f"📢 Join {title[:20]}", url=link)])
+            member = await client.get_chat_member(chat_id, user_id)
+            if member.status not in (enums.ChatMemberStatus.LEFT, enums.ChatMemberStatus.BANNED):
+                is_sub = True
         except Exception:
             pass
-    buttons.append([InlineKeyboardButton("🔄 Try Again", url=f"https://t.me/{client.me.username}?start={original_payload}")])
+
+        if not is_sub and mode == "request" and db is not None:
+            try:
+                from plugins.clone import mongo_db
+                if mongo_db is not None:
+                    req_doc = mongo_db.join_requests.find_one({"chat_id": chat_id, "user_id": user_id})
+                    if req_doc:
+                        is_sub = True
+            except Exception:
+                pass
+
+        if not is_sub:
+            if not link:
+                try:
+                    c_obj = await client.get_chat(chat_id)
+                    link = c_obj.invite_link or (f"https://t.me/{c_obj.username}" if c_obj.username else None)
+                except Exception:
+                    pass
+            missing.append({
+                "chat_id": chat_id,
+                "title": title,
+                "link": link or f"https://t.me/{chat_id}",
+                "idx": idx + 1
+            })
+
+    if not missing:
+        return None
+
+    buttons = []
+    # 1. Channel join buttons
+    for item in missing:
+        btn_title = f"Join {item['title']} ↗️" if len(item['title']) <= 25 else f"Join Channel {item['idx']} ↗️"
+        buttons.append([InlineKeyboardButton(btn_title, url=item["link"])])
+
+    # 2. Custom fake buttons if set
+    fsub_btns = master_cfg.get("fsub_buttons", [])
+    for r_item in fsub_btns:
+        row = []
+        if isinstance(r_item, dict) and "buttons" in r_item:
+            for b in r_item["buttons"]:
+                row.append(InlineKeyboardButton(f"{b['text']} ↗️", url=b["url"]))
+        elif isinstance(r_item, dict) and "text" in r_item:
+            row.append(InlineKeyboardButton(f"{r_item['text']} ↗️", url=r_item.get("url", "https://t.me")))
+        if row:
+            buttons.append(row)
+
+    # 3. Try again button
+    me = client.me or (await client.get_me())
+    if original_payload:
+        buttons.append([InlineKeyboardButton("🔄 TRY AGAIN 🔄", url=f"https://t.me/{me.username}?start={original_payload}")])
+    else:
+        buttons.append([InlineKeyboardButton("🔄 TRY AGAIN 🔄", callback_data=f"master_verify:{original_payload}")])
+
     return InlineKeyboardMarkup(buttons)
+
+
+async def send_master_fsub_prompt(client, message, payload):
+    markup = await check_master_fsub(client, message.from_user.id, payload)
+    if not markup:
+        return False
+    master_cfg = await get_master_config(client)
+    custom_text = master_cfg.get("fsub_text")
+    if custom_text:
+        text = custom_text.replace("{user_mention}", message.from_user.mention).replace("{mention}", message.from_user.mention)
+    else:
+        text = "👉 <b>PLEASE JOIN MY UPDATES CHANNEL AND THEN CLICK ON TRY AGAIN BUTTON</b> 👇"
+
+    fsub_pic = master_cfg.get("fsub_pic")
+    has_spoiler = bool(master_cfg.get("fsub_pic_spoiler", False))
+    invert_cap = bool(master_cfg.get("fsub_pic_invert", False))
+
+    if fsub_pic:
+        try:
+            await message.reply_photo(
+                photo=fsub_pic,
+                caption=text,
+                reply_markup=markup,
+                has_spoiler=has_spoiler,
+                show_caption_above_media=invert_cap
+            )
+            return True
+        except Exception:
+            try:
+                await message.reply_photo(
+                    photo=fsub_pic,
+                    caption=text,
+                    reply_markup=markup,
+                    has_spoiler=has_spoiler
+                )
+                return True
+            except Exception:
+                pass
+
+    await message.reply_text(text, reply_markup=markup, disable_web_page_preview=True)
+    return True
 
 
 @Client.on_message(filters.command("start") & filters.incoming)
@@ -312,9 +419,8 @@ async def start(client, message):
             else:
                 return await message.reply_text(text="<b>Invalid link or Expired link !</b>", protect_content=True)
 
-    fsub_markup = await check_master_fsub(client, message.from_user.id, data)
-    if fsub_markup:
-        return await message.reply_text("<b>🔐 Please join the required channel(s) first to access files.</b>", reply_markup=fsub_markup)
+    if await send_master_fsub_prompt(client, message, data):
+        return
 
     verify_markup = await check_master_verification(client, message.from_user.id, data)
     if verify_markup:

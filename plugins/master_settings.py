@@ -15,6 +15,7 @@ from clone_plugins.users_api import (
     get_user, update_user_info, get_short_link, validate_shortener_token,
     parse_time_string, format_time_minutes, is_user_premium
 )
+from settings_modules.force_sub import handle_fsub_callbacks
 from config import ADMINS, BOT_USERNAME
 
 _START_TIME = time.time()
@@ -95,7 +96,7 @@ def master_settings_markup(back_cb="settings_back"):
         [InlineKeyboardButton("🌍 REFER AND EARN", callback_data="master_refer_earn")],
         [InlineKeyboardButton("🖇️ LINK SHORTNER", callback_data="link_shortener")],
         [InlineKeyboardButton("⏰ TOKEN VERIFICATION", callback_data="master_token_main")],
-        [InlineKeyboardButton("📢 FORCE SUBSCRIBE", callback_data="master_fsub_menu")],
+        [InlineKeyboardButton("🔒 FORCE SUBSCRIBE", callback_data="master_fsub_menu")],
         [InlineKeyboardButton("🍿 CAPTION", callback_data="custom_caption"), InlineKeyboardButton("🖼️ THUMBNAIL", callback_data="custom_thumbnail")],
         [InlineKeyboardButton("🔘 BUTTON", callback_data="custom_button"), InlineKeyboardButton("♻️ AUTO DELETE", callback_data="master_auto_delete_menu")],
         [InlineKeyboardButton("♾️ PERMANENT LINK", callback_data="master_permanent_link")],
@@ -1136,71 +1137,8 @@ async def callbacks(client, query):
         return
 
     # --- FORCE SUBSCRIBE --- #
-    if data == "master_fsub_menu":
-        fsub_on = bool(r.get("fsub_enabled", False))
-        ch_list = r.get("fsub_channels", [])
-        status_txt = "ON ✅" if fsub_on else "OFF ❌"
-        ch_text = "\n".join([f"• <code>{c}</code>" for c in ch_list]) if ch_list else "<i>No channels added yet.</i>"
-        text = (
-            "📢 <b>FORCE SUBSCRIBE SETTINGS:</b>\n\n"
-            f"• <b>STATUS:</b> <b>{status_txt}</b>\n\n"
-            f"<b>CONFIGURED CHANNELS:</b>\n{ch_text}\n\n"
-            "<b>Users must join these channels before getting files.</b>"
-        )
-        tgl_btn = "DISABLE FORCE SUB" if fsub_on else "ENABLE FORCE SUB"
-        return await edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(tgl_btn, callback_data="m_tgl_fsub")],
-            [InlineKeyboardButton("ADD FSUB CHANNEL", callback_data="m_add_fsub"), InlineKeyboardButton("CLEAR CHANNELS", callback_data="m_clear_fsub")],
-            [InlineKeyboardButton("‹ BACK", callback_data="settings")]
-        ]))
-
-    if data == "m_tgl_fsub":
-        new_s = not bool(r.get("fsub_enabled", False))
-        save_master(fsub_enabled=new_s)
-        await query.answer(f"Force Sub {'Enabled' if new_s else 'Disabled'}!")
-        return await callbacks(client, type("Q", (), {"data": "master_fsub_menu", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
-
-    if data == "m_clear_fsub":
-        save_master(fsub_channels=[])
-        await query.answer("All FSub channels removed!")
-        return await callbacks(client, type("Q", (), {"data": "master_fsub_menu", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
-
-    if data == "m_add_fsub":
-        cancel_user_listeners(client, user_id, user_id)
-        sess_token = start_user_session(user_id, "m_fsub_add")
-        await query.answer()
-        await query.message.reply("📢 <b>Forward a message from your channel or send Channel ID / Username:</b>\n\n<i>Send /cancel to abort.</i>")
-        async def _fsub_worker():
-            try:
-                ans = await client.listen(chat_id=user_id, timeout=120)
-            except Exception:
-                await client.send_message(user_id, "❌ <b>Timeout. Process cancelled.</b>")
-                clear_user_session(user_id)
-                return
-            if not is_user_session_active(user_id, sess_token):
-                return
-            txt = (ans.text or "").strip()
-            if txt == "/cancel":
-                await client.send_message(user_id, "❌ <b>Cancelled.</b>")
-                clear_user_session(user_id)
-                return
-            ch_val = None
-            if ans.forward_from_chat:
-                ch_val = ans.forward_from_chat.id
-            elif txt:
-                ch_val = int(txt) if txt.lstrip("-").isdigit() else txt
-            if not ch_val:
-                await client.send_message(user_id, "❌ <b>Invalid channel input.</b>")
-                clear_user_session(user_id)
-                return
-            chs = master_record().get("fsub_channels", [])
-            if ch_val not in chs:
-                chs.append(ch_val)
-            save_master(fsub_channels=chs, fsub_enabled=True)
-            clear_user_session(user_id)
-            await client.send_message(user_id, f"✅ <b>Channel added:</b> <code>{ch_val}</code>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_fsub_menu")]]))
-        asyncio.create_task(_fsub_worker())
-        return
+    if data in ("master_fsub_menu", "m_tgl_fsub", "m_clear_fsub", "m_add_fsub") or data.startswith("cset_fsub"):
+        return await handle_fsub_callbacks(client, query, data, user_id, r, save_master, cancel_user_listeners, edit_or_reply)
 
     # --- CAPTION --- #
     if data == "custom_caption":
