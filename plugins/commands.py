@@ -418,12 +418,12 @@ async def start(client, message):
 
         if data.startswith("verify_"):
             token = data.split("_", 1)[1]
-            orig_payload, slot_used = await consume_verify_token(token, message.from_user.id, client.me.id)
+            orig_payload, slot_used = consume_verify_token(token, message.from_user.id, client.me.id)
             if orig_payload is not None:
                 v_key = f"verify_{slot_used}" if slot_used > 1 else "verify_1"
                 v_cfg = master_cfg.get(v_key, {})
                 time_mins = int(v_cfg.get("time", v_cfg.get("time_minutes", 1440)))
-                await set_user_verified(message.from_user.id, client.me.id, duration_minutes=time_mins, slot=slot_used)
+                set_user_verified(message.from_user.id, client.me.id, duration_minutes=time_mins, slot=slot_used)
                 dur_str = format_time_minutes(time_mins)
                 
                 # Send log to verify_log_channel if configured
@@ -469,7 +469,7 @@ async def start(client, message):
                     protect_content=True
                 )
                 await verify_user(client, userid, token)
-                await set_user_verified(message.from_user.id, client.me.id, duration_minutes=time_mins, slot=1)
+                set_user_verified(message.from_user.id, client.me.id, duration_minutes=time_mins, slot=1)
                 return
             else:
                 return await message.reply_text(text="<b>Invalid link or Expired link !</b>", protect_content=True)

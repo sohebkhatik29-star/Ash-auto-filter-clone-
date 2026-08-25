@@ -633,7 +633,7 @@ async def start(client, message):
         
     if data.startswith("verify_") or data.startswith("verify-"):
         token_str = data.split("_", 1)[1] if data.startswith("verify_") else data.split("-", 1)[1]
-        orig_payload, slot_used = await consume_verify_token(token_str, message.from_user.id, me.id)
+        orig_payload, slot_used = consume_verify_token(token_str, message.from_user.id, me.id)
         if orig_payload is None and mongo_db is not None:
             rec_t = mongo_db.access_tokens.find_one({"bot_id": me.id, "token": token_str, "user_id": int(message.from_user.id)})
             if rec_t:
@@ -647,7 +647,7 @@ async def start(client, message):
         v_cfg = rec.get(v_key, {})
         time_mins = int(v_cfg.get("time", v_cfg.get("time_minutes", 1440)))
         
-        await set_user_verified(message.from_user.id, me.id, duration_minutes=time_mins, slot=slot_used)
+        set_user_verified(message.from_user.id, me.id, duration_minutes=time_mins, slot=slot_used)
         dur_str = format_time_minutes(time_mins)
         
         # Send log to verify_log_channel if configured
