@@ -154,7 +154,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         return await clean_show(text, reply_markup=single_token_verification_markup(slot, is_on, prefix_cb, target_bid=target_bid))
 
     # 3. Toggle Slot (ON/OFF)
-    if data.startswith("m_v_toggle:") or data.startswith("cset_v_toggle:"):
+    if str(data).startswith(("master_v_toggle:", "m_v_toggle:", "cset_v_toggle:")):
         slot = int(data.split(":")[1])
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
@@ -169,7 +169,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         return await clean_show(text, reply_markup=single_token_verification_markup(slot, new_state, prefix_cb, target_bid=target_bid))
 
     # 4. Stats Alert
-    if data.startswith("m_v_stats:") or data.startswith("cset_v_stats:"):
+    if str(data).startswith(("master_v_stats:", "m_v_stats:", "cset_v_stats:")):
         slot = int(data.split(":")[1])
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
         today_count = curr_r.get(f"verified_today_{slot}", 0)
@@ -177,7 +177,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         return await query.answer(f"{bot_title}\n\nTotal Verified Today - {today_count}", show_alert=True)
 
     # 5. Verify Shortner Screen
-    if data.startswith("m_v_shortner:") or data.startswith("cset_v_shortner:"):
+    if str(data).startswith(("master_v_shortner:", "m_v_shortner:", "cset_v_shortner:")):
         slot = int(data.split(":")[1])
         prefix = slot_name(slot)
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
@@ -194,7 +194,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         return await clean_show(text, reply_markup=shortner_markup(slot, prefix_cb, target_bid=target_bid))
 
     # 6. Delete Shortner
-    if data.startswith("m_del_v_shortner:") or data.startswith("cset_del_v_shortner:") or data.startswith("cset_v_del_short:"):
+    if str(data).startswith(("master_del_v_shortner:", "m_del_v_shortner:", "cset_del_v_shortner:", "cset_v_del_short:", "master_v_del_short:")):
         slot = int(data.split(":")[1])
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
@@ -210,7 +210,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         return await clean_show(text, reply_markup=back_to_slot_markup(slot, prefix_cb, target_bid=target_bid))
 
     # 7. Set Shortner Flow
-    if data.startswith("m_set_v_shortner:") or data.startswith("cset_set_v_shortner:") or data.startswith("cset_v_set_short:"):
+    if str(data).startswith(("master_set_v_shortner:", "m_set_v_shortner:", "cset_set_v_shortner:", "cset_v_set_short:", "master_v_set_short:")):
         slot = int(data.split(":")[1])
         if cancel_listeners_fn:
             cancel_listeners_fn(client, user_id, user_id)
@@ -331,7 +331,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         return
 
     # 8. Verify Tutorial Screen
-    if str(data).startswith(("m_v_tutorial:", "cset_v_tutorial:")):
+    if str(data).startswith(("master_v_tutorial:", "m_v_tutorial:", "cset_v_tutorial:")):
         slot = int(data.split(":")[1])
         prefix = slot_name(slot)
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
@@ -346,7 +346,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         return await clean_show(text, reply_markup=tutorial_markup(slot, prefix_cb, target_bid=target_bid))
 
     # 9. Delete Tutorial
-    if str(data).startswith(("m_del_v_tut:", "cset_del_v_tut:", "cset_v_del_tut:")):
+    if str(data).startswith(("master_del_v_tut:", "m_del_v_tut:", "cset_del_v_tut:", "cset_v_del_tut:", "master_v_del_tut:")):
         slot = int(data.split(":")[1])
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
@@ -359,7 +359,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         return await clean_show(text, reply_markup=back_to_slot_markup(slot, prefix_cb, target_bid=target_bid))
 
     # 10. Set Tutorial Flow
-    if str(data).startswith(("m_set_v_tut:", "cset_set_v_tut:", "cset_v_set_tut:")):
+    if str(data).startswith(("master_set_v_tut:", "m_set_v_tut:", "cset_set_v_tut:", "cset_v_set_tut:", "master_v_set_tut:")):
         slot = int(data.split(":")[1])
         if cancel_listeners_fn:
             cancel_listeners_fn(client, user_id, user_id)
@@ -436,7 +436,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         return
 
     # 11. Verify Time Screen
-    if str(data).startswith(("m_v_time:", "cset_v_time:")):
+    if str(data).startswith(("master_v_time:", "m_v_time:", "cset_v_time:")):
         slot = int(data.split(":")[1])
         prefix = slot_name(slot)
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
@@ -452,7 +452,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         return await clean_show(text, reply_markup=verify_time_markup(slot, prefix_cb, target_bid=target_bid))
 
     # 12. Reset Verify Time
-    if str(data).startswith(("m_del_v_time:", "cset_del_v_time:", "cset_v_del_time:")):
+    if str(data).startswith(("master_del_v_time:", "m_del_v_time:", "cset_del_v_time:", "cset_v_del_time:", "master_v_del_time:")):
         slot = int(data.split(":")[1])
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
@@ -471,7 +471,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         return await clean_show(text, reply_markup=verify_time_markup(slot, prefix_cb, target_bid=target_bid))
 
     # 13. Set Verify Time Flow
-    if str(data).startswith(("m_set_v_time:", "cset_set_v_time:", "cset_v_set_time:")):
+    if str(data).startswith(("master_set_v_time:", "m_set_v_time:", "cset_set_v_time:", "cset_v_set_time:", "master_v_set_time:")):
         slot = int(data.split(":")[1])
         if cancel_listeners_fn:
             cancel_listeners_fn(client, user_id, user_id)

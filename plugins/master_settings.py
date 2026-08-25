@@ -475,10 +475,11 @@ async def callbacks(client, query):
 
     # --- TOKEN VERIFICATION --- #
     if (
-        data in ("master_token_main", "master_token_verification", "master_verify_log_channel", "m_set_v_log", "m_del_v_log")
+        data in ("master_token_main", "master_token_verification", "master_verify_log_channel", "m_set_v_log", "m_del_v_log", "master_set_v_log", "master_del_v_log")
         or data.startswith((
             "master_token_main", "master_token_verification", "master_verify_log_channel",
-            "m_set_v_log", "m_del_v_log", "m_v_", "master_del_v_log", "master_set_v_log"
+            "m_set_v_log", "m_del_v_log", "m_v_", "master_del_v_log", "master_set_v_log",
+            "master_v_", "master_set_v_", "master_del_v_", "m_set_v_", "m_del_v_"
         ))
     ):
         from settings_modules.token_verify import handle_token_callbacks
