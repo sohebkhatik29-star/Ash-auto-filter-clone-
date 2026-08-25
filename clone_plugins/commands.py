@@ -310,19 +310,19 @@ async def access_verification(client, user_id, original_payload):
         f"IF YOU DONOT KNOW HOW TO VERIFY THEN CLICK ON HOW TO VERIFY BUTTON AND WATCH THE VIDEO.\n\n"
         f"THIS IS AN ADS-BASED ACCESS TOKEN. IF YOU PASS ONE ACCESS TOKEN, YOU CAN ACCESS MESSAGES FROM LINKS FOR NEXT {time_str}.</blockquote>\n\n"
         f"<b>#VERIFICATION:-</b> {step_index}/{total_steps}\n\n"
-        f"<blockquote>IF YOU WANT DIRECT FILES WITHOUT ANY VERIFICATIONS THEN BUY BOT SUBSCRIPTION 😴\n\n"
-        f"▶️ CLICK ON BUY PREMIUM BUTTON TO BUY SUBSCRIPTION</blockquote>"
+        f"<blockquote>IF YOU WANT DIRECT FILES WITHOUT ANY VERIFICATIONS THEN BUY BOT SUBSCRIPTION 🥲\n\n"
+        f"💳 CLICK ON BUY PREMIUM BUTTON TO BUY SUBSCRIPTION</blockquote>"
     )
 
     buttons = [
-        [InlineKeyboardButton("🟢 VERIFY 🔗", url=short_url)]
+        [InlineKeyboardButton("🟢 VERIFY 🟢", url=short_url)]
     ]
     if tutorial:
-        buttons.append([InlineKeyboardButton("🎬 HOW TO VERIFY ↗️", url=tutorial)])
+        buttons.append([InlineKeyboardButton("🍿 HOW TO VERIFY 🍿", url=tutorial)])
     if rec.get("premium_is_on") or rec.get("premium_users") is not None:
-        buttons.append([InlineKeyboardButton("⭐ BUY PREMIUM - NO NEED TO VERIFY ⭐", callback_data="c_buy_prem")])
+        buttons.append([InlineKeyboardButton("💎 BUY PREMIUM - NO NEED TO VERIFY 💎", callback_data="c_buy_prem")])
     elif rec.get("owner_username"):
-        buttons.append([InlineKeyboardButton("⭐ BUY PREMIUM - NO NEED TO VERIFY ⭐", url=f"https://t.me/{rec.get('owner_username').lstrip('@')}")])
+        buttons.append([InlineKeyboardButton("💎 BUY PREMIUM - NO NEED TO VERIFY 💎", url=f"https://t.me/{rec.get('owner_username').lstrip('@')}")])
 
     return text, InlineKeyboardMarkup(buttons)
 
