@@ -13,7 +13,8 @@ from pyrogram import Client, filters, enums
 from plugins.users_api import (
     get_user, update_user_info, format_caption, get_short_link,
     is_user_premium, check_user_verified, set_user_verified,
-    create_verify_token, consume_verify_token, format_time_minutes
+    create_verify_token, consume_verify_token, format_time_minutes,
+    format_auto_delete_time, parse_auto_delete_time
 )
 from pyrogram.errors import ChatAdminRequired, FloodWait
 from pyrogram.types import *
@@ -69,60 +70,81 @@ async def get_master_config(client):
 async def check_master_verification(client, user_id, original_payload):
     master_cfg = await get_master_config(client)
     if not master_cfg:
-        return None
+        return None, None
     if is_user_premium(user_id, master_cfg):
-        return None
+        return None, None
 
-    active_slot = None
+    active_slots = []
     for s in (1, 2, 3):
         v_key = f"verify_{s}" if s > 1 else "verify_1"
         v_cfg = master_cfg.get(v_key, {})
-        if v_cfg.get("is_on"):
-            active_slot = v_cfg
+        site = v_cfg.get("shortner_site") or v_cfg.get("site") or master_cfg.get("base_site")
+        api = v_cfg.get("shortner_api") or v_cfg.get("api") or master_cfg.get("shortener_api")
+        if v_cfg.get("is_on") and site and api:
+            active_slots.append((s, v_cfg, site, api))
+
+    if not active_slots:
+        if VERIFY_MODE and master_cfg.get("base_site") and master_cfg.get("shortener_api"):
+            active_slots.append((1, {
+                "tutorial": VERIFY_TUTORIAL,
+                "time": 480
+            }, master_cfg.get("base_site"), master_cfg.get("shortener_api")))
+
+    if not active_slots:
+        return None, None
+
+    pending_slot_num = None
+    pending_slot_cfg = None
+    site_to_use = None
+    api_to_use = None
+    step_index = 0
+    total_steps = len(active_slots)
+
+    for idx, (s_num, s_cfg, s_site, s_api) in enumerate(active_slots):
+        if not check_user_verified(user_id, client.me.id, slot=s_num):
+            pending_slot_num = s_num
+            pending_slot_cfg = s_cfg
+            site_to_use = s_site
+            api_to_use = s_api
+            step_index = idx + 1
             break
 
-    if not active_slot:
-        if VERIFY_MODE and master_cfg.get("base_site") and master_cfg.get("shortener_api"):
-            active_slot = {
-                "site": master_cfg.get("base_site"),
-                "api": master_cfg.get("shortener_api"),
-                "tutorial": VERIFY_TUTORIAL,
-                "time_minutes": 480
-            }
-        elif VERIFY_MODE:
-            if not await check_verification(client, user_id):
-                btn = [[
-                    InlineKeyboardButton("Verify", url=await get_token(client, user_id, f"https://telegram.me/{client.me.username}?start="))
-                ],[
-                    InlineKeyboardButton("How To Open Link & Verify", url=VERIFY_TUTORIAL)
-                ]]
-                if master_cfg.get("premium_is_on"):
-                    btn.append([InlineKeyboardButton("💳 Buy Premium Plan", callback_data="m_buy_prem")])
-                return InlineKeyboardMarkup(btn)
-            return None
-        else:
-            return None
+    if not pending_slot_num:
+        return None, None
 
-    if check_user_verified(user_id, client.me.id):
-        return None
+    tutorial = pending_slot_cfg.get("tutorial") or VERIFY_TUTORIAL
+    mins = int(pending_slot_cfg.get("time", pending_slot_cfg.get("time_minutes", 1440)))
+    time_str = format_time_minutes(mins)
 
-    site = active_slot.get("site") or master_cfg.get("base_site")
-    api = active_slot.get("api") or master_cfg.get("shortener_api")
-    tutorial = active_slot.get("tutorial") or VERIFY_TUTORIAL
+    token = create_verify_token(user_id, client.me.id, original_payload, slot=pending_slot_num)
+    me = client.me or (await client.get_me())
+    raw_url = f"https://telegram.me/{me.username}?start=verify_{token}"
+    short_url = await get_short_link({"base_site": site_to_use, "shortener_api": api_to_use}, raw_url)
 
-    if not site or not api:
-        return None
+    first_name = "User"
+    try:
+        u = await client.get_users(user_id)
+        first_name = u.first_name or "User"
+    except Exception:
+        pass
 
-    token = create_verify_token(user_id, client.me.id, original_payload)
-    raw_url = f"https://telegram.me/{client.me.username}?start=verify_{token}"
-    short_url = await get_short_link({"base_site": site, "shortener_api": api}, raw_url)
+    text = (
+        f"Hey <b>{first_name}</b>,\n\n"
+        f"<blockquote>YOU ARE NOT VERIFIED TODAY, PLEASE CLICK ON VERIFY BUTTON AND GET UNLIMITED ACCESS FOR NEXT {time_str}.\n\n"
+        f"IF YOU DONOT KNOW HOW TO VERIFY THEN CLICK ON HOW TO VERIFY BUTTON AND WATCH THE VIDEO.\n\n"
+        f"THIS IS AN ADS-BASED ACCESS TOKEN. IF YOU PASS ONE ACCESS TOKEN, YOU CAN ACCESS MESSAGES FROM LINKS FOR NEXT {time_str}.</blockquote>\n\n"
+        f"<b>#VERIFICATION:-</b> {step_index}/{total_steps}\n\n"
+        f"<blockquote>IF YOU WANT DIRECT FILES WITHOUT ANY VERIFICATIONS THEN BUY BOT SUBSCRIPTION 😴\n\n"
+        f"▶️ CLICK ON BUY PREMIUM BUTTON TO BUY SUBSCRIPTION</blockquote>"
+    )
 
-    btn = [[InlineKeyboardButton("🔗 Click Here To Verify", url=short_url)]]
+    btn = [[InlineKeyboardButton("🟢 VERIFY 🔗", url=short_url)]]
     if tutorial:
-        btn.append([InlineKeyboardButton("🎬 How To Open Link & Verify", url=tutorial)])
-    if master_cfg.get("premium_is_on"):
-        btn.append([InlineKeyboardButton("💳 Buy Premium Plan", callback_data="m_buy_prem")])
-    return InlineKeyboardMarkup(btn)
+        btn.append([InlineKeyboardButton("🎬 HOW TO VERIFY ↗️", url=tutorial)])
+    if master_cfg.get("premium_is_on") or master_cfg.get("premium_users") is not None:
+        btn.append([InlineKeyboardButton("⭐ BUY PREMIUM - NO NEED TO VERIFY ⭐", callback_data="m_buy_prem")])
+
+    return text, InlineKeyboardMarkup(btn)
 
 
 async def check_master_fsub(client, user_id, original_payload):
@@ -396,11 +418,35 @@ async def start(client, message):
 
         if data.startswith("verify_"):
             token = data.split("_", 1)[1]
-            orig_payload = await consume_verify_token(token, message.from_user.id, client.me.id)
+            orig_payload, slot_used = await consume_verify_token(token, message.from_user.id, client.me.id)
             if orig_payload is not None:
-                await set_user_verified(message.from_user.id, client.me.id, duration_minutes=time_mins)
+                v_key = f"verify_{slot_used}" if slot_used > 1 else "verify_1"
+                v_cfg = master_cfg.get(v_key, {})
+                time_mins = int(v_cfg.get("time", v_cfg.get("time_minutes", 1440)))
+                await set_user_verified(message.from_user.id, client.me.id, duration_minutes=time_mins, slot=slot_used)
                 dur_str = format_time_minutes(time_mins)
-                text = f"<b>Hey {message.from_user.mention}, You are successfully verified !\nNow you have unlimited access for all files for {dur_str}.</b>"
+                
+                # Send log to verify_log_channel if configured
+                log_ch = master_cfg.get("verify_log_channel")
+                if log_ch:
+                    try:
+                        import datetime
+                        now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+                        log_text = (
+                            "🎯 <b>NEW USER VERIFIED</b>\n\n"
+                            f"👤 <b>User:</b> {message.from_user.mention} (<code>{message.from_user.id}</code>)\n"
+                            f"⏰ <b>Validity:</b> <code>{dur_str}</code>\n"
+                            f"🔢 <b>Step:</b> <code>{slot_used}</code>\n"
+                            f"📅 <b>Date:</b> <code>{now_str}</code>"
+                        )
+                        await client.send_message(int(log_ch), log_text)
+                    except Exception:
+                        pass
+
+                text = (
+                    f"✅ <b>Hey {message.from_user.mention}, you are successfully verified!</b>\n\n"
+                    f"Now you have unlimited access for all files for <b>{dur_str}</b>."
+                )
                 markup = None
                 if orig_payload:
                     markup = InlineKeyboardMarkup([[InlineKeyboardButton("📥 GET YOUR FILE", url=f"https://telegram.me/{username}?start={orig_payload}")]])
@@ -417,11 +463,11 @@ async def start(client, message):
             if is_valid == True:
                 dur_str = format_time_minutes(time_mins)
                 await message.reply_text(
-                    text=f"<b>Hey {message.from_user.mention}, You are successfully verified !\nNow you have unlimited access for all files for {dur_str}.</b>",
+                    text=f"<b>Hey {message.from_user.mention}, you are successfully verified!\nNow you have unlimited access for all files for {dur_str}.</b>",
                     protect_content=True
                 )
                 await verify_user(client, userid, token)
-                await set_user_verified(message.from_user.id, client.me.id, duration_minutes=time_mins)
+                await set_user_verified(message.from_user.id, client.me.id, duration_minutes=time_mins, slot=1)
                 return
             else:
                 return await message.reply_text(text="<b>Invalid link or Expired link !</b>", protect_content=True)
@@ -429,9 +475,9 @@ async def start(client, message):
     if await send_master_fsub_prompt(client, message, data):
         return
 
-    verify_markup = await check_master_verification(client, message.from_user.id, data)
+    v_text, verify_markup = await check_master_verification(client, message.from_user.id, data)
     if verify_markup:
-        return await message.reply_text("<b>You are not verified !\nKindly verify to continue !</b>", protect_content=True, reply_markup=verify_markup)
+        return await message.reply_text(v_text or "<b>You are not verified !\nKindly verify to continue !</b>", protect_content=True, reply_markup=verify_markup, disable_web_page_preview=True)
 
     master_cfg = await get_master_config(client)
 
@@ -510,10 +556,11 @@ async def start(client, message):
         await sts.delete()
         
         ad_enabled = master_cfg.get("auto_delete_enabled", AUTO_DELETE_MODE)
-        ad_mins = int(master_cfg.get("auto_delete_minutes", AUTO_DELETE))
+        ad_sec = int(master_cfg.get("auto_delete_time", (int(master_cfg.get("auto_delete_minutes", AUTO_DELETE)) * 60)))
         if ad_enabled:
-            k = await client.send_message(chat_id = message.from_user.id, text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nThis Movie File/Video will be deleted in <b><u>{ad_mins} minutes</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>")
-            await asyncio.sleep(ad_mins * 60)
+            time_str = format_auto_delete_time(ad_sec)
+            k = await client.send_message(chat_id = message.from_user.id, text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nThis Movie File/Video will be deleted in <b><u>{time_str}</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>")
+            await asyncio.sleep(ad_sec)
             for x in filesarr:
                 try:
                     await x.delete()
@@ -574,10 +621,11 @@ async def start(client, message):
             del_msg = await msg.copy(chat_id=message.from_user.id, protect_content=user_protect)
         
         ad_enabled = master_cfg.get("auto_delete_enabled", AUTO_DELETE_MODE)
-        ad_mins = int(master_cfg.get("auto_delete_minutes", AUTO_DELETE))
+        ad_sec = int(master_cfg.get("auto_delete_time", (int(master_cfg.get("auto_delete_minutes", AUTO_DELETE)) * 60)))
         if ad_enabled:
-            k = await client.send_message(chat_id = message.from_user.id, text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nThis Movie File/Video will be deleted in <b><u>{ad_mins} minutes</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>")
-            await asyncio.sleep(ad_mins * 60)
+            time_str = format_auto_delete_time(ad_sec)
+            k = await client.send_message(chat_id = message.from_user.id, text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nThis Movie File/Video will be deleted in <b><u>{time_str}</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>")
+            await asyncio.sleep(ad_sec)
             try:
                 await del_msg.delete()
             except:

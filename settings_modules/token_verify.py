@@ -1,105 +1,192 @@
-# ⏰ TOKEN VERIFICATION SETTINGS MODULE
+# 🎯 TOKEN VERIFICATION SETTINGS MODULE
 import asyncio
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from clone_plugins.sessions import start_user_session, is_user_session_active, clear_user_session
 from clone_plugins.users_api import parse_time_string, format_time_minutes
 
-def master_token_verification_main_markup():
+
+def slot_name(slot: int) -> str:
+    return "FIRST" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
+
+
+def token_verification_main_markup(r=None, prefix_cb="cset"):
+    r = r or {}
+    v1_on = bool(r.get("verify_1", {}).get("is_on", False))
+    v2_on = bool(r.get("verify_2", {}).get("is_on", False))
+    v3_on = bool(r.get("verify_3", {}).get("is_on", False))
+    
+    cb = "master" if prefix_cb == "master" else "cset"
+    back_cb = "settings" if prefix_cb == "master" else "clone_my_clone_info"
+
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("1️⃣ FIRST VERIFICATION", callback_data="master_token_verification:1")],
-        [InlineKeyboardButton("2️⃣ SECOND VERIFICATION", callback_data="master_token_verification:2")],
-        [InlineKeyboardButton("3️⃣ THIRD VERIFICATION", callback_data="master_token_verification:3")],
-        [InlineKeyboardButton("📢 VERIFY LOG CHANNEL", callback_data="master_verify_log_channel")],
-        [InlineKeyboardButton("🪧 BACK", callback_data="settings")]
+        [InlineKeyboardButton(f"{'🟢' if v1_on else '🔴'} FIRST VERIFICATION", callback_data=f"{cb}_token_verification:1")],
+        [InlineKeyboardButton(f"{'🟢' if v2_on else '🔴'} SECOND VERIFICATION", callback_data=f"{cb}_token_verification:2")],
+        [InlineKeyboardButton(f"{'🟢' if v3_on else '🔴'} THIRD VERIFICATION", callback_data=f"{cb}_token_verification:3")],
+        [InlineKeyboardButton("👥 VERIFY LOG CHANNEL", callback_data=f"{cb}_verify_log_channel")],
+        [InlineKeyboardButton("🔙 BACK", callback_data=back_cb)]
     ])
 
-def master_single_token_verification_markup(slot: int, is_on: bool):
-    prefix = "FIRST" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
-    status_icon = "✅" if is_on else "❌"
+
+def single_token_verification_markup(slot: int, is_on: bool, prefix_cb="cset"):
+    prefix = slot_name(slot)
+    status_icon = "✔️" if is_on else "✖️"
+    status_color = "🟢" if is_on else "🔴"
+    cb = "master" if prefix_cb == "master" else "cset"
+    back_cb = f"{cb}_token_main"
+
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"🔗 {prefix} VERIFY SHORTNER", callback_data=f"m_v_shortner:{slot}")],
-        [InlineKeyboardButton(f"🍿 {prefix} VERIFY TUTORIAL", callback_data=f"m_v_tutorial:{slot}")],
-        [InlineKeyboardButton(f"⏰ {prefix} VERIFY TIME", callback_data=f"m_v_time:{slot}")],
-        [InlineKeyboardButton("👥 TOTAL USER VERIFIED TODAY", callback_data=f"m_v_stats:{slot}")],
-        [InlineKeyboardButton(f"🔒 {prefix} VERIFY - {status_icon}", callback_data=f"m_v_toggle:{slot}")],
-        [InlineKeyboardButton("🪧 BACK", callback_data="master_token_main")]
+        [InlineKeyboardButton(f"🍟 {prefix} VERIFY SHORTNER", callback_data=f"{cb}_v_shortner:{slot}")],
+        [InlineKeyboardButton(f"🎬 {prefix} VERIFY TUTORIAL", callback_data=f"{cb}_v_tutorial:{slot}")],
+        [InlineKeyboardButton(f"⏰ {prefix} VERIFY TIME", callback_data=f"{cb}_v_time:{slot}")],
+        [InlineKeyboardButton("👥 TOTAL USER VERIFIED TODAY", callback_data=f"{cb}_v_stats:{slot}")],
+        [InlineKeyboardButton(f"{status_color} {prefix} VERIFY - {status_icon}", callback_data=f"{cb}_v_toggle:{slot}")],
+        [InlineKeyboardButton("🔙 BACK", callback_data=back_cb)]
     ])
+
+
+def shortner_markup(slot: int, prefix_cb="cset"):
+    cb = "master" if prefix_cb == "master" else "cset"
+    back_cb = f"{cb}_token_verification:{slot}"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("SET SHORTLINK", callback_data=f"{cb}_set_v_shortner:{slot}")],
+        [InlineKeyboardButton("DELETE SHORTLINK", callback_data=f"{cb}_del_v_shortner:{slot}")],
+        [InlineKeyboardButton("🔙 BACK", callback_data=back_cb)]
+    ])
+
+
+def tutorial_markup(slot: int, prefix_cb="cset"):
+    cb = "master" if prefix_cb == "master" else "cset"
+    back_cb = f"{cb}_token_verification:{slot}"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("SET TUTORIAL", callback_data=f"{cb}_set_v_tut:{slot}")],
+        [InlineKeyboardButton("DELETE TUTORIAL", callback_data=f"{cb}_del_v_tut:{slot}")],
+        [InlineKeyboardButton("🔙 BACK", callback_data=back_cb)]
+    ])
+
+
+def verify_time_markup(slot: int, prefix_cb="cset"):
+    cb = "master" if prefix_cb == "master" else "cset"
+    back_cb = f"{cb}_token_verification:{slot}"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("SET VERIFY TIME", callback_data=f"{cb}_set_v_time:{slot}")],
+        [InlineKeyboardButton("RESET TIME", callback_data=f"{cb}_del_v_time:{slot}")],
+        [InlineKeyboardButton("🔙 BACK", callback_data=back_cb)]
+    ])
+
+
+def log_channel_markup(prefix_cb="cset"):
+    cb = "master" if prefix_cb == "master" else "cset"
+    back_cb = f"{cb}_token_main"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("SET LOG CHANNEL", callback_data=f"{cb}_set_v_log")],
+        [InlineKeyboardButton("DELETE LOG CHANNEL", callback_data=f"{cb}_del_v_log")],
+        [InlineKeyboardButton("🔙 BACK", callback_data=back_cb)]
+    ])
+
+
+def back_to_slot_markup(slot: int, prefix_cb="cset"):
+    cb = "master" if prefix_cb == "master" else "cset"
+    back_cb = f"{cb}_token_verification:{slot}"
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 BACK", callback_data=back_cb)]])
+
+
+def back_to_main_markup(prefix_cb="cset"):
+    cb = "master" if prefix_cb == "master" else "cset"
+    back_cb = f"{cb}_token_main"
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 BACK", callback_data=back_cb)]])
+
 
 async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_rec_fn, cancel_listeners_fn, edit_or_reply_fn):
     me = client.me
+    prefix_cb = "master" if data.startswith("master_") or data.startswith("m_") else "cset"
+    
+    # 1. Main Token Verification Screen
     if data in ("master_token_main", "master_token_verification", "cset_token_main", "cset_token_verification"):
+        curr_r = get_rec_fn() if get_rec_fn else r
         text = (
-            "⏰ <b>TOKEN VERIFICATION:</b>\n\n"
-            "<b>TOKEN VERIFICATION: A SYSTEM REQUIRING USERS TO WATCH ADS OR SOLVE CAPTCHAS ON EXTERNAL SITES TO UNLOCK BOT ACCESS FOR TIME THAT BOT OWNER SET AND ALSO ALLOWING BOT OWNERS TO EARN MONEY WHENEVER A USER CLICKS.</b>"
+            "🎯 <b>TOKEN VERIFICATION:</b>\n\n"
+            "<blockquote>TOKEN VERIFICATION: A SYSTEM REQUIRING USERS TO WATCH ADS OR SOLVE CAPTCHAS ON EXTERNAL SITES TO UNLOCK BOT ACCESS FOR TIME THAT BOT OWNER SET AND ALSO ALLOWING BOT OWNERS TO EARN MONEY WHENEVER A USER CLICKS.</blockquote>"
         )
-        return await edit_or_reply_fn(query, text, reply_markup=master_token_verification_main_markup())
+        return await edit_or_reply_fn(query, text, reply_markup=token_verification_main_markup(curr_r, prefix_cb))
 
+    # 2. Slot Screen (1, 2, 3)
     if data.startswith("master_token_verification:") or data.startswith("cset_token_verification:"):
         slot = int(data.split(":")[1])
+        curr_r = get_rec_fn() if get_rec_fn else r
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        v_cfg = r.get(v_key, {})
+        v_cfg = curr_r.get(v_key, {})
         is_on = bool(v_cfg.get("is_on", False))
-        prefix = "FIRST" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
-        text = f"⏰ <b>{prefix} TOKEN VERIFICATION:</b>"
-        return await edit_or_reply_fn(query, text, reply_markup=master_single_token_verification_markup(slot, is_on))
+        prefix = slot_name(slot)
+        text = f"🎯 <b>{prefix} TOKEN VERIFICATION:</b>"
+        return await edit_or_reply_fn(query, text, reply_markup=single_token_verification_markup(slot, is_on, prefix_cb))
 
+    # 3. Toggle Slot (ON/OFF)
     if data.startswith("m_v_toggle:") or data.startswith("cset_v_toggle:"):
         slot = int(data.split(":")[1])
+        curr_r = get_rec_fn() if get_rec_fn else r
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        v_cfg = r.get(v_key, {})
+        v_cfg = curr_r.get(v_key, {})
         new_state = not bool(v_cfg.get("is_on", False))
         v_cfg["is_on"] = new_state
         save_fn(**{v_key: v_cfg})
-        prefix = "FIRST" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
-        text = f"⏰ <b>{prefix} TOKEN VERIFICATION:</b>"
+        prefix = slot_name(slot)
+        text = f"🎯 <b>{prefix} TOKEN VERIFICATION:</b>"
         await query.answer(f"Verification {'Enabled' if new_state else 'Disabled'}!")
-        return await edit_or_reply_fn(query, text, reply_markup=master_single_token_verification_markup(slot, new_state))
+        return await edit_or_reply_fn(query, text, reply_markup=single_token_verification_markup(slot, new_state, prefix_cb))
 
+    # 4. Stats Alert
     if data.startswith("m_v_stats:") or data.startswith("cset_v_stats:"):
         slot = int(data.split(":")[1])
-        today_count = r.get(f"verified_today_{slot}", 0)
+        curr_r = get_rec_fn() if get_rec_fn else r
+        today_count = curr_r.get(f"verified_today_{slot}", 0)
         bot_title = me.first_name or me.username or "ASH BOT"
         return await query.answer(f"{bot_title}\n\nTotal Verified Today - {today_count}", show_alert=True)
 
+    # 5. Verify Shortner Screen
     if data.startswith("m_v_shortner:") or data.startswith("cset_v_shortner:"):
         slot = int(data.split(":")[1])
-        prefix = "FIRST" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
+        prefix = slot_name(slot)
+        curr_r = get_rec_fn() if get_rec_fn else r
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        v_cfg = r.get(v_key, {})
-        site = v_cfg.get("shortner_site") or "Not Set"
-        api = v_cfg.get("shortner_api") or "Not Set"
+        v_cfg = curr_r.get(v_key, {})
+        site = v_cfg.get("shortner_site") or v_cfg.get("site") or "Not Set"
+        api = v_cfg.get("shortner_api") or v_cfg.get("api") or "Not Set"
         text = (
-            f"🔗 <b>{prefix} VERIFY SHORTNER:</b>\n\n"
-            f"🌐 <b>WEBSITE / DOMAIN:</b> <code>{site}</code>\n"
-            f"🔑 <b>API KEY:</b> <code>{api}</code>"
+            f"🍟 <b>{prefix} VERIFY SHORTNER:</b>\n\n"
+            "<blockquote>LINK SHORTENER: A TOOL THAT CONVERTS FILE LINKS INTO MONETIZED URLS, ALLOWING BOT OWNERS TO EARN MONEY WHENEVER A USER CLICKS.</blockquote>\n\n"
+            f"<b>URL -</b> <code>{site}</code>\n"
+            f"<b>API -</b> <code>{api}</code>"
         )
-        return await edit_or_reply_fn(query, text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("SET SHORTNER", callback_data=f"m_set_v_shortner:{slot}")],
-            [InlineKeyboardButton("DELETE SHORTNER", callback_data=f"m_del_v_shortner:{slot}")],
-            [InlineKeyboardButton("🪧 BACK", callback_data=f"master_token_verification:{slot}")]
-        ]))
+        return await edit_or_reply_fn(query, text, reply_markup=shortner_markup(slot, prefix_cb))
 
-    if data.startswith("m_del_v_shortner:") or data.startswith("cset_v_del_short:"):
+    # 6. Delete Shortner
+    if data.startswith("m_del_v_shortner:") or data.startswith("cset_del_v_shortner:") or data.startswith("cset_v_del_short:"):
         slot = int(data.split(":")[1])
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        v_cfg = r.get(v_key, {})
+        curr_r = get_rec_fn() if get_rec_fn else r
+        v_cfg = curr_r.get(v_key, {})
         v_cfg.pop("shortner_site", None)
+        v_cfg.pop("site", None)
         v_cfg.pop("shortner_api", None)
+        v_cfg.pop("api", None)
         save_fn(**{v_key: v_cfg})
-        await query.answer("Shortener deleted!")
-        return await handle_token_callbacks(client, query, f"m_v_shortner:{slot}", user_id, r, save_fn, get_rec_fn, cancel_listeners_fn, edit_or_reply_fn)
+        await query.answer("Shortlink Deleted!")
+        text = "<b>SUCCESSFULLY DELETED SHORTLINK</b> ✅"
+        return await edit_or_reply_fn(query, text, reply_markup=back_to_slot_markup(slot, prefix_cb))
 
-    if data.startswith("m_set_v_shortner:") or data.startswith("cset_v_set_short:"):
+    # 7. Set Shortner Flow
+    if data.startswith("m_set_v_shortner:") or data.startswith("cset_set_v_shortner:") or data.startswith("cset_v_set_short:"):
         slot = int(data.split(":")[1])
-        prefix = "FIRST" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
         cancel_listeners_fn(client, user_id, user_id)
-        sess_token = start_user_session(user_id, f"m_v_shortner_{slot}")
+        sess_token = start_user_session(user_id, f"set_v_shortner_{slot}")
         await query.answer()
         
         await query.message.reply(
-            f"🔗 <b>{prefix} SHORTNER WEBSITE:</b>\n\n"
-            "<b>Send your shortener website URL (e.g. <code>shareus.io</code> or <code>https://modijiurl.com</code>):</b>\n\n"
-            "<i>Send /cancel to abort.</i>"
+            "<b>SEND ME A SHORTLINK URL...</b>\n\n"
+            "<b>FORMAT :</b>\n\n"
+            "https://vjlink.online - ❌\n\n"
+            "vjlink.online - ✔️\n\n"
+            "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
         )
         
         async def _shortner_worker():
@@ -116,13 +203,16 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
                 await client.send_message(user_id, "❌ <b>Cancelled.</b>")
                 clear_user_session(user_id)
                 return
-            site = site.replace("http://", "").replace("https://", "").strip("/")
+            
+            site = site.replace("http://", "").replace("https://", "").strip().rstrip("/")
+            if not site:
+                await client.send_message(user_id, "❌ <b>Invalid site.</b>")
+                clear_user_session(user_id)
+                return
             
             await client.send_message(
                 user_id,
-                f"🔑 <b>{prefix} SHORTNER API KEY:</b>\n\n"
-                f"<b>Send your API key for <code>{site}</code>:</b>\n\n"
-                "<i>Send /cancel to abort.</i>"
+                "<b>SEND ME SHORTLINK API...</b>"
             )
             try:
                 ans2 = await client.listen(chat_id=user_id, timeout=120)
@@ -139,58 +229,59 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
                 return
             
             v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-            curr_r = get_rec_fn()
+            curr_r = get_rec_fn() if get_rec_fn else r
             v_cfg = curr_r.get(v_key, {})
             v_cfg["shortner_site"] = site
+            v_cfg["site"] = site
             v_cfg["shortner_api"] = api_key
+            v_cfg["api"] = api_key
             save_fn(**{v_key: v_cfg})
             clear_user_session(user_id)
             
             await client.send_message(
                 user_id,
-                f"✅ <b>{prefix} SHORTNER CONFIGURED SUCCESSFULLY!</b>\n\n"
-                f"🌐 <b>Site:</b> <code>{site}</code>\n"
-                f"🔑 <b>API:</b> <code>{api_key}</code>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data=f"master_token_verification:{slot}")]])
+                "<b>SUCCESSFULLY SET SHORTLINK</b> ✅",
+                reply_markup=back_to_slot_markup(slot, prefix_cb)
             )
         asyncio.create_task(_shortner_worker())
         return
 
+    # 8. Verify Tutorial Screen
     if data.startswith("m_v_tutorial:") or data.startswith("cset_v_tutorial:"):
         slot = int(data.split(":")[1])
-        prefix = "FIRST" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
+        prefix = slot_name(slot)
+        curr_r = get_rec_fn() if get_rec_fn else r
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        v_cfg = r.get(v_key, {})
+        v_cfg = curr_r.get(v_key, {})
         tut = v_cfg.get("tutorial") or "Not Set"
         text = (
-            f"🍿 <b>{prefix} VERIFY TUTORIAL:</b>\n\n"
-            f"📹 <b>VIDEO / LINK:</b> <code>{tut}</code>"
+            f"🎬 <b>{prefix} VERIFY TUTORIAL:</b>\n\n"
+            "<blockquote>TUTORIAL LINK: THE PROCESS VIDEO OF OPENING LINK OF SHORTER. LINK OF VIDEO OR CHANNEL WHERE VIDEO IS UPLOADED. VIDEO MEANS VIDEO OF HOW TO OPEN LINK.</blockquote>\n\n"
+            f"<b>LINK -</b> <code>{tut}</code>"
         )
-        return await edit_or_reply_fn(query, text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("SET TUTORIAL", callback_data=f"m_set_v_tut:{slot}")],
-            [InlineKeyboardButton("DELETE TUTORIAL", callback_data=f"m_del_v_tut:{slot}")],
-            [InlineKeyboardButton("🪧 BACK", callback_data=f"master_token_verification:{slot}")]
-        ]))
+        return await edit_or_reply_fn(query, text, reply_markup=tutorial_markup(slot, prefix_cb))
 
-    if data.startswith("m_del_v_tut:") or data.startswith("cset_v_del_tut:"):
+    # 9. Delete Tutorial
+    if data.startswith("m_del_v_tut:") or data.startswith("cset_del_v_tut:") or data.startswith("cset_v_del_tut:"):
         slot = int(data.split(":")[1])
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        v_cfg = r.get(v_key, {})
+        curr_r = get_rec_fn() if get_rec_fn else r
+        v_cfg = curr_r.get(v_key, {})
         v_cfg.pop("tutorial", None)
         save_fn(**{v_key: v_cfg})
-        await query.answer("Tutorial deleted!")
-        return await handle_token_callbacks(client, query, f"m_v_tutorial:{slot}", user_id, r, save_fn, get_rec_fn, cancel_listeners_fn, edit_or_reply_fn)
+        await query.answer("Tutorial Deleted!")
+        text = "<b>SUCCESSFULLY DELETED TUTORIAL LINK</b> ✅"
+        return await edit_or_reply_fn(query, text, reply_markup=back_to_slot_markup(slot, prefix_cb))
 
-    if data.startswith("m_set_v_tut:") or data.startswith("cset_v_set_tut:"):
+    # 10. Set Tutorial Flow
+    if data.startswith("m_set_v_tut:") or data.startswith("cset_set_v_tut:") or data.startswith("cset_v_set_tut:"):
         slot = int(data.split(":")[1])
-        prefix = "FIRST" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
         cancel_listeners_fn(client, user_id, user_id)
-        sess_token = start_user_session(user_id, f"m_v_tut_{slot}")
+        sess_token = start_user_session(user_id, f"set_v_tut_{slot}")
         await query.answer()
         await query.message.reply(
-            f"🍿 <b>{prefix} VERIFY TUTORIAL:</b>\n\n"
-            "<b>Send your tutorial video link (must start with http:// or https://):</b>\n\n"
-            "<i>Send /cancel to abort.</i>"
+            "<b>SEND ME A TUTORIAL LINK...</b>\n\n"
+            "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
         )
         async def _tut_worker():
             try:
@@ -206,60 +297,71 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
                 await client.send_message(user_id, "❌ <b>Cancelled.</b>")
                 clear_user_session(user_id)
                 return
-            if not (t_url.startswith("http://") or t_url.startswith("https://")):
-                await client.send_message(user_id, "❌ <b>Invalid URL. Must start with http:// or https://.</b>")
+            if not (t_url.startswith("http://") or t_url.startswith("https://") or t_url.startswith("t.me/")):
+                await client.send_message(user_id, "❌ <b>Invalid URL. Must start with http://, https:// or t.me/</b>")
                 clear_user_session(user_id)
                 return
+            if t_url.startswith("t.me/"):
+                t_url = f"https://{t_url}"
             v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-            curr_r = get_rec_fn()
+            curr_r = get_rec_fn() if get_rec_fn else r
             v_cfg = curr_r.get(v_key, {})
             v_cfg["tutorial"] = t_url
             save_fn(**{v_key: v_cfg})
             clear_user_session(user_id)
             await client.send_message(
                 user_id,
-                f"✅ <b>{prefix} TUTORIAL SAVED!</b>\n\n<code>{t_url}</code>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data=f"master_token_verification:{slot}")]])
+                "<b>SUCCESSFULLY SET TUTORIAL LINK</b> ✅",
+                reply_markup=back_to_slot_markup(slot, prefix_cb)
             )
         asyncio.create_task(_tut_worker())
         return
 
+    # 11. Verify Time Screen
     if data.startswith("m_v_time:") or data.startswith("cset_v_time:"):
         slot = int(data.split(":")[1])
-        prefix = "FIRST" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
+        prefix = slot_name(slot)
+        curr_r = get_rec_fn() if get_rec_fn else r
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        v_cfg = r.get(v_key, {})
-        mins = v_cfg.get("time", 1440)
+        v_cfg = curr_r.get(v_key, {})
+        mins = int(v_cfg.get("time", v_cfg.get("time_minutes", 1440)))
         time_str = format_time_minutes(mins)
         text = (
             f"⏰ <b>{prefix} VERIFY TIME:</b>\n\n"
-            f"⏳ <b>CURRENT DURATION:</b> <code>{time_str}</code> ({mins} Minutes)"
+            "<blockquote>VERIFICATION TIME: DURATION FOR WHICH USER GETS BOT ACCESS AFTER COMPLETING ACCESS TOKEN.</blockquote>\n\n"
+            f"<b>TIME -</b> <code>{time_str}</code> ({mins} Minutes)"
         )
-        return await edit_or_reply_fn(query, text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("SET VERIFY TIME", callback_data=f"m_set_v_time:{slot}")],
-            [InlineKeyboardButton("RESET TIME", callback_data=f"m_del_v_time:{slot}")],
-            [InlineKeyboardButton("🪧 BACK", callback_data=f"master_token_verification:{slot}")]
-        ]))
+        return await edit_or_reply_fn(query, text, reply_markup=verify_time_markup(slot, prefix_cb))
 
-    if data.startswith("m_del_v_time:") or data.startswith("cset_v_del_time:"):
+    # 12. Reset Verify Time
+    if data.startswith("m_del_v_time:") or data.startswith("cset_del_v_time:") or data.startswith("cset_v_del_time:"):
         slot = int(data.split(":")[1])
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        v_cfg = r.get(v_key, {})
+        curr_r = get_rec_fn() if get_rec_fn else r
+        v_cfg = curr_r.get(v_key, {})
         v_cfg["time"] = 1440
+        v_cfg["time_minutes"] = 1440
         save_fn(**{v_key: v_cfg})
         await query.answer("Time reset to 24 Hours!")
-        return await handle_token_callbacks(client, query, f"m_v_time:{slot}", user_id, r, save_fn, get_rec_fn, cancel_listeners_fn, edit_or_reply_fn)
+        prefix = slot_name(slot)
+        text = (
+            f"⏰ <b>{prefix} VERIFY TIME:</b>\n\n"
+            "<blockquote>VERIFICATION TIME: DURATION FOR WHICH USER GETS BOT ACCESS AFTER COMPLETING ACCESS TOKEN.</blockquote>\n\n"
+            f"<b>TIME -</b> <code>24 Hours</code> (1440 Minutes)"
+        )
+        return await edit_or_reply_fn(query, text, reply_markup=verify_time_markup(slot, prefix_cb))
 
-    if data.startswith("m_set_v_time:") or data.startswith("cset_v_set_time:"):
+    # 13. Set Verify Time Flow
+    if data.startswith("m_set_v_time:") or data.startswith("cset_set_v_time:") or data.startswith("cset_v_set_time:"):
         slot = int(data.split(":")[1])
-        prefix = "FIRST" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
         cancel_listeners_fn(client, user_id, user_id)
-        sess_token = start_user_session(user_id, f"m_v_time_{slot}")
+        sess_token = start_user_session(user_id, f"set_v_time_{slot}")
         await query.answer()
         await query.message.reply(
-            f"⏰ <b>{prefix} VERIFY TIME:</b>\n\n"
-            "<b>Send verification duration (e.g. <code>12 hours</code>, <code>1 day</code>, <code>30 mins</code>):</b>\n\n"
-            "<i>Send /cancel to abort.</i>"
+            "<b>SEND ME VERIFY TIME...</b>\n\n"
+            "<b>FORMAT :</b>\n"
+            "<code>10 minutes</code>, <code>1 hour</code>, <code>24 hours</code>, <code>7 days</code>\n\n"
+            "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
         )
         async def _time_worker():
             try:
@@ -277,48 +379,49 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
                 return
             mins = parse_time_string(t_txt)
             if not mins or mins <= 0:
-                await client.send_message(user_id, "❌ <b>Invalid time format. Example: 12 hours, 1 day, 45 mins.</b>")
+                await client.send_message(user_id, "❌ <b>Invalid time format. Example: 10 minutes, 1 hour, 24 hours.</b>")
                 clear_user_session(user_id)
                 return
             v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-            curr_r = get_rec_fn()
+            curr_r = get_rec_fn() if get_rec_fn else r
             v_cfg = curr_r.get(v_key, {})
             v_cfg["time"] = mins
+            v_cfg["time_minutes"] = mins
             save_fn(**{v_key: v_cfg})
             clear_user_session(user_id)
             await client.send_message(
                 user_id,
-                f"✅ <b>{prefix} VERIFY TIME UPDATED!</b>\n\n⏳ <b>New Duration:</b> <code>{format_time_minutes(mins)}</code> ({mins} mins)",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data=f"master_token_verification:{slot}")]])
+                "<b>SUCCESSFULLY SET VERIFY TIME</b> ✅",
+                reply_markup=back_to_slot_markup(slot, prefix_cb)
             )
         asyncio.create_task(_time_worker())
         return
 
-    # Verify Log Channel
+    # 14. Verify Log Channel Screen
     if data in ("master_verify_log_channel", "cset_verify_log_channel"):
-        log_ch = r.get("verify_log_channel") or "Not Set"
+        curr_r = get_rec_fn() if get_rec_fn else r
+        log_ch = curr_r.get("verify_log_channel") or "Not Set"
         text = (
-            "📢 <b>VERIFY LOG CHANNEL:</b>\n\n"
-            f"🆔 <b>CURRENT LOG CHANNEL:</b> <code>{log_ch}</code>\n\n"
-            "<b>All verification activities and token logs will be forwarded to this channel.</b>"
+            "👥 <b>VERIFY LOG CHANNEL:</b>\n\n"
+            "<blockquote>ALL VERIFICATION ACTIVITIES AND TOKEN LOGS WILL BE FORWARDED TO THIS CHANNEL.</blockquote>\n\n"
+            f"<b>CHANNEL -</b> <code>{log_ch}</code>"
         )
-        return await edit_or_reply_fn(query, text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("SET LOG CHANNEL", callback_data="m_set_v_log")],
-            [InlineKeyboardButton("DELETE LOG CHANNEL", callback_data="m_del_v_log")],
-            [InlineKeyboardButton("🪧 BACK", callback_data="master_token_main")]
-        ]))
+        return await edit_or_reply_fn(query, text, reply_markup=log_channel_markup(prefix_cb))
 
-    if data in ("m_del_v_log", "cset_del_v_log"):
+    # 15. Delete Verify Log Channel
+    if data in ("m_del_v_log", "master_del_v_log", "cset_del_v_log", "cset_v_del_log"):
         save_fn(verify_log_channel=None)
         await query.answer("Verify log channel deleted!")
-        return await handle_token_callbacks(client, query, "master_verify_log_channel", user_id, r, save_fn, get_rec_fn, cancel_listeners_fn, edit_or_reply_fn)
+        text = "<b>SUCCESSFULLY DELETED LOG CHANNEL</b> ✅"
+        return await edit_or_reply_fn(query, text, reply_markup=back_to_main_markup(prefix_cb))
 
-    if data in ("m_set_v_log", "cset_set_v_log"):
+    # 16. Set Verify Log Channel Flow
+    if data in ("m_set_v_log", "master_set_v_log", "cset_set_v_log", "cset_v_set_log"):
         cancel_listeners_fn(client, user_id, user_id)
-        sess_token = start_user_session(user_id, "m_v_log")
+        sess_token = start_user_session(user_id, "set_v_log")
         await query.answer()
         await query.message.reply(
-            "📢 <b>SET VERIFY LOG CHANNEL:</b>\n\n"
+            "👥 <b>SET VERIFY LOG CHANNEL:</b>\n\n"
             "<b>Forward a message from your channel or send the Channel ID (e.g. <code>-1001234567890</code>):</b>\n\n"
             "<i>Make sure this bot is an ADMIN in the channel! Send /cancel to abort.</i>"
         )
@@ -355,8 +458,8 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
             clear_user_session(user_id)
             await client.send_message(
                 user_id,
-                f"✅ <b>VERIFY LOG CHANNEL CONNECTED!</b>\n\n🆔 <b>Channel ID:</b> <code>{ch_id}</code>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="master_token_main")]])
+                "<b>SUCCESSFULLY SET LOG CHANNEL</b> ✅",
+                reply_markup=back_to_main_markup(prefix_cb)
             )
         asyncio.create_task(_log_worker())
         return

@@ -11,7 +11,7 @@ from pyrogram import StopPropagation, filters, enums
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from clone_plugins.users_api import get_user, get_short_link, format_caption
+from clone_plugins.users_api import get_user, get_short_link, format_caption, format_auto_delete_time
 from plugins.clone import mongo_db
 from clone_plugins.commands import bot_record, force_markup, access_verification, send_fsub_prompt
 
@@ -193,9 +193,13 @@ async def open_single(client, message):
             raise StopPropagation
         return
     payload = message.command[1]
-    access = await access_verification(client, message.from_user.id, payload)
-    if access:
-        await message.reply("<b>🔐 Please verify first to access this file.</b>", reply_markup=access)
+    access_res = await access_verification(client, message.from_user.id, payload)
+    if isinstance(access_res, tuple):
+        v_text, access_markup = access_res
+    else:
+        v_text, access_markup = "<b>🔐 Please verify first to access this file.</b>", access_res
+    if access_markup:
+        await message.reply(v_text, reply_markup=access_markup, disable_web_page_preview=True)
         raise StopPropagation
     if await send_fsub_prompt(client, message, payload):
         raise StopPropagation
@@ -246,13 +250,14 @@ async def open_single(client, message):
             )
 
         if rec.get("auto_delete_enabled", True):
-            minutes = max(1, int(rec.get("auto_delete_minutes", 15)))
+            ad_sec = int(rec.get("auto_delete_time") or (int(rec.get("auto_delete_minutes", 15)) * 60))
+            time_str = format_auto_delete_time(ad_sec)
             warning = await client.send_message(
                 chat_id=message.from_user.id,
-                text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nThis Movie File/Video will be deleted in <b><u>{minutes} minutes</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>"
+                text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nThis Movie File/Video will be deleted in <b><u>{time_str}</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>"
             )
             async def _auto_del():
-                await asyncio.sleep(minutes * 60)
+                await asyncio.sleep(ad_sec)
                 try: await delivered.delete()
                 except Exception: pass
                 try: await warning.delete()

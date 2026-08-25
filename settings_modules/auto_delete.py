@@ -1,91 +1,78 @@
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
+# ♻️ AUTO DELETE SETTINGS MODULE
+import asyncio
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from clone_plugins.sessions import start_user_session, is_user_session_active, clear_user_session
+from clone_plugins.users_api import parse_auto_delete_time, format_auto_delete_time
 
-# Note: Agar aapka database import alag hai (jaise database.users_chats_db), 
-# toh aap apne project ke hisaab se import rakh sakte hain.
-
-@Client.on_callback_query(filters.regex("^auto_delete$"))
-async def auto_delete_menu_handler(client: Client, query: CallbackQuery):
-    try:
-        await query.answer()
-    except Exception:
-        pass
-        
-    user_id = query.from_user.id
-    
-    # Yahan aap apne database se status fetch kar sakte hain (Default values di gayi hain)
-    # Example: is_enabled = await db.get_auto_delete_status(user_id)
-    # Example: ad_time = int(await db.get_auto_delete_time(user_id, 300))
-    
-    is_enabled = True  # Default true rakha hai testing ke liye
-    ad_time = 300      # Seconds (300 sec = 5 min)
-    
-    status_text = "🟢 Enabled" if is_enabled else "🔴 Disabled"
-    time_display = f"{ad_time // 60} Minutes" if ad_time >= 60 else f"{ad_time} Seconds"
-    
-    buttons = [
-        [
-            InlineKeyboardButton(f"Auto Delete: {status_text}", callback_data="toggle_auto_delete"),
-        ],
-        [
-            InlineKeyboardButton(f"⏱️ Set Time: {time_display}", callback_data="set_auto_delete_time"),
-        ],
-        [
-            InlineKeyboardButton("« Back", callback_data="start_settings"),
-        ]
-    ]
-    
-    try:
-        await query.message.edit_text(
-            "<b>⚙️ Auto Delete Settings</b>\n\n"
-            "Aap yahan se files ke auto-delete hone ka status aur time configure kar sakte hain.",
-            reply_markup=InlineKeyboardMarkup(buttons),
-            disable_web_page_preview=True
+async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn):
+    if data in ("master_auto_delete_menu", "cset_autodelete", "cset_auto_delete_menu"):
+        ad_on = bool(r.get("auto_delete_enabled", False))
+        ad_time = int(r.get("auto_delete_time", 600))
+        status_txt = "ON ✅" if ad_on else "OFF ❌"
+        time_txt = format_auto_delete_time(ad_time)
+        text = (
+            "♻️ <b>MESSAGE AUTO DELETE:</b>\n\n"
+            "<b>MESSAGE AUTO DELETE: IF TIME IS SET THEN BOT AUTOMATICALLY DELETE THE GIVEN MESSAGE. THIS WILL PREVENT BOT FROM GETTING BAN OR COPYRIGHT.</b>\n\n"
+            f"<b>AUTO DELETE - {status_txt}</b>\n\n"
+            f"<b>DELETE TIME - {time_txt.upper()}</b>"
         )
-    except Exception as e:
-        print(f"Auto delete menu error: {e}")
+        tgl_btn = "OFF AUTO DELETE" if ad_on else "ON AUTO DELETE"
+        back_cb = "settings" if data.startswith("master") else "cset_settings"
+        return await edit_or_reply_fn(query, text, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("SET TIME", callback_data="cset_set_ad_time" if not data.startswith("master") else "m_set_ad_custom")],
+            [InlineKeyboardButton(tgl_btn, callback_data="cset_tgl_ad" if not data.startswith("master") else "m_tgl_ad")],
+            [InlineKeyboardButton("‹ BACK", callback_data=back_cb)]
+        ]))
 
-@Client.on_callback_query(filters.regex("^toggle_auto_delete$"))
-async def toggle_auto_delete_callback(client: Client, query: CallbackQuery):
-    await query.answer("Auto Delete status updated!", show_alert=False)
-    # TODO: Yahan apna database toggle update code daal dena
-    # Phir se menu refresh karne ke liye:
-    await auto_delete_menu_handler(client, query)
+    if data in ("m_tgl_ad", "cset_tgl_ad", "cset_autodelete_toggle"):
+        new_s = not bool(r.get("auto_delete_enabled", False))
+        save_fn(auto_delete_enabled=new_s)
+        await query.answer(f"Auto delete {'Enabled' if new_s else 'Disabled'}!")
+        return await handle_auto_delete_callbacks(client, query, "master_auto_delete_menu" if data.startswith("m_") else "cset_auto_delete_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)
 
-@Client.on_callback_query(filters.regex("^set_auto_delete_time$"))
-async def set_time_menu(client: Client, query: CallbackQuery):
-    await query.answer()
-    buttons = [
-        [
-            InlineKeyboardButton("5 Minutes", callback_data="ad_time_300"),
-            InlineKeyboardButton("10 Minutes", callback_data="ad_time_600"),
-        ],
-        [
-            InlineKeyboardButton("30 Minutes", callback_data="ad_time_1800"),
-            InlineKeyboardButton("1 Hour", callback_data="ad_time_3600"),
-        ],
-        [
-            InlineKeyboardButton("« Back", callback_data="auto_delete"),
-        ]
-    ]
-    await query.message.edit_text(
-        "<b>⏱️ Select Auto Delete Time</b>\n\n"
-        "Kitne samay baad file delete honi chahiye, uska samay chuniye:",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+    if data in ("m_set_ad_custom", "cset_set_ad_time"):
+        cancel_listeners_fn(client, user_id, user_id)
+        sess_token = start_user_session(user_id, "set_ad_time")
+        await query.answer()
+        await query.message.reply(
+            "<b>SEND ME A TIME IN LIKE THIS - 5s, 1m, 1h or 1d</b>\n\n"
+            "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
+        )
+        async def _ad_worker():
+            try:
+                ans = await client.listen(chat_id=user_id, timeout=120)
+            except Exception:
+                await client.send_message(user_id, "❌ <b>Timeout. Process cancelled.</b>")
+                clear_user_session(user_id)
+                return
+            if not is_user_session_active(user_id, sess_token):
+                return
+            t_txt = (ans.text or "").strip()
+            if t_txt == "/cancel":
+                await client.send_message(user_id, "❌ <b>Cancelled.</b>")
+                clear_user_session(user_id)
+                return
+            sec = parse_auto_delete_time(t_txt)
+            if not sec or sec <= 0:
+                await client.send_message(user_id, "❌ <b>Invalid time format. Example: 5s, 10s, 1m, 2h, 1d.</b>")
+                clear_user_session(user_id)
+                return
+            save_fn(auto_delete_enabled=True, auto_delete_time=sec, auto_delete_minutes=max(1, sec // 60))
+            clear_user_session(user_id)
+            time_str = format_auto_delete_time(sec)
+            menu_cb = "master_auto_delete_menu" if data.startswith("m_") else "cset_auto_delete_menu"
+            await client.send_message(
+                user_id,
+                f"🧭 <b>SUCCESSFULLY SET DELETE TIME - {time_str}</b>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=menu_cb)]])
+            )
+        asyncio.create_task(_ad_worker())
+        return
 
-@Client.on_callback_query(filters.regex("^ad_time_"))
-async def save_auto_delete_time(client: Client, query: CallbackQuery):
-    try:
-        data_parts = query.data.split("_")
-        time_seconds = int(data_parts[-1])
-    except Exception:
-        time_seconds = 300
-        
-    await query.answer(f"Auto delete time updated successfully!", show_alert=True)
-    
-    # TODO: Yahan database mein time_seconds save karwa dena
-    # Example: await db.update_auto_delete_time(query.from_user.id, time_seconds)
-    
-    # Wapas main auto-delete menu par redirect kar do
-    await auto_delete_menu_handler(client, query)
+    if data.startswith("m_set_ad:") or data.startswith("cset_autodelete_set:") or data.startswith("cset_set_ad:"):
+        sec = int(data.split(":")[1])
+        save_fn(auto_delete_enabled=True, auto_delete_time=sec, auto_delete_minutes=max(1, sec // 60))
+        time_str = format_auto_delete_time(sec)
+        await query.answer(f"Auto delete set to {time_str}!")
+        return await handle_auto_delete_callbacks(client, query, "master_auto_delete_menu" if data.startswith("m_") else "cset_auto_delete_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)
+

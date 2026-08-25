@@ -13,7 +13,8 @@ from pyrogram.types import (
 from clone_plugins.sessions import start_user_session, is_user_session_active, clear_user_session, cancel_all_listeners
 from clone_plugins.users_api import (
     get_user, update_user_info, get_short_link, validate_shortener_token,
-    parse_time_string, format_time_minutes, is_user_premium
+    parse_time_string, format_time_minutes, is_user_premium,
+    parse_auto_delete_time, format_auto_delete_time
 )
 from settings_modules.force_sub import handle_fsub_callbacks
 from config import ADMINS, BOT_USERNAME
@@ -95,39 +96,26 @@ def master_settings_markup(back_cb="settings_back"):
         [InlineKeyboardButton("🆓 FREE USAGE LIMIT", callback_data="master_free_limit_menu")],
         [InlineKeyboardButton("🌍 REFER AND EARN", callback_data="master_refer_earn")],
         [InlineKeyboardButton("🖇️ LINK SHORTNER", callback_data="link_shortener")],
-        [InlineKeyboardButton("⏰ TOKEN VERIFICATION", callback_data="master_token_main")],
+        [InlineKeyboardButton("🎯 TOKEN VERIFICATION", callback_data="master_token_main")],
         [InlineKeyboardButton("🔒 FORCE SUBSCRIBE", callback_data="master_fsub_menu")],
         [InlineKeyboardButton("🍿 CAPTION", callback_data="custom_caption"), InlineKeyboardButton("🖼️ THUMBNAIL", callback_data="custom_thumbnail")],
         [InlineKeyboardButton("🔘 BUTTON", callback_data="custom_button"), InlineKeyboardButton("♻️ AUTO DELETE", callback_data="master_auto_delete_menu")],
         [InlineKeyboardButton("♾️ PERMANENT LINK", callback_data="master_permanent_link")],
         [InlineKeyboardButton("🔒 PROTECT CONTENT", callback_data="protect_menu")],
-        [InlineKeyboardButton("🪧 BACK", callback_data=back_cb)]
+        [InlineKeyboardButton("🔙 BACK", callback_data=back_cb)]
     ])
 
 def manage_clones_markup(uid, back_cb="settings_back"):
     from clone_plugins import master_manager
     return master_manager.manage_clones_markup(uid, back_cb=back_cb)
 
-def master_token_verification_main_markup():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("1️⃣ FIRST VERIFICATION", callback_data="master_token_verification:1")],
-        [InlineKeyboardButton("2️⃣ SECOND VERIFICATION", callback_data="master_token_verification:2")],
-        [InlineKeyboardButton("3️⃣ THIRD VERIFICATION", callback_data="master_token_verification:3")],
-        [InlineKeyboardButton("📢 VERIFY LOG CHANNEL", callback_data="master_verify_log_channel")],
-        [InlineKeyboardButton("‹ BACK", callback_data="settings")]
-    ])
+def master_token_verification_main_markup(r=None):
+    from settings_modules.token_verify import token_verification_main_markup
+    return token_verification_main_markup(r, prefix_cb="master")
 
 def master_single_token_verification_markup(slot: int, is_on: bool):
-    prefix = "FIRST" if slot == 1 else ("SECOND" if slot == 2 else "THIRD")
-    status_icon = "✅" if is_on else "❌"
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"🔗 {prefix} VERIFY SHORTNER", callback_data=f"m_v_shortner:{slot}")],
-        [InlineKeyboardButton(f"🍿 {prefix} VERIFY TUTORIAL", callback_data=f"m_v_tutorial:{slot}")],
-        [InlineKeyboardButton(f"⏰ {prefix} VERIFY TIME", callback_data=f"m_v_time:{slot}")],
-        [InlineKeyboardButton("👥 TOTAL USER VERIFIED TODAY", callback_data=f"m_v_stats:{slot}")],
-        [InlineKeyboardButton(f"🔒 {prefix} VERIFY - {status_icon}", callback_data=f"m_v_toggle:{slot}")],
-        [InlineKeyboardButton("‹ BACK", callback_data="master_token_main")]
-    ])
+    from settings_modules.token_verify import single_token_verification_markup
+    return single_token_verification_markup(slot, is_on, prefix_cb="master")
 
 # ----------------- BUTTON BUILDER WIZARD ----------------- #
 
@@ -1314,32 +1302,73 @@ async def callbacks(client, query):
         return
 
     # --- AUTO DELETE --- #
-    if data == "master_auto_delete_menu":
+    if data in ("master_auto_delete_menu", "cset_autodelete", "cset_auto_delete_menu"):
         ad_on = bool(r.get("auto_delete_enabled", False))
-        ad_time = r.get("auto_delete_time", 600)
-        status_txt = f"ON ({ad_time // 60} Mins) ✅" if ad_on else "OFF ❌"
+        ad_time = int(r.get("auto_delete_time", 600))
+        status_txt = "ON ✅" if ad_on else "OFF ❌"
+        time_txt = format_auto_delete_time(ad_time)
         text = (
-            "♻️ <b>AUTO DELETE MESSAGES:</b>\n\n"
-            f"• <b>STATUS:</b> <b>{status_txt}</b>\n\n"
-            "<b>Automatically delete delivered files after a given time to protect copyright.</b>"
+            "♻️ <b>MESSAGE AUTO DELETE:</b>\n\n"
+            "<b>MESSAGE AUTO DELETE: IF TIME IS SET THEN BOT AUTOMATICALLY DELETE THE GIVEN MESSAGE. THIS WILL PREVENT BOT FROM GETTING BAN OR COPYRIGHT.</b>\n\n"
+            f"<b>AUTO DELETE - {status_txt}</b>\n\n"
+            f"<b>DELETE TIME - {time_txt.upper()}</b>"
         )
-        tgl_btn = "DISABLE AUTO DELETE" if ad_on else "ENABLE AUTO DELETE"
+        tgl_btn = "OFF AUTO DELETE" if ad_on else "ON AUTO DELETE"
         return await edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("SET TIME", callback_data="m_set_ad_custom")],
             [InlineKeyboardButton(tgl_btn, callback_data="m_tgl_ad")],
-            [InlineKeyboardButton("SET TIME (10 MINS)", callback_data="m_set_ad:600"), InlineKeyboardButton("SET TIME (30 MINS)", callback_data="m_set_ad:1800")],
             [InlineKeyboardButton("‹ BACK", callback_data="settings")]
         ]))
 
-    if data == "m_tgl_ad":
+    if data in ("m_tgl_ad", "cset_tgl_ad"):
         new_s = not bool(r.get("auto_delete_enabled", False))
         save_master(auto_delete_enabled=new_s)
         await query.answer(f"Auto delete {'Enabled' if new_s else 'Disabled'}!")
         return await callbacks(client, type("Q", (), {"data": "master_auto_delete_menu", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
 
-    if data.startswith("m_set_ad:"):
+    if data in ("m_set_ad_custom", "cset_set_ad_time"):
+        cancel_all_listeners(client, user_id, user_id)
+        sess_token = start_user_session(user_id, "m_set_ad_time")
+        await query.answer()
+        await query.message.reply(
+            "<b>SEND ME A TIME IN LIKE THIS - 5s, 1m, 1h or 1d</b>\n\n"
+            "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
+        )
+        async def _ad_worker():
+            try:
+                ans = await client.listen(chat_id=user_id, timeout=120)
+            except Exception:
+                await client.send_message(user_id, "❌ <b>Timeout. Process cancelled.</b>")
+                clear_user_session(user_id)
+                return
+            if not is_user_session_active(user_id, sess_token):
+                return
+            t_txt = (ans.text or "").strip()
+            if t_txt == "/cancel":
+                await client.send_message(user_id, "❌ <b>Cancelled.</b>")
+                clear_user_session(user_id)
+                return
+            sec = parse_auto_delete_time(t_txt)
+            if not sec or sec <= 0:
+                await client.send_message(user_id, "❌ <b>Invalid time format. Example: 5s, 10s, 1m, 2h, 1d.</b>")
+                clear_user_session(user_id)
+                return
+            save_master(auto_delete_enabled=True, auto_delete_time=sec, auto_delete_minutes=max(1, sec // 60))
+            clear_user_session(user_id)
+            time_str = format_auto_delete_time(sec)
+            await client.send_message(
+                user_id,
+                f"🧭 <b>SUCCESSFULLY SET DELETE TIME - {time_str}</b>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_auto_delete_menu")]])
+            )
+        asyncio.create_task(_ad_worker())
+        return
+
+    if data.startswith("m_set_ad:") or data.startswith("cset_set_ad:"):
         sec = int(data.split(":")[1])
-        save_master(auto_delete_enabled=True, auto_delete_time=sec)
-        await query.answer(f"Auto delete set to {sec // 60} Minutes!")
+        save_master(auto_delete_enabled=True, auto_delete_time=sec, auto_delete_minutes=max(1, sec // 60))
+        time_str = format_auto_delete_time(sec)
+        await query.answer(f"Auto delete set to {time_str}!")
         return await callbacks(client, type("Q", (), {"data": "master_auto_delete_menu", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
 
     # --- PERMANENT LINK --- #

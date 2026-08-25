@@ -661,9 +661,13 @@ async def special_link_start(client, message):
             await message.reply("❌ You are not authorized to view this special link.")
             raise StopPropagation
 
-    access = await cmd.access_verification(client, message.from_user.id, payload)
-    if access:
-        await message.reply("<b>🔐 Please verify first to access this link.</b>", reply_markup=access)
+    access_res = await cmd.access_verification(client, message.from_user.id, payload)
+    if isinstance(access_res, tuple):
+        v_text, access_markup = access_res
+    else:
+        v_text, access_markup = "<b>🔐 Please verify first to access this link.</b>", access_res
+    if access_markup:
+        await message.reply(v_text, reply_markup=access_markup, disable_web_page_preview=True)
         raise StopPropagation
     if await cmd.send_fsub_prompt(client, message, payload):
         raise StopPropagation

@@ -265,9 +265,13 @@ async def batch_start_deliver(client, message):
         raise StopPropagation
 
     payload = message.command[1]
-    access = await cmd.access_verification(client, message.from_user.id, payload)
-    if access:
-        await message.reply("<b>🔐 Please verify first to access this batch.</b>", reply_markup=access)
+    access_res = await cmd.access_verification(client, message.from_user.id, payload)
+    if isinstance(access_res, tuple):
+        v_text, access_markup = access_res
+    else:
+        v_text, access_markup = "<b>🔐 Please verify first to access this batch.</b>", access_res
+    if access_markup:
+        await message.reply(v_text, reply_markup=access_markup, disable_web_page_preview=True)
         raise StopPropagation
     if await cmd.send_fsub_prompt(client, message, payload):
         raise StopPropagation

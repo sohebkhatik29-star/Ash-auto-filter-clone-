@@ -11,7 +11,8 @@ from clone_plugins.dbusers import clonedb
 from clone_plugins.users_api import (
     get_user, update_user_info, get_short_link, format_caption,
     is_user_premium, check_user_verified, set_user_verified,
-    create_verify_token, consume_verify_token, format_time_minutes
+    create_verify_token, consume_verify_token, format_time_minutes,
+    format_auto_delete_time, parse_auto_delete_time
 )
 from plugins.clone import mongo_db
 from config import BOT_USERNAME, PICS, CUSTOM_FILE_CAPTION, ADMINS, UPDATE_CHANNEL, tg_link
@@ -242,52 +243,88 @@ async def send_fsub_prompt(client, message, payload):
 async def access_verification(client, user_id, original_payload):
     rec = bot_record(client)
     if not rec:
-        return None
+        return None, None
     if is_user_premium(user_id, rec):
-        return None
-    
-    active_slot = None
+        return None, None
+
+    # Collect all active verification slots (1, 2, 3)
+    active_slots = []
     for s in (1, 2, 3):
         v_key = f"verify_{s}" if s > 1 else "verify_1"
         v_cfg = rec.get(v_key, {})
-        if v_cfg.get("is_on"):
-            active_slot = v_cfg
-            break
-            
-    if not active_slot:
+        site = v_cfg.get("shortner_site") or v_cfg.get("site") or rec.get("base_site")
+        api = v_cfg.get("shortner_api") or v_cfg.get("api") or rec.get("shortener_api")
+        if v_cfg.get("is_on") and site and api:
+            active_slots.append((s, v_cfg, site, api))
+
+    # Fallback to legacy verify configuration if enabled
+    if not active_slots:
         if rec.get("verify_enabled") and rec.get("base_site") and rec.get("shortener_api"):
-            active_slot = {
-                "site": rec.get("base_site"),
-                "api": rec.get("shortener_api"),
+            active_slots.append((1, {
                 "tutorial": rec.get("verify_tutorial"),
-                "time_minutes": rec.get("verify_ttl", 480) // 60
-            }
-        else:
-            return None
+                "time": rec.get("verify_ttl", 480) // 60
+            }, rec.get("base_site"), rec.get("shortener_api")))
 
-    is_verified = await check_user_verified(user_id, client.me.id)
-    if is_verified:
-        return None
+    if not active_slots:
+        return None, None
 
-    site = active_slot.get("site") or rec.get("base_site")
-    api = active_slot.get("api") or rec.get("shortener_api")
-    tutorial = active_slot.get("tutorial")
+    # Find the first slot that user has not verified
+    pending_slot_num = None
+    pending_slot_cfg = None
+    site_to_use = None
+    api_to_use = None
+    step_index = 0
+    total_steps = len(active_slots)
 
-    if not site or not api:
-        return None
+    for idx, (s_num, s_cfg, s_site, s_api) in enumerate(active_slots):
+        if not check_user_verified(user_id, client.me.id, slot=s_num):
+            pending_slot_num = s_num
+            pending_slot_cfg = s_cfg
+            site_to_use = s_site
+            api_to_use = s_api
+            step_index = idx + 1
+            break
 
-    token = await create_verify_token(user_id, client.me.id, original_payload)
+    if not pending_slot_num:
+        return None, None
+
+    tutorial = pending_slot_cfg.get("tutorial") or rec.get("verify_tutorial")
+    mins = int(pending_slot_cfg.get("time", pending_slot_cfg.get("time_minutes", 1440)))
+    time_str = format_time_minutes(mins)
+
+    token = create_verify_token(user_id, client.me.id, original_payload, slot=pending_slot_num)
     me = client.me or (await client.get_me())
     raw_verify_url = f"https://t.me/{me.username}?start=verify_{token}"
-    short_url = await get_short_link({"base_site": site, "shortener_api": api}, raw_verify_url)
+    short_url = await get_short_link({"base_site": site_to_use, "shortener_api": api_to_use}, raw_verify_url)
 
-    buttons = [[InlineKeyboardButton("🔗 Click Here To Verify", url=short_url)]]
+    first_name = "User"
+    try:
+        u = await client.get_users(user_id)
+        first_name = u.first_name or "User"
+    except Exception:
+        pass
+
+    text = (
+        f"Hey <b>{first_name}</b>,\n\n"
+        f"<blockquote>YOU ARE NOT VERIFIED TODAY, PLEASE CLICK ON VERIFY BUTTON AND GET UNLIMITED ACCESS FOR NEXT {time_str}.\n\n"
+        f"IF YOU DONOT KNOW HOW TO VERIFY THEN CLICK ON HOW TO VERIFY BUTTON AND WATCH THE VIDEO.\n\n"
+        f"THIS IS AN ADS-BASED ACCESS TOKEN. IF YOU PASS ONE ACCESS TOKEN, YOU CAN ACCESS MESSAGES FROM LINKS FOR NEXT {time_str}.</blockquote>\n\n"
+        f"<b>#VERIFICATION:-</b> {step_index}/{total_steps}\n\n"
+        f"<blockquote>IF YOU WANT DIRECT FILES WITHOUT ANY VERIFICATIONS THEN BUY BOT SUBSCRIPTION 😴\n\n"
+        f"▶️ CLICK ON BUY PREMIUM BUTTON TO BUY SUBSCRIPTION</blockquote>"
+    )
+
+    buttons = [
+        [InlineKeyboardButton("🟢 VERIFY 🔗", url=short_url)]
+    ]
     if tutorial:
-        buttons.append([InlineKeyboardButton("🎬 How To Open Link & Verify", url=tutorial)])
-    if rec.get("premium_is_on"):
-        buttons.append([InlineKeyboardButton("💳 Buy Premium Plan", callback_data="c_buy_prem")])
+        buttons.append([InlineKeyboardButton("🎬 HOW TO VERIFY ↗️", url=tutorial)])
+    if rec.get("premium_is_on") or rec.get("premium_users") is not None:
+        buttons.append([InlineKeyboardButton("⭐ BUY PREMIUM - NO NEED TO VERIFY ⭐", callback_data="c_buy_prem")])
+    elif rec.get("owner_username"):
+        buttons.append([InlineKeyboardButton("⭐ BUY PREMIUM - NO NEED TO VERIFY ⭐", url=f"https://t.me/{rec.get('owner_username').lstrip('@')}")])
 
-    return InlineKeyboardMarkup(buttons)
+    return text, InlineKeyboardMarkup(buttons)
 
 
 def settings_menu():
@@ -326,9 +363,10 @@ async def deliver_file(client, user_id, file_id, protected=False):
         try: await msg.edit_reply_markup(InlineKeyboardMarkup(rows))
         except Exception: pass
     if rec.get("auto_delete_enabled", False):
-        minutes = max(1, int(rec.get("auto_delete_minutes", 15)))
-        warning = await msg.reply(f"<b>⚠️ This file will be deleted in {minutes} minutes.</b>")
-        await asyncio.sleep(minutes * 60)
+        ad_sec = int(rec.get("auto_delete_time") or (int(rec.get("auto_delete_minutes", 15)) * 60))
+        time_str = format_auto_delete_time(ad_sec)
+        warning = await msg.reply(f"<b>⚠️ This file will be deleted in {time_str}.</b>")
+        await asyncio.sleep(ad_sec)
         try: await msg.delete()
         except Exception: pass
         try: await warning.edit_text("<b>Your file has been deleted.</b>")
@@ -488,25 +526,40 @@ async def start(client, message):
         
     if data.startswith("verify_") or data.startswith("verify-"):
         token_str = data.split("_", 1)[1] if data.startswith("verify_") else data.split("-", 1)[1]
-        orig_payload = await consume_verify_token(token_str, message.from_user.id, me.id)
+        orig_payload, slot_used = await consume_verify_token(token_str, message.from_user.id, me.id)
         if orig_payload is None and mongo_db is not None:
             rec_t = mongo_db.access_tokens.find_one({"bot_id": me.id, "token": token_str, "user_id": int(message.from_user.id)})
             if rec_t:
                 orig_payload = ""
+                slot_used = 1
         
         if orig_payload is None:
             return await message.reply("❌ <b>Invalid or expired verification link!</b>\n\nPlease verify again.")
         
-        time_mins = 480
-        for s in (1, 2, 3):
-            v_key = f"verify_{s}" if s > 1 else "verify_1"
-            v_cfg = rec.get(v_key, {})
-            if v_cfg.get("is_on"):
-                time_mins = int(v_cfg.get("time_minutes", 480))
-                break
+        v_key = f"verify_{slot_used}" if slot_used > 1 else "verify_1"
+        v_cfg = rec.get(v_key, {})
+        time_mins = int(v_cfg.get("time", v_cfg.get("time_minutes", 1440)))
         
-        await set_user_verified(message.from_user.id, me.id, duration_minutes=time_mins)
+        await set_user_verified(message.from_user.id, me.id, duration_minutes=time_mins, slot=slot_used)
         dur_str = format_time_minutes(time_mins)
+        
+        # Send log to verify_log_channel if configured
+        log_ch = rec.get("verify_log_channel")
+        if log_ch:
+            try:
+                import datetime
+                now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+                log_text = (
+                    "🎯 <b>NEW USER VERIFIED</b>\n\n"
+                    f"👤 <b>User:</b> {message.from_user.mention} (<code>{message.from_user.id}</code>)\n"
+                    f"⏰ <b>Validity:</b> <code>{dur_str}</code>\n"
+                    f"🔢 <b>Step:</b> <code>{slot_used}</code>\n"
+                    f"📅 <b>Date:</b> <code>{now_str}</code>"
+                )
+                await client.send_message(int(log_ch), log_text)
+            except Exception:
+                pass
+
         success_text = (
             f"✅ <b>Hey {message.from_user.mention}, you are successfully verified!</b>\n\n"
             f"Now you have unlimited access for all files for <b>{dur_str}</b>."
@@ -528,9 +581,9 @@ async def start(client, message):
     if prefix not in ("file", "filep") or not file_id:
         return await message.reply("❌ Invalid or expired file link.")
 
-    access_markup = await access_verification(client, message.from_user.id, data)
+    v_text, access_markup = await access_verification(client, message.from_user.id, data)
     if access_markup:
-        return await message.reply("<b>🔐 Please verify first to access this file.</b>", reply_markup=access_markup)
+        return await message.reply(v_text, reply_markup=access_markup, disable_web_page_preview=True)
 
     if await send_fsub_prompt(client, message, data):
         return

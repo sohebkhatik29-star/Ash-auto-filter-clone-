@@ -250,7 +250,7 @@ async def handle_clone_callbacks(client, query):
         if action == "autodelete":
             state = not bool(d.get("auto_delete_enabled", False))
             minutes = int(d.get("auto_delete_minutes", 15) or 15)
-            update_bot(bid, auto_delete_enabled=state, auto_delete_minutes=minutes)
+            update_bot(bid, auto_delete_enabled=state, auto_delete_minutes=minutes, auto_delete_time=minutes*60)
             buttons = InlineKeyboardMarkup([
                 [InlineKeyboardButton("➖ 1 MIN", callback_data=f"cad:{bid}:minus"), InlineKeyboardButton(f"⏱ {minutes} MIN", callback_data=f"cad:{bid}:noop"), InlineKeyboardButton("➕ 1 MIN", callback_data=f"cad:{bid}:plus")],
                 [InlineKeyboardButton("‹ BACK", callback_data=f"manage_clone:{bid}")]

@@ -31,6 +31,61 @@ def parse_time_string(val: str) -> int:
     return max(1, num)
 
 
+def parse_auto_delete_time(val: str) -> int:
+    val = (val or "").strip().lower()
+    match = re.match(r"^(\d+)\s*([a-zA-Z]+)?$", val)
+    if not match:
+        digits = "".join(filter(str.isdigit, val))
+        if digits:
+            return max(1, int(digits))
+        return 60
+    num = int(match.group(1))
+    unit = (match.group(2) or "s").lower()
+    if unit.startswith("s"):
+        return max(1, num)
+    elif unit.startswith("m") and not unit.startswith("mo"):
+        return max(1, num * 60)
+    elif unit.startswith("h"):
+        return max(1, num * 3600)
+    elif unit.startswith("d"):
+        return max(1, num * 86400)
+    elif unit.startswith("w"):
+        return max(1, num * 86400 * 7)
+    elif unit.startswith("mo"):
+        return max(1, num * 86400 * 30)
+    elif unit.startswith("y"):
+        return max(1, num * 86400 * 365)
+    return max(1, num)
+
+
+def format_auto_delete_time(sec: int) -> str:
+    sec = max(1, int(sec))
+    if sec < 60:
+        return f"{sec} Seconds" if sec != 1 else "1 Second"
+    elif sec % 86400 == 0:
+        d = sec // 86400
+        return f"{d} Days" if d != 1 else "1 Day"
+    elif sec % 3600 == 0:
+        h = sec // 3600
+        return f"{h} Hours" if h != 1 else "1 Hour"
+    elif sec % 60 == 0:
+        m = sec // 60
+        return f"{m} Minutes" if m != 1 else "1 Minute"
+    else:
+        if sec < 3600:
+            m = sec // 60
+            s = sec % 60
+            return f"{m}m {s}s" if s else f"{m} Minutes"
+        elif sec < 86400:
+            h = sec // 3600
+            m = (sec % 3600) // 60
+            return f"{h}h {m}m" if m else f"{h} Hours"
+        else:
+            d = sec // 86400
+            h = (sec % 86400) // 3600
+            return f"{d}d {h}h" if h else f"{d} Days"
+
+
 def format_time_minutes(mins: int) -> str:
     mins = max(1, int(mins))
     if mins < 60:
@@ -60,31 +115,49 @@ def is_user_premium(user_id: int, source_doc: dict) -> bool:
     return False
 
 
-def check_user_verified(user_id: int, bot_id=0) -> bool:
+def check_user_verified(user_id: int, bot_id=0, slot=1) -> bool:
     if mongo_db is None:
         return False
     now = int(time.time())
-    rec = mongo_db.user_verifications.find_one({
+    query = {
         "user_id": int(user_id),
         "bot_id": int(bot_id),
         "expires_at": {"$gt": now}
-    })
+    }
+    if slot:
+        query["slot"] = int(slot)
+    rec = mongo_db.user_verifications.find_one(query)
+    if not rec and slot == 1:
+        # Fallback to legacy records without slot field
+        rec = mongo_db.user_verifications.find_one({
+            "user_id": int(user_id),
+            "bot_id": int(bot_id),
+            "expires_at": {"$gt": now}
+        })
     return bool(rec)
 
 
-def set_user_verified(user_id: int, bot_id=0, duration_minutes=480):
+def set_user_verified(user_id: int, bot_id=0, duration_minutes=1440, slot=1):
     if mongo_db is None:
         return
     now = int(time.time())
     expires = now + max(60, int(duration_minutes) * 60)
     mongo_db.user_verifications.update_one(
-        {"user_id": int(user_id), "bot_id": int(bot_id)},
-        {"$set": {"verified_at": now, "expires_at": expires}},
+        {"user_id": int(user_id), "bot_id": int(bot_id), "slot": int(slot)},
+        {"$set": {"verified_at": now, "expires_at": expires, "slot": int(slot)}},
         upsert=True
     )
+    # Increment today's stats for this bot and slot
+    try:
+        mongo_db.bots.update_one(
+            {"bot_id": int(bot_id)},
+            {"$inc": {f"verified_today_{slot}": 1}}
+        )
+    except Exception:
+        pass
 
 
-def create_verify_token(user_id: int, bot_id=0, payload="") -> str:
+def create_verify_token(user_id: int, bot_id=0, payload="", slot=1) -> str:
     token = uuid.uuid4().hex[:10]
     if mongo_db is not None:
         mongo_db.verify_tokens.update_one(
@@ -94,6 +167,7 @@ def create_verify_token(user_id: int, bot_id=0, payload="") -> str:
                 "user_id": int(user_id),
                 "bot_id": int(bot_id),
                 "payload": payload,
+                "slot": int(slot),
                 "created_at": int(time.time()),
                 "expires_at": int(time.time()) + 3600
             }},
@@ -104,14 +178,14 @@ def create_verify_token(user_id: int, bot_id=0, payload="") -> str:
 
 def consume_verify_token(token: str, user_id: int, bot_id=0):
     if mongo_db is None:
-        return None
+        return None, 1
     rec = mongo_db.verify_tokens.find_one({"token": token, "user_id": int(user_id), "bot_id": int(bot_id)})
     if not rec:
-        return None
+        return None, 1
     mongo_db.verify_tokens.delete_one({"_id": rec["_id"]})
     if int(rec.get("expires_at", 0)) < int(time.time()):
-        return None
-    return rec.get("payload", "")
+        return None, 1
+    return rec.get("payload", ""), int(rec.get("slot", 1))
 
 
 async def get_short_link(user, link):

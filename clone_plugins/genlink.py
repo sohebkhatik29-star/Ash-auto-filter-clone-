@@ -11,7 +11,7 @@ from pyrogram import Client, filters, StopPropagation, enums
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from clone_plugins.users_api import get_user, get_short_link, format_caption
+from clone_plugins.users_api import get_user, get_short_link, format_caption, format_auto_delete_time
 from clone_plugins.commands import bot_record
 
 _PENDING = {}
@@ -222,14 +222,15 @@ async def open_interactive(client, message):
             )
 
         if rec.get("auto_delete_enabled", True):
-            minutes = max(1, int(rec.get("auto_delete_minutes", 15)))
+            ad_sec = int(rec.get("auto_delete_time") or (int(rec.get("auto_delete_minutes", 15)) * 60))
+            time_str = format_auto_delete_time(ad_sec)
             warning = await client.send_message(
                 chat_id=message.from_user.id,
-                text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nThis Movie File/Video will be deleted in <b><u>{minutes} minutes</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>"
+                text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nThis Movie File/Video will be deleted in <b><u>{time_str}</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>"
             )
             import asyncio
             async def _auto_del():
-                await asyncio.sleep(minutes * 60)
+                await asyncio.sleep(ad_sec)
                 try: await delivered.delete()
                 except Exception: pass
                 try: await warning.delete()

@@ -4,6 +4,7 @@ from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from clone_plugins.dbusers import clonedb
 from plugins.clone import mongo_db
+from clone_plugins.users_api import parse_auto_delete_time, format_auto_delete_time
 from config import ADMINS
 
 def bot_record(client):
@@ -75,13 +76,22 @@ async def auto_delete(client,message):
     if not owner_only(client,message.from_user.id):return await message.reply("❌ Owner only.")
     args=message.command[1:]
     if not args:
-        d=bot_record(client);return await message.reply(f"🗑️ Auto Delete: {'ON' if d.get('auto_delete_enabled') else 'OFF'}\nTime: {d.get('auto_delete_minutes',15)} minutes")
-    if args[0].lower()=="off":save(client,{"auto_delete_enabled":False});return await message.reply("🗑️ Auto Delete disabled.")
-    minutes=15
+        d=bot_record(client)
+        ad_sec = int(d.get("auto_delete_time") or (int(d.get("auto_delete_minutes",15))*60))
+        t_str = format_auto_delete_time(ad_sec)
+        return await message.reply(f"🗑️ Auto Delete: {'ON' if d.get('auto_delete_enabled') else 'OFF'}\nTime: {t_str}")
+    if args[0].lower()=="off":
+        save(client,{"auto_delete_enabled":False});return await message.reply("🗑️ Auto Delete disabled.")
+    time_arg = "15m"
     if len(args)>1:
-        try:minutes=max(1,min(1440,int(args[1])))
-        except:return await message.reply("Usage: /auto_delete on 15")
-    save(client,{"auto_delete_enabled":True,"auto_delete_minutes":minutes});await message.reply(f"🗑️ Auto Delete enabled for {minutes} minutes.")
+        time_arg = args[1]
+    elif len(args)==1 and args[0].lower() not in ("on", "true", "1"):
+        time_arg = args[0]
+    sec = parse_auto_delete_time(time_arg)
+    mins = max(1, sec // 60)
+    save(client,{"auto_delete_enabled":True,"auto_delete_time":sec,"auto_delete_minutes":mins})
+    t_str = format_auto_delete_time(sec)
+    await message.reply(f"🗑️ Auto Delete enabled for {t_str}.")
 async def no_forward(client,message):
     if not owner_only(client,message.from_user.id):return await message.reply("❌ Owner only.")
     d=bot_record(client);value=bool(d.get("no_forward",False)) if len(message.command)==1 else message.command[1].lower() in ("on","1","yes","true");save(client,{"no_forward":value});await message.reply(f"🚫 No Forward: <b>{'Enabled ✅' if value else 'Disabled ❌'}</b>")
