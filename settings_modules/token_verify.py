@@ -151,7 +151,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         is_on = bool(v_cfg.get("is_on", False))
         prefix = slot_name(slot)
         text = f"🎯 <b>{prefix} TOKEN VERIFICATION:</b>"
-        return await clean_show(text, reply_markup=single_token_verification_markup(slot, is_on, prefix_cb))
+        return await clean_show(text, reply_markup=single_token_verification_markup(slot, is_on, prefix_cb, target_bid=target_bid))
 
     # 3. Toggle Slot (ON/OFF)
     if data.startswith("m_v_toggle:") or data.startswith("cset_v_toggle:"):
@@ -166,7 +166,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         prefix = slot_name(slot)
         text = f"🎯 <b>{prefix} TOKEN VERIFICATION:</b>"
         await query.answer(f"Verification {'Enabled' if new_state else 'Disabled'}!")
-        return await clean_show(text, reply_markup=single_token_verification_markup(slot, new_state, prefix_cb))
+        return await clean_show(text, reply_markup=single_token_verification_markup(slot, new_state, prefix_cb, target_bid=target_bid))
 
     # 4. Stats Alert
     if data.startswith("m_v_stats:") or data.startswith("cset_v_stats:"):
@@ -191,7 +191,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
             f"<b>URL -</b> <code>{site}</code>\n"
             f"<b>API -</b> <code>{api}</code>"
         )
-        return await clean_show(text, reply_markup=shortner_markup(slot, prefix_cb))
+        return await clean_show(text, reply_markup=shortner_markup(slot, prefix_cb, target_bid=target_bid))
 
     # 6. Delete Shortner
     if data.startswith("m_del_v_shortner:") or data.startswith("cset_del_v_shortner:") or data.startswith("cset_v_del_short:"):
@@ -207,7 +207,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         save_fn(**{v_key: v_cfg})
         await query.answer("Shortlink Deleted!")
         text = "<b>SUCCESSFULLY DELETED SHORTLINK</b> ✅"
-        return await clean_show(text, reply_markup=back_to_slot_markup(slot, prefix_cb))
+        return await clean_show(text, reply_markup=back_to_slot_markup(slot, prefix_cb, target_bid=target_bid))
 
     # 7. Set Shortner Flow
     if data.startswith("m_set_v_shortner:") or data.startswith("cset_set_v_shortner:") or data.startswith("cset_v_set_short:"):
