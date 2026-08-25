@@ -403,8 +403,8 @@ async def deliver_file(client, user_id, file_id, protected=False):
         ad_invert = bool(rec.get("auto_delete_pic_invert_caption", False))
 
         warning = None
-        try:
-            if ad_pic:
+        if ad_pic:
+            try:
                 warning = await client.send_photo(
                     chat_id=user_id,
                     photo=ad_pic,
@@ -413,18 +413,43 @@ async def deliver_file(client, user_id, file_id, protected=False):
                     show_caption_above_media=ad_invert,
                     reply_markup=ad_markup
                 )
-            else:
+            except Exception:
+                try:
+                    warning = await client.send_photo(
+                        chat_id=user_id,
+                        photo=ad_pic,
+                        caption=ad_text,
+                        has_spoiler=ad_spoil,
+                        reply_markup=ad_markup
+                    )
+                except Exception:
+                    try:
+                        import os
+                        from AshCore.bot import StreamBot
+                        os.makedirs("cache/ad_pics", exist_ok=True)
+                        bot_id = rec.get("bot_id") or (client.me.id if getattr(client, "me", None) else None)
+                        target_path = f"cache/ad_pics/{bot_id or 'shared'}.jpg"
+                        downloaded = await StreamBot.download_media(ad_pic, file_name=target_path)
+                        if downloaded and os.path.exists(downloaded):
+                            warning = await client.send_photo(
+                                chat_id=user_id,
+                                photo=downloaded,
+                                caption=ad_text,
+                                has_spoiler=ad_spoil,
+                                reply_markup=ad_markup
+                            )
+                    except Exception:
+                        pass
+
+        if not warning:
+            try:
                 warning = await client.send_message(
                     chat_id=user_id,
                     text=ad_text,
                     reply_markup=ad_markup
                 )
-        except Exception:
-            warning = await client.send_message(
-                chat_id=user_id,
-                text=ad_text,
-                reply_markup=ad_markup
-            )
+            except Exception:
+                pass
 
         async def _auto_del():
             await asyncio.sleep(ad_sec)
@@ -432,11 +457,15 @@ async def deliver_file(client, user_id, file_id, protected=False):
                 await msg.delete()
             except Exception:
                 pass
+            if warning:
+                try:
+                    await warning.delete()
+                except Exception:
+                    pass
 
             get_again_on = bool(rec.get("auto_delete_get_again", True))
             if get_again_on:
                 try:
-                    me = await client.get_me()
                     again_kb = InlineKeyboardMarkup([
                         [InlineKeyboardButton("🔒 CLOSE 🔒", callback_data="close_data")]
                     ])
@@ -444,17 +473,7 @@ async def deliver_file(client, user_id, file_id, protected=False):
                         "🎁 <b>PREVIOUS MESSAGE IS DELETED</b>\n\n"
                         "<b>IF YOU WANT THIS PREVIOUS MESSAGE AGAIN THEN CLICK ON BELOW BUTTON OTHERWISE CLICK ON CLOSE BUTTON.</b>"
                     )
-                    if warning:
-                        try:
-                            await warning.delete()
-                        except Exception:
-                            pass
                     await client.send_message(chat_id=user_id, text=del_txt, reply_markup=again_kb)
-                except Exception:
-                    pass
-            else:
-                try:
-                    await warning.delete()
                 except Exception:
                     pass
         asyncio.create_task(_auto_del())

@@ -204,6 +204,15 @@ async def run_ad_button_builder(client, user_id, save_fn, cancel_listeners_fn, b
     clear_user_session(user_id)
     save_fn(auto_delete_buttons=rows)
 
+    try:
+        await client.send_message(
+            chat_id=user_id,
+            text="✨ <b>Buttons updated successfully!</b>",
+            reply_markup=ReplyKeyboardRemove()
+        )
+    except Exception:
+        pass
+
     if current_pic:
         try:
             return await client.send_photo(
@@ -230,6 +239,16 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
 
     is_master = str(data).startswith("m_") or str(data).startswith("master_") or "master" in str(data) or (target_bid is not None)
 
+    async def clean_show(txt, reply_markup=None):
+        msg = getattr(query, "message", None) or query
+        if msg and (getattr(msg, "photo", None) or getattr(msg, "media", None)):
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+            return await client.send_message(chat_id=user_id, text=txt, reply_markup=reply_markup)
+        return await edit_or_reply_fn(query, txt, reply_markup=reply_markup)
+
     # 1. Main Auto Delete Menu
     if data in ("master_auto_delete_menu", "cset_autodelete", "cset_auto_delete_menu") or str(data).startswith(("master_auto_delete_menu", "cset_autodelete", "cset_auto_delete_menu")):
         ad_on = bool(r.get("auto_delete_enabled", False))
@@ -246,7 +265,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         tgl_btn = "OFF AUTO DELETE" if ad_on else "ON AUTO DELETE"
         again_btn = "GET FILE AGAIN BUTTON - ✅" if ad_again else "GET FILE AGAIN BUTTON - ❌"
         back_cb = f"manage_clone:{target_bid}" if target_bid else ("settings" if is_master else "clone_my_clone_info")
-        return await edit_or_reply_fn(query, text, reply_markup=InlineKeyboardMarkup([
+        return await clean_show(text, reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("SET TIME", callback_data="m_set_ad_custom" if is_master else "cset_set_ad_time")],
             [InlineKeyboardButton(tgl_btn, callback_data="m_tgl_ad" if is_master else "cset_tgl_ad")],
             [InlineKeyboardButton("AUTO DELETE MESSAGE", callback_data="m_ad_msg_menu" if is_master else "cset_ad_msg_menu")],
@@ -258,6 +277,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
     if data in ("m_tgl_ad", "cset_tgl_ad", "cset_autodelete_toggle") or str(data).startswith(("m_tgl_ad", "cset_tgl_ad", "cset_autodelete_toggle")):
         new_s = not bool(r.get("auto_delete_enabled", False))
         save_fn(auto_delete_enabled=new_s)
+        r["auto_delete_enabled"] = new_s
         await query.answer(f"Auto delete {'Enabled' if new_s else 'Disabled'}!")
         return await handle_auto_delete_callbacks(client, query, "master_auto_delete_menu" if is_master else "cset_auto_delete_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
 
@@ -265,6 +285,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
     if data in ("m_tgl_ad_again", "cset_tgl_ad_again") or str(data).startswith(("m_tgl_ad_again", "cset_tgl_ad_again")):
         new_ag = not bool(r.get("auto_delete_get_again", True))
         save_fn(auto_delete_get_again=new_ag)
+        r["auto_delete_get_again"] = new_ag
         await query.answer(f"Get file again button {'Enabled' if new_ag else 'Disabled'}!")
         return await handle_auto_delete_callbacks(client, query, "master_auto_delete_menu" if is_master else "cset_auto_delete_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
 
@@ -273,9 +294,16 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         cancel_listeners_fn(client, user_id, user_id)
         sess_token = start_user_session(user_id, "set_ad_time")
         await query.answer()
-        await query.message.reply(
-            "<b>SEND ME A TIME IN LIKE THIS - 1h OR 15m</b>\n\n"
-            "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        prompt_msg = await client.send_message(
+            chat_id=user_id,
+            text=(
+                "<b>SEND ME A TIME IN LIKE THIS - 1h OR 15m</b>\n\n"
+                "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
+            )
         )
         async def _ad_worker():
             try:
@@ -288,8 +316,13 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
                 return
             t_txt = (ans.text or "").strip()
             if t_txt == "/cancel":
-                await client.send_message(user_id, "❌ <b>Cancelled.</b>")
+                try:
+                    await prompt_msg.delete()
+                except Exception:
+                    pass
                 clear_user_session(user_id)
+                menu_cb = "master_auto_delete_menu" if is_master else "cset_auto_delete_menu"
+                await client.send_message(user_id, "❌ <b>Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=menu_cb)]]))
                 return
             sec = parse_auto_delete_time(t_txt)
             if not sec or sec <= 0:
@@ -297,8 +330,14 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
                 clear_user_session(user_id)
                 return
             save_fn(auto_delete_enabled=True, auto_delete_time=sec, auto_delete_minutes=max(1, sec // 60))
+            r["auto_delete_enabled"] = True
+            r["auto_delete_time"] = sec
             clear_user_session(user_id)
             time_str = format_auto_delete_time(sec)
+            try:
+                await prompt_msg.delete()
+            except Exception:
+                pass
             menu_cb = "master_auto_delete_menu" if is_master else "cset_auto_delete_menu"
             await client.send_message(
                 user_id,
@@ -315,8 +354,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
             "<b>AUTO DELETE MESSAGE: YOU CAN CUSTOMISE YOUR CLONE BOT AUTO DELETE MESSAGE ANY WAY YOU LIKE.</b>"
         )
         back_cb = "master_auto_delete_menu" if is_master else "cset_auto_delete_menu"
-        return await edit_or_reply_fn(
-            query,
+        return await clean_show(
             text,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("AUTO DELETE TEXT", callback_data="m_ad_text" if is_master else "cset_ad_text")],
@@ -338,8 +376,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
             "<i>YOU CAN USE HTML STYLE FORMATTING IN TEXT</i>"
         )
         back_cb = "m_ad_msg_menu" if is_master else "cset_ad_msg_menu"
-        return await edit_or_reply_fn(
-            query,
+        return await clean_show(
             text,
             reply_markup=InlineKeyboardMarkup([
                 [
@@ -355,13 +392,20 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         cancel_listeners_fn(client, user_id, user_id)
         sess_token = start_user_session(user_id, "set_ad_text")
         await query.answer()
-        await query.message.reply(
-            "<b>SEND ME A AUTO DELETE TEXT.</b>\n\n"
-            "<b>AVAILABLE FILLINGS:</b>\n"
-            "<code>{user_mention}</code> : USER - NAME\n"
-            "<code>{time}</code> : AUTO DELETE TIME\n\n"
-            "<i>YOU CAN USE HTML STYLE FORMATTING IN TEXT</i>\n\n"
-            "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        prompt_msg = await client.send_message(
+            chat_id=user_id,
+            text=(
+                "<b>SEND ME A AUTO DELETE TEXT.</b>\n\n"
+                "<b>AVAILABLE FILLINGS:</b>\n"
+                "<code>{user_mention}</code> : USER - NAME\n"
+                "<code>{time}</code> : AUTO DELETE TIME\n\n"
+                "<i>YOU CAN USE HTML STYLE FORMATTING IN TEXT</i>\n\n"
+                "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
+            )
         )
         async def _ad_txt_worker():
             try:
@@ -374,15 +418,25 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
                 return
             t_txt = (ans.text or "").strip()
             if t_txt == "/cancel":
-                await client.send_message(user_id, "❌ <b>Cancelled.</b>")
+                try:
+                    await prompt_msg.delete()
+                except Exception:
+                    pass
                 clear_user_session(user_id)
+                back_cb = "m_ad_text" if is_master else "cset_ad_text"
+                await client.send_message(user_id, "❌ <b>Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=back_cb)]]))
                 return
             if not t_txt:
                 await client.send_message(user_id, "❌ <b>Invalid text.</b>")
                 clear_user_session(user_id)
                 return
             save_fn(auto_delete_text=t_txt)
+            r["auto_delete_text"] = t_txt
             clear_user_session(user_id)
+            try:
+                await prompt_msg.delete()
+            except Exception:
+                pass
             back_cb = "m_ad_text" if is_master else "cset_ad_text"
             await client.send_message(
                 user_id,
@@ -395,6 +449,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
     # 8. Default Auto Delete Text
     if data in ("m_ad_def_txt", "cset_ad_def_txt") or str(data).startswith(("m_ad_def_txt", "cset_ad_def_txt")):
         save_fn(auto_delete_text="")
+        r["auto_delete_text"] = ""
         await query.answer("Auto delete text reset to default!")
         return await handle_auto_delete_callbacks(client, query, "m_ad_text" if is_master else "cset_ad_text", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
 
@@ -416,8 +471,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
             f"<b>INVERT CAPTION -</b> {invert_str}"
         )
         back_cb = "m_ad_msg_menu" if is_master else "cset_ad_msg_menu"
-        return await edit_or_reply_fn(
-            query,
+        return await clean_show(
             text,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("SET AUTO DELETE PIC", callback_data="m_ad_set_pic" if is_master else "cset_ad_set_pic")],
@@ -434,9 +488,16 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         cancel_listeners_fn(client, user_id, user_id)
         sess_token = start_user_session(user_id, "set_ad_pic")
         await query.answer()
-        await query.message.reply(
-            "<b>SEND ME A PICTURE.</b>\n\n"
-            "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        prompt_msg = await client.send_message(
+            chat_id=user_id,
+            text=(
+                "<b>SEND ME A PICTURE.</b>\n\n"
+                "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
+            )
         )
         async def _ad_pic_worker():
             try:
@@ -448,8 +509,13 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
             if not is_user_session_active(user_id, sess_token):
                 return
             if ans.text and ans.text.strip() == "/cancel":
-                await client.send_message(user_id, "❌ <b>Cancelled.</b>")
+                try:
+                    await prompt_msg.delete()
+                except Exception:
+                    pass
                 clear_user_session(user_id)
+                back_cb = "m_ad_pic" if is_master else "cset_ad_pic"
+                await client.send_message(user_id, "❌ <b>Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=back_cb)]]))
                 return
             photo = ans.photo or (ans.document if ans.document and ans.document.mime_type and ans.document.mime_type.startswith("image/") else None)
             if not photo:
@@ -458,7 +524,12 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
                 return
             file_id = photo.file_id
             save_fn(auto_delete_pic=file_id)
+            r["auto_delete_pic"] = file_id
             clear_user_session(user_id)
+            try:
+                await prompt_msg.delete()
+            except Exception:
+                pass
             back_cb = "m_ad_pic" if is_master else "cset_ad_pic"
             try:
                 await client.send_photo(
@@ -479,6 +550,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
     # 11. Delete Auto Delete Pic
     if data in ("m_ad_del_pic", "cset_ad_del_pic") or str(data).startswith(("m_ad_del_pic", "cset_ad_del_pic")):
         save_fn(auto_delete_pic=None)
+        r["auto_delete_pic"] = None
         await query.answer("Picture deleted successfully!")
         return await handle_auto_delete_callbacks(client, query, "m_ad_pic" if is_master else "cset_ad_pic", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
 
@@ -488,6 +560,10 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         if not ad_pic:
             return await query.answer("No picture set!", show_alert=True)
         await query.answer()
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
         back_cb = "m_ad_pic" if is_master else "cset_ad_pic"
         try:
             await client.send_photo(
@@ -497,13 +573,18 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=back_cb)]])
             )
         except Exception:
-            await query.message.reply("❌ Unable to display picture.")
+            await client.send_message(
+                chat_id=user_id,
+                text="❌ Unable to display picture.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=back_cb)]])
+            )
         return
 
     # 13. Toggle Spoiler
     if data in ("m_ad_tgl_spoil", "cset_ad_tgl_spoil") or str(data).startswith(("m_ad_tgl_spoil", "cset_ad_tgl_spoil")):
         new_sp = not bool(r.get("auto_delete_pic_spoiler", False))
         save_fn(auto_delete_pic_spoiler=new_sp)
+        r["auto_delete_pic_spoiler"] = new_sp
         await query.answer(f"Spoiler {'Enabled' if new_sp else 'Disabled'}!")
         return await handle_auto_delete_callbacks(client, query, "m_ad_pic" if is_master else "cset_ad_pic", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
 
@@ -511,6 +592,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
     if data in ("m_ad_tgl_invert", "cset_ad_tgl_invert") or str(data).startswith(("m_ad_tgl_invert", "cset_ad_tgl_invert")):
         new_inv = not bool(r.get("auto_delete_pic_invert_caption", False))
         save_fn(auto_delete_pic_invert_caption=new_inv)
+        r["auto_delete_pic_invert_caption"] = new_inv
         await query.answer(f"Invert caption {'Enabled' if new_inv else 'Disabled'}!")
         return await handle_auto_delete_callbacks(client, query, "m_ad_pic" if is_master else "cset_ad_pic", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
 
@@ -527,7 +609,6 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
             "<b>FOLLOW THE NEXT STEPS TO BUILD YOUR BUTTONS</b>"
         )
         back_cb = "m_ad_msg_menu" if is_master else "cset_ad_msg_menu"
-        current_pic = r.get("auto_delete_pic")
         if has_btns:
             markup = InlineKeyboardMarkup([
                 [
@@ -541,11 +622,15 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
                 [InlineKeyboardButton("ADD BUTTON", callback_data="m_ad_btn_add" if is_master else "cset_ad_btn_add")],
                 [InlineKeyboardButton("‹ BACK", callback_data=back_cb)]
             ])
-        return await edit_or_reply_fn(query, text, reply_markup=markup)
+        return await clean_show(text, reply_markup=markup)
 
     # 16. Add Button Builder
     if data in ("m_ad_btn_add", "cset_ad_btn_add") or str(data).startswith(("m_ad_btn_add", "cset_ad_btn_add")):
         await query.answer()
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
         back_cb = "m_ad_btn" if is_master else "cset_ad_btn"
         current_pic = r.get("auto_delete_pic")
         asyncio.create_task(run_ad_button_builder(client, user_id, save_fn, cancel_listeners_fn, back_cb=back_cb, current_pic=current_pic))
@@ -554,21 +639,10 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
     # 17. Remove Button
     if data in ("m_ad_btn_rem", "cset_ad_btn_rem") or str(data).startswith(("m_ad_btn_rem", "cset_ad_btn_rem")):
         save_fn(auto_delete_buttons=[])
+        r["auto_delete_buttons"] = []
         await query.answer("Buttons deleted!")
         back_cb = "m_ad_btn" if is_master else "cset_ad_btn"
-        current_pic = r.get("auto_delete_pic")
-        if current_pic:
-            try:
-                return await client.send_photo(
-                    chat_id=user_id,
-                    photo=current_pic,
-                    caption="<b>SUCCESSFULLY BUTTON DELETED</b>",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=back_cb)]])
-                )
-            except Exception:
-                pass
-        return await edit_or_reply_fn(
-            query,
+        return await clean_show(
             "<b>SUCCESSFULLY BUTTON DELETED</b>",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=back_cb)]])
         )
@@ -593,6 +667,10 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         back_cb = "m_ad_btn" if is_master else "cset_ad_btn"
         rows.append([InlineKeyboardButton("‹ BACK", callback_data=back_cb)])
         await query.answer()
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
         current_pic = r.get("auto_delete_pic")
         if current_pic:
             try:
@@ -614,6 +692,8 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
     if data.startswith("m_set_ad:") or data.startswith("cset_autodelete_set:") or data.startswith("cset_set_ad:"):
         sec = int(data.split(":")[1])
         save_fn(auto_delete_enabled=True, auto_delete_time=sec, auto_delete_minutes=max(1, sec // 60))
+        r["auto_delete_enabled"] = True
+        r["auto_delete_time"] = sec
         time_str = format_auto_delete_time(sec)
         await query.answer(f"Auto delete set to {time_str}!")
         return await handle_auto_delete_callbacks(client, query, "master_auto_delete_menu" if is_master else "cset_auto_delete_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
