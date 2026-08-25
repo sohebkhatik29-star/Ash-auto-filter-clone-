@@ -252,17 +252,95 @@ async def open_single(client, message):
         if rec.get("auto_delete_enabled", True):
             ad_sec = int(rec.get("auto_delete_time") or (int(rec.get("auto_delete_minutes", 15)) * 60))
             time_str = format_auto_delete_time(ad_sec)
-            warning = await client.send_message(
-                chat_id=message.from_user.id,
-                text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nThis Movie File/Video will be deleted in <b><u>{time_str}</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>"
+            u_mention = getattr(message.from_user, "mention", message.from_user.first_name)
+            
+            raw_ad_text = rec.get("auto_delete_text") or (
+                "<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\n"
+                "This Movie File/Video will be deleted in <b><u>{time}</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n"
+                "<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>"
             )
+            ad_text = raw_ad_text.replace("{time}", time_str).replace("{user_mention}", u_mention)
+
+            # Build custom buttons if any
+            ad_btns_cfg = rec.get("auto_delete_buttons", [])
+            ad_rows = []
+            for r_item in ad_btns_cfg:
+                row_b = []
+                if isinstance(r_item, dict) and "buttons" in r_item:
+                    for b in r_item["buttons"]:
+                        row_b.append(InlineKeyboardButton(b["text"], url=b["url"]))
+                elif isinstance(r_item, dict) and "text" in r_item:
+                    row_b.append(InlineKeyboardButton(r_item["text"], url=r_item.get("url", "https://t.me")))
+                elif isinstance(r_item, list):
+                    for b in r_item:
+                        if isinstance(b, dict) and b.get("text"):
+                            row_b.append(InlineKeyboardButton(b["text"], url=b.get("url", "https://t.me")))
+                if row_b:
+                    ad_rows.append(row_b)
+            ad_markup = InlineKeyboardMarkup(ad_rows) if ad_rows else None
+
+            ad_pic = rec.get("auto_delete_pic")
+            ad_spoil = bool(rec.get("auto_delete_pic_spoiler", False))
+            ad_invert = bool(rec.get("auto_delete_pic_invert_caption", False))
+
+            try:
+                if ad_pic:
+                    warning = await client.send_photo(
+                        chat_id=message.from_user.id,
+                        photo=ad_pic,
+                        caption=ad_text,
+                        has_spoiler=ad_spoil,
+                        show_caption_above_media=ad_invert,
+                        reply_markup=ad_markup
+                    )
+                else:
+                    warning = await client.send_message(
+                        chat_id=message.from_user.id,
+                        text=ad_text,
+                        reply_markup=ad_markup
+                    )
+            except Exception:
+                warning = await client.send_message(
+                    chat_id=message.from_user.id,
+                    text=ad_text,
+                    reply_markup=ad_markup
+                )
+
             async def _auto_del():
                 await asyncio.sleep(ad_sec)
-                try: await delivered.delete()
-                except Exception: pass
-                try: await warning.delete()
-                except Exception: pass
+                try:
+                    await delivered.delete()
+                except Exception:
+                    pass
+
+                get_again_on = bool(rec.get("auto_delete_get_again", True))
+                if get_again_on:
+                    try:
+                        me = await client.get_me()
+                        again_url = f"https://t.me/{me.username}?start={token}"
+                        again_kb = InlineKeyboardMarkup([
+                            [InlineKeyboardButton("✅ GET MESSAGE AGAIN ✅", url=again_url)],
+                            [InlineKeyboardButton("🔒 CLOSE 🔒", callback_data="close_data")]
+                        ])
+                        del_txt = (
+                            "🎁 <b>PREVIOUS MESSAGE IS DELETED</b>\n\n"
+                            "<b>IF YOU WANT THIS PREVIOUS MESSAGE AGAIN THEN CLICK ON BELOW BUTTON OTHERWISE CLICK ON CLOSE BUTTON.</b>"
+                        )
+                        if warning:
+                            try:
+                                await warning.delete()
+                            except Exception:
+                                pass
+                        await client.send_message(chat_id=message.from_user.id, text=del_txt, reply_markup=again_kb)
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        await warning.delete()
+                    except Exception:
+                        pass
             asyncio.create_task(_auto_del())
+
     except Exception as e:
         await message.reply("❌ Unable to deliver this message. The original message may no longer be available.")
     raise StopPropagation

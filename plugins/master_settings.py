@@ -1302,74 +1302,10 @@ async def callbacks(client, query):
         return
 
     # --- AUTO DELETE --- #
-    if data in ("master_auto_delete_menu", "cset_autodelete", "cset_auto_delete_menu"):
-        ad_on = bool(r.get("auto_delete_enabled", False))
-        ad_time = int(r.get("auto_delete_time", 600))
-        status_txt = "ON ✅" if ad_on else "OFF ❌"
-        time_txt = format_auto_delete_time(ad_time)
-        text = (
-            "♻️ <b>MESSAGE AUTO DELETE:</b>\n\n"
-            "<b>MESSAGE AUTO DELETE: IF TIME IS SET THEN BOT AUTOMATICALLY DELETE THE GIVEN MESSAGE. THIS WILL PREVENT BOT FROM GETTING BAN OR COPYRIGHT.</b>\n\n"
-            f"<b>AUTO DELETE - {status_txt}</b>\n\n"
-            f"<b>DELETE TIME - {time_txt.upper()}</b>"
-        )
-        tgl_btn = "OFF AUTO DELETE" if ad_on else "ON AUTO DELETE"
-        return await edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("SET TIME", callback_data="m_set_ad_custom")],
-            [InlineKeyboardButton(tgl_btn, callback_data="m_tgl_ad")],
-            [InlineKeyboardButton("‹ BACK", callback_data="settings")]
-        ]))
+    if data in ("master_auto_delete_menu", "cset_autodelete", "cset_auto_delete_menu") or data.startswith("m_ad_") or data.startswith("m_set_ad") or data.startswith("m_tgl_ad"):
+        from settings_modules.auto_delete import handle_auto_delete_callbacks
+        return await handle_auto_delete_callbacks(client, query, data, user_id, r, save_master, cancel_user_listeners, edit_or_reply)
 
-    if data in ("m_tgl_ad", "cset_tgl_ad"):
-        new_s = not bool(r.get("auto_delete_enabled", False))
-        save_master(auto_delete_enabled=new_s)
-        await query.answer(f"Auto delete {'Enabled' if new_s else 'Disabled'}!")
-        return await callbacks(client, type("Q", (), {"data": "master_auto_delete_menu", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
-
-    if data in ("m_set_ad_custom", "cset_set_ad_time"):
-        cancel_all_listeners(client, user_id, user_id)
-        sess_token = start_user_session(user_id, "m_set_ad_time")
-        await query.answer()
-        await query.message.reply(
-            "<b>SEND ME A TIME IN LIKE THIS - 5s, 1m, 1h or 1d</b>\n\n"
-            "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
-        )
-        async def _ad_worker():
-            try:
-                ans = await client.listen(chat_id=user_id, timeout=120)
-            except Exception:
-                await client.send_message(user_id, "❌ <b>Timeout. Process cancelled.</b>")
-                clear_user_session(user_id)
-                return
-            if not is_user_session_active(user_id, sess_token):
-                return
-            t_txt = (ans.text or "").strip()
-            if t_txt == "/cancel":
-                await client.send_message(user_id, "❌ <b>Cancelled.</b>")
-                clear_user_session(user_id)
-                return
-            sec = parse_auto_delete_time(t_txt)
-            if not sec or sec <= 0:
-                await client.send_message(user_id, "❌ <b>Invalid time format. Example: 5s, 10s, 1m, 2h, 1d.</b>")
-                clear_user_session(user_id)
-                return
-            save_master(auto_delete_enabled=True, auto_delete_time=sec, auto_delete_minutes=max(1, sec // 60))
-            clear_user_session(user_id)
-            time_str = format_auto_delete_time(sec)
-            await client.send_message(
-                user_id,
-                f"🧭 <b>SUCCESSFULLY SET DELETE TIME - {time_str}</b>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_auto_delete_menu")]])
-            )
-        asyncio.create_task(_ad_worker())
-        return
-
-    if data.startswith("m_set_ad:") or data.startswith("cset_set_ad:"):
-        sec = int(data.split(":")[1])
-        save_master(auto_delete_enabled=True, auto_delete_time=sec, auto_delete_minutes=max(1, sec // 60))
-        time_str = format_auto_delete_time(sec)
-        await query.answer(f"Auto delete set to {time_str}!")
-        return await callbacks(client, type("Q", (), {"data": "master_auto_delete_menu", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
 
     # --- PERMANENT LINK --- #
     if data == "master_permanent_link":

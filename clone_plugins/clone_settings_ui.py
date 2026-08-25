@@ -222,8 +222,9 @@ async def callbacks(client, query):
         return await handle_custom_button_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 
     # 9. Auto Delete
-    if data in ("cset_auto_delete_menu", "cset_tgl_ad", "cset_set_ad_time"):
+    if data.startswith(("cset_auto_delete", "cset_ad_", "cset_tgl_ad", "cset_set_ad", "cset_autodelete")):
         return await handle_auto_delete_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
+
 
     # 10. Permanent Link
     if data == "cset_permanent_link":
