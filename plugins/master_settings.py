@@ -483,7 +483,14 @@ async def callbacks(client, query):
         ))
     ):
         from settings_modules.token_verify import handle_token_callbacks
-        return await handle_token_callbacks(client, query, data, user_id, r, save_master, master_record, cancel_user_listeners, edit_or_reply, target_bid=target_bid)
+        def master_get_rec():
+            m_inner = db()
+            if target_bid and m_inner is not None:
+                doc = m_inner.bots.find_one({"bot_id": int(target_bid)})
+                if doc:
+                    return doc
+            return master_record()
+        return await handle_token_callbacks(client, query, data, user_id, r, save_master, master_get_rec, cancel_user_listeners, edit_or_reply, target_bid=target_bid)
 
     # --- BUTTONS --- #
     if data in ("custom_button", "master_custom_button"):
