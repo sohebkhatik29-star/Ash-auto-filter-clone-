@@ -12,91 +12,111 @@ def slot_name(slot: int) -> str:
 def token_verification_main_markup(r=None, prefix_cb="cset", target_bid=None):
     r = r or {}
     cb = "master" if prefix_cb == "master" else "cset"
+    bid_suffix = f":{target_bid}" if target_bid else ""
     if target_bid:
         back_cb = f"manage_clone:{target_bid}"
     else:
         back_cb = "settings" if prefix_cb == "master" else "cset_monetization"
 
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎯 FIRST VERIFICATION", callback_data=f"{cb}_token_verification:1")],
-        [InlineKeyboardButton("🎯 SECOND VERIFICATION", callback_data=f"{cb}_token_verification:2")],
-        [InlineKeyboardButton("🎯 THIRD VERIFICATION", callback_data=f"{cb}_token_verification:3")],
-        [InlineKeyboardButton("👥 VERIFY LOG CHANNEL", callback_data=f"{cb}_verify_log_channel")],
+        [InlineKeyboardButton("🎯 FIRST VERIFICATION", callback_data=f"{cb}_token_verification:1{bid_suffix}")],
+        [InlineKeyboardButton("🎯 SECOND VERIFICATION", callback_data=f"{cb}_token_verification:2{bid_suffix}")],
+        [InlineKeyboardButton("🎯 THIRD VERIFICATION", callback_data=f"{cb}_token_verification:3{bid_suffix}")],
+        [InlineKeyboardButton("👥 VERIFY LOG CHANNEL", callback_data=f"{cb}_verify_log_channel{bid_suffix}")],
         [InlineKeyboardButton("‹ BACK", callback_data=back_cb)]
     ])
 
 
-def single_token_verification_markup(slot: int, is_on: bool, prefix_cb="cset"):
+def single_token_verification_markup(slot: int, is_on: bool, prefix_cb="cset", target_bid=None):
     prefix = slot_name(slot)
     status_icon = "✅" if is_on else "❌"
     cb = "master" if prefix_cb == "master" else "cset"
-    back_cb = f"{cb}_token_main"
+    bid_suffix = f":{target_bid}" if target_bid else ""
+    back_cb = f"{cb}_token_main{bid_suffix}"
 
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"🎟️ {prefix} VERIFY SHORTNER", callback_data=f"{cb}_v_shortner:{slot}")],
-        [InlineKeyboardButton(f"🍿 {prefix} VERIFY TUTORIAL", callback_data=f"{cb}_v_tutorial:{slot}")],
-        [InlineKeyboardButton(f"⌛ {prefix} VERIFY TIME", callback_data=f"{cb}_v_time:{slot}")],
-        [InlineKeyboardButton("👤 TOTAL USER VERIFIED TODAY", callback_data=f"{cb}_v_stats:{slot}")],
-        [InlineKeyboardButton(f"{prefix} VERIFY - {status_icon}", callback_data=f"{cb}_v_toggle:{slot}")],
+        [InlineKeyboardButton(f"🎟️ {prefix} VERIFY SHORTNER", callback_data=f"{cb}_v_shortner:{slot}{bid_suffix}")],
+        [InlineKeyboardButton(f"🍿 {prefix} VERIFY TUTORIAL", callback_data=f"{cb}_v_tutorial:{slot}{bid_suffix}")],
+        [InlineKeyboardButton(f"⌛ {prefix} VERIFY TIME", callback_data=f"{cb}_v_time:{slot}{bid_suffix}")],
+        [InlineKeyboardButton("👤 TOTAL USER VERIFIED TODAY", callback_data=f"{cb}_v_stats:{slot}{bid_suffix}")],
+        [InlineKeyboardButton(f"{prefix} VERIFY - {status_icon}", callback_data=f"{cb}_v_toggle:{slot}{bid_suffix}")],
         [InlineKeyboardButton("‹ BACK", callback_data=back_cb)]
     ])
 
 
-def shortner_markup(slot: int, prefix_cb="cset"):
+def shortner_markup(slot: int, prefix_cb="cset", target_bid=None):
     cb = "master" if prefix_cb == "master" else "cset"
-    back_cb = f"{cb}_token_verification:{slot}"
+    bid_suffix = f":{target_bid}" if target_bid else ""
+    back_cb = f"{cb}_token_verification:{slot}{bid_suffix}"
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("SET SHORTLINK", callback_data=f"{cb}_set_v_shortner:{slot}")],
-        [InlineKeyboardButton("DELETE SHORTLINK", callback_data=f"{cb}_del_v_shortner:{slot}")],
+        [InlineKeyboardButton("SET SHORTLINK", callback_data=f"{cb}_set_v_shortner:{slot}{bid_suffix}")],
+        [InlineKeyboardButton("DELETE SHORTLINK", callback_data=f"{cb}_del_v_shortner:{slot}{bid_suffix}")],
         [InlineKeyboardButton("‹ BACK", callback_data=back_cb)]
     ])
 
 
-def tutorial_markup(slot: int, prefix_cb="cset"):
+def tutorial_markup(slot: int, prefix_cb="cset", target_bid=None):
     cb = "master" if prefix_cb == "master" else "cset"
-    back_cb = f"{cb}_token_verification:{slot}"
+    bid_suffix = f":{target_bid}" if target_bid else ""
+    back_cb = f"{cb}_token_verification:{slot}{bid_suffix}"
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("SET TUTORIAL", callback_data=f"{cb}_set_v_tut:{slot}")],
-        [InlineKeyboardButton("DELETE TUTORIAL", callback_data=f"{cb}_del_v_tut:{slot}")],
+        [InlineKeyboardButton("SET TUTORIAL", callback_data=f"{cb}_set_v_tut:{slot}{bid_suffix}")],
+        [InlineKeyboardButton("DELETE TUTORIAL", callback_data=f"{cb}_del_v_tut:{slot}{bid_suffix}")],
         [InlineKeyboardButton("‹ BACK", callback_data=back_cb)]
     ])
 
 
-def verify_time_markup(slot: int, prefix_cb="cset"):
+def verify_time_markup(slot: int, prefix_cb="cset", target_bid=None):
     cb = "master" if prefix_cb == "master" else "cset"
-    back_cb = f"{cb}_token_verification:{slot}"
+    bid_suffix = f":{target_bid}" if target_bid else ""
+    back_cb = f"{cb}_token_verification:{slot}{bid_suffix}"
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("SET VERIFY TIME", callback_data=f"{cb}_set_v_time:{slot}")],
-        [InlineKeyboardButton("RESET TIME", callback_data=f"{cb}_del_v_time:{slot}")],
+        [InlineKeyboardButton("SET VERIFY TIME", callback_data=f"{cb}_set_v_time:{slot}{bid_suffix}")],
+        [InlineKeyboardButton("RESET TIME", callback_data=f"{cb}_del_v_time:{slot}{bid_suffix}")],
         [InlineKeyboardButton("‹ BACK", callback_data=back_cb)]
     ])
 
 
-def log_channel_markup(prefix_cb="cset"):
+def log_channel_markup(prefix_cb="cset", target_bid=None):
     cb = "master" if prefix_cb == "master" else "cset"
-    back_cb = f"{cb}_token_main"
+    bid_suffix = f":{target_bid}" if target_bid else ""
+    back_cb = f"{cb}_token_main{bid_suffix}"
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("SET LOG CHANNEL", callback_data=f"{cb}_set_v_log")],
-        [InlineKeyboardButton("DELETE LOG CHANNEL", callback_data=f"{cb}_del_v_log")],
+        [InlineKeyboardButton("SET LOG CHANNEL", callback_data=f"{cb}_set_v_log{bid_suffix}")],
+        [InlineKeyboardButton("DELETE LOG CHANNEL", callback_data=f"{cb}_del_v_log{bid_suffix}")],
         [InlineKeyboardButton("‹ BACK", callback_data=back_cb)]
     ])
 
 
-def back_to_slot_markup(slot: int, prefix_cb="cset"):
+def back_to_slot_markup(slot: int, prefix_cb="cset", target_bid=None):
     cb = "master" if prefix_cb == "master" else "cset"
-    back_cb = f"{cb}_token_verification:{slot}"
+    bid_suffix = f":{target_bid}" if target_bid else ""
+    back_cb = f"{cb}_token_verification:{slot}{bid_suffix}"
     return InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=back_cb)]])
 
 
-def back_to_main_markup(prefix_cb="cset"):
+def back_to_main_markup(prefix_cb="cset", target_bid=None):
     cb = "master" if prefix_cb == "master" else "cset"
-    back_cb = f"{cb}_token_main"
+    bid_suffix = f":{target_bid}" if target_bid else ""
+    back_cb = f"{cb}_token_main{bid_suffix}"
     return InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=back_cb)]])
 
 
 async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_rec_fn=None, cancel_listeners_fn=None, edit_or_reply_fn=None, target_bid=None):
+    try:
+        await query.answer()
+    except Exception:
+        pass
+
+    if not target_bid and ":" in str(data):
+        parts = str(data).split(":")
+        for p in parts:
+            if p.isdigit() and len(p) >= 6:
+                target_bid = int(p)
+                break
+
     me = getattr(client, "me", None)
-    prefix_cb = "master" if str(data).startswith("master_") or str(data).startswith("m_") else "cset"
+    prefix_cb = "master" if str(data).startswith("master_") or str(data).startswith("m_") or target_bid else "cset"
 
     async def clean_show(txt, reply_markup=None):
         msg = getattr(query, "message", None) or query
@@ -114,7 +134,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
             return await query.message.reply(txt, reply_markup=reply_markup)
 
     # 1. Main Token Verification Screen
-    if data in ("master_token_main", "master_token_verification", "cset_token_main", "cset_token_verification"):
+    if data in ("master_token_main", "master_token_verification", "cset_token_main", "cset_token_verification") or str(data).startswith(("master_token_main", "master_token_verification", "cset_token_main", "cset_token_verification")):
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
         text = (
             "🎯 <b>TOKEN VERIFICATION:</b>\n\n"

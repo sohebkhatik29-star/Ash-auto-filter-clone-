@@ -474,9 +474,15 @@ async def callbacks(client, query):
         return await master_manager.handle_clone_callbacks(client, query)
 
     # --- TOKEN VERIFICATION --- #
-    if data in ("master_token_main", "master_token_verification", "master_verify_log_channel", "m_set_v_log", "m_del_v_log") or data.startswith(("master_token_verification:", "m_v_")):
+    if (
+        data in ("master_token_main", "master_token_verification", "master_verify_log_channel", "m_set_v_log", "m_del_v_log")
+        or data.startswith((
+            "master_token_main", "master_token_verification", "master_verify_log_channel",
+            "m_set_v_log", "m_del_v_log", "m_v_", "master_del_v_log", "master_set_v_log"
+        ))
+    ):
         from settings_modules.token_verify import handle_token_callbacks
-        return await handle_token_callbacks(client, query, data, user_id, r, save_master, master_record, cancel_user_listeners, edit_or_reply)
+        return await handle_token_callbacks(client, query, data, user_id, r, save_master, master_record, cancel_user_listeners, edit_or_reply, target_bid=target_bid)
 
     # --- BUTTONS --- #
     if data in ("custom_button", "master_custom_button"):

@@ -202,7 +202,13 @@ async def callbacks(client, query):
         return await handle_refer_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 
     # 4. Token Verification
-    if data in ("cset_token_main", "cset_token_verification", "cset_verify_log_channel") or data.startswith(("cset_token_verification:", "cset_v_")):
+    if (
+        data in ("cset_token_main", "cset_token_verification", "cset_verify_log_channel")
+        or data.startswith((
+            "cset_token_main", "cset_token_verification", "cset_verify_log_channel",
+            "cset_v_", "cset_del_v_", "cset_set_v_"
+        ))
+    ):
         return await handle_token_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 
     # 5. Force Subscribe
