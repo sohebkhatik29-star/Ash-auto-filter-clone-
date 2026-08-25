@@ -134,7 +134,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
             return await query.message.reply(txt, reply_markup=reply_markup)
 
     # 1. Main Token Verification Screen
-    if data in ("master_token_main", "master_token_verification", "cset_token_main", "cset_token_verification") or str(data).startswith(("master_token_main", "master_token_verification", "cset_token_main", "cset_token_verification")):
+    if data in ("master_token_main", "cset_token_main", "master_token_verification", "cset_token_verification") or str(data).startswith(("master_token_main:", "cset_token_main:")):
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
         text = (
             "🎯 <b>TOKEN VERIFICATION:</b>\n\n"
@@ -143,7 +143,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         return await clean_show(text, reply_markup=token_verification_main_markup(curr_r, prefix_cb, target_bid=target_bid))
 
     # 2. Slot Screen (1, 2, 3)
-    if data.startswith("master_token_verification:") or data.startswith("cset_token_verification:"):
+    if str(data).startswith(("master_token_verification:", "cset_token_verification:")):
         slot = int(data.split(":")[1])
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
@@ -325,13 +325,13 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
             await client.send_message(
                 user_id,
                 "<b>SUCCESSFULLY SET SHORTLINK</b> ✅",
-                reply_markup=back_to_slot_markup(slot, prefix_cb)
+                reply_markup=back_to_slot_markup(slot, prefix_cb, target_bid=target_bid)
             )
         asyncio.create_task(_shortner_worker())
         return
 
     # 8. Verify Tutorial Screen
-    if data.startswith("m_v_tutorial:") or data.startswith("cset_v_tutorial:"):
+    if str(data).startswith(("m_v_tutorial:", "cset_v_tutorial:")):
         slot = int(data.split(":")[1])
         prefix = slot_name(slot)
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
@@ -343,10 +343,10 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
             "<blockquote>TUTORIAL LINK: THE PROCESS VIDEO OF OPENING LINK OF SHORTER. LINK OF VIDEO OR CHANNEL WHERE VIDEO IS UPLOADED. VIDEO MEANS VIDEO OF HOW TO OPEN LINK.</blockquote>\n\n"
             f"<b>LINK -</b> <code>{tut}</code>"
         )
-        return await clean_show(text, reply_markup=tutorial_markup(slot, prefix_cb))
+        return await clean_show(text, reply_markup=tutorial_markup(slot, prefix_cb, target_bid=target_bid))
 
     # 9. Delete Tutorial
-    if data.startswith("m_del_v_tut:") or data.startswith("cset_del_v_tut:") or data.startswith("cset_v_del_tut:"):
+    if str(data).startswith(("m_del_v_tut:", "cset_del_v_tut:", "cset_v_del_tut:")):
         slot = int(data.split(":")[1])
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
@@ -356,10 +356,10 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         save_fn(**{v_key: v_cfg})
         await query.answer("Tutorial Deleted!")
         text = "<b>SUCCESSFULLY DELETED TUTORIAL LINK</b> ✅"
-        return await clean_show(text, reply_markup=back_to_slot_markup(slot, prefix_cb))
+        return await clean_show(text, reply_markup=back_to_slot_markup(slot, prefix_cb, target_bid=target_bid))
 
     # 10. Set Tutorial Flow
-    if data.startswith("m_set_v_tut:") or data.startswith("cset_set_v_tut:") or data.startswith("cset_v_set_tut:"):
+    if str(data).startswith(("m_set_v_tut:", "cset_set_v_tut:", "cset_v_set_tut:")):
         slot = int(data.split(":")[1])
         if cancel_listeners_fn:
             cancel_listeners_fn(client, user_id, user_id)
@@ -401,7 +401,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
                 await client.send_message(
                     user_id,
                     "❌ <b>Cancelled.</b>",
-                    reply_markup=back_to_slot_markup(slot, prefix_cb)
+                    reply_markup=back_to_slot_markup(slot, prefix_cb, target_bid=target_bid)
                 )
                 return
             if not (t_url.startswith("http://") or t_url.startswith("https://") or t_url.startswith("t.me/")):
@@ -430,13 +430,13 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
             await client.send_message(
                 user_id,
                 "<b>SUCCESSFULLY SET TUTORIAL LINK</b> ✅",
-                reply_markup=back_to_slot_markup(slot, prefix_cb)
+                reply_markup=back_to_slot_markup(slot, prefix_cb, target_bid=target_bid)
             )
         asyncio.create_task(_tut_worker())
         return
 
     # 11. Verify Time Screen
-    if data.startswith("m_v_time:") or data.startswith("cset_v_time:"):
+    if str(data).startswith(("m_v_time:", "cset_v_time:")):
         slot = int(data.split(":")[1])
         prefix = slot_name(slot)
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
@@ -449,10 +449,10 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
             "<blockquote>VERIFICATION TIME: DURATION FOR WHICH USER GETS BOT ACCESS AFTER COMPLETING ACCESS TOKEN.</blockquote>\n\n"
             f"<b>TIME -</b> <code>{time_str}</code> ({mins} Minutes)"
         )
-        return await clean_show(text, reply_markup=verify_time_markup(slot, prefix_cb))
+        return await clean_show(text, reply_markup=verify_time_markup(slot, prefix_cb, target_bid=target_bid))
 
     # 12. Reset Verify Time
-    if data.startswith("m_del_v_time:") or data.startswith("cset_del_v_time:") or data.startswith("cset_v_del_time:"):
+    if str(data).startswith(("m_del_v_time:", "cset_del_v_time:", "cset_v_del_time:")):
         slot = int(data.split(":")[1])
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
@@ -468,10 +468,10 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
             "<blockquote>VERIFICATION TIME: DURATION FOR WHICH USER GETS BOT ACCESS AFTER COMPLETING ACCESS TOKEN.</blockquote>\n\n"
             f"<b>TIME -</b> <code>24 Hours</code> (1440 Minutes)"
         )
-        return await clean_show(text, reply_markup=verify_time_markup(slot, prefix_cb))
+        return await clean_show(text, reply_markup=verify_time_markup(slot, prefix_cb, target_bid=target_bid))
 
     # 13. Set Verify Time Flow
-    if data.startswith("m_set_v_time:") or data.startswith("cset_set_v_time:") or data.startswith("cset_v_set_time:"):
+    if str(data).startswith(("m_set_v_time:", "cset_set_v_time:", "cset_v_set_time:")):
         slot = int(data.split(":")[1])
         if cancel_listeners_fn:
             cancel_listeners_fn(client, user_id, user_id)
@@ -515,7 +515,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
                 await client.send_message(
                     user_id,
                     "❌ <b>Cancelled.</b>",
-                    reply_markup=back_to_slot_markup(slot, prefix_cb)
+                    reply_markup=back_to_slot_markup(slot, prefix_cb, target_bid=target_bid)
                 )
                 return
             mins = parse_time_string(t_txt)
@@ -544,13 +544,13 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
             await client.send_message(
                 user_id,
                 "<b>SUCCESSFULLY SET VERIFY TIME</b> ✅",
-                reply_markup=back_to_slot_markup(slot, prefix_cb)
+                reply_markup=back_to_slot_markup(slot, prefix_cb, target_bid=target_bid)
             )
         asyncio.create_task(_time_worker())
         return
 
     # 14. Verify Log Channel Screen
-    if data in ("master_verify_log_channel", "cset_verify_log_channel"):
+    if data in ("master_verify_log_channel", "cset_verify_log_channel") or str(data).startswith(("master_verify_log_channel", "cset_verify_log_channel")):
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
         log_ch = curr_r.get("verify_log_channel") or "Not Set"
         text = (
@@ -558,19 +558,19 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
             "<blockquote>ALL VERIFICATION ACTIVITIES AND TOKEN LOGS WILL BE FORWARDED TO THIS CHANNEL.</blockquote>\n\n"
             f"<b>CHANNEL -</b> <code>{log_ch}</code>"
         )
-        return await clean_show(text, reply_markup=log_channel_markup(prefix_cb))
+        return await clean_show(text, reply_markup=log_channel_markup(prefix_cb, target_bid=target_bid))
 
     # 15. Delete Verify Log Channel
-    if data in ("m_del_v_log", "master_del_v_log", "cset_del_v_log", "cset_v_del_log"):
+    if data in ("m_del_v_log", "master_del_v_log", "cset_del_v_log", "cset_v_del_log") or str(data).startswith(("m_del_v_log", "master_del_v_log", "cset_del_v_log", "cset_v_del_log")):
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
         curr_r["verify_log_channel"] = None
         save_fn(verify_log_channel=None)
         await query.answer("Verify log channel deleted!")
         text = "<b>SUCCESSFULLY DELETED LOG CHANNEL</b> ✅"
-        return await clean_show(text, reply_markup=back_to_main_markup(prefix_cb))
+        return await clean_show(text, reply_markup=back_to_main_markup(prefix_cb, target_bid=target_bid))
 
     # 16. Set Verify Log Channel Flow
-    if data in ("m_set_v_log", "master_set_v_log", "cset_set_v_log", "cset_v_set_log"):
+    if data in ("m_set_v_log", "master_set_v_log", "cset_set_v_log", "cset_v_set_log") or str(data).startswith(("m_set_v_log", "master_set_v_log", "cset_set_v_log", "cset_v_set_log")):
         if cancel_listeners_fn:
             cancel_listeners_fn(client, user_id, user_id)
         sess_token = start_user_session(user_id, "set_v_log")
@@ -611,7 +611,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
                 await client.send_message(
                     user_id,
                     "❌ <b>Cancelled.</b>",
-                    reply_markup=back_to_main_markup(prefix_cb)
+                    reply_markup=back_to_main_markup(prefix_cb, target_bid=target_bid)
                 )
                 return
             ch_id = None
@@ -651,7 +651,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
             await client.send_message(
                 user_id,
                 "<b>SUCCESSFULLY SET LOG CHANNEL</b> ✅",
-                reply_markup=back_to_main_markup(prefix_cb)
+                reply_markup=back_to_main_markup(prefix_cb, target_bid=target_bid)
             )
         asyncio.create_task(_log_worker())
         return
