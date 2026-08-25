@@ -162,7 +162,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         new_state = not bool(v_cfg.get("is_on", False))
         v_cfg["is_on"] = new_state
         curr_r[v_key] = v_cfg
-        save_fn(**{v_key: v_cfg})
+        save_fn(**{v_key: v_cfg, f"is_verify_{slot}": new_state})
         prefix = slot_name(slot)
         text = f"🎯 <b>{prefix} TOKEN VERIFICATION:</b>"
         await query.answer(f"Verification {'Enabled' if new_state else 'Disabled'}!")
@@ -313,8 +313,9 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
             v_cfg["site"] = site
             v_cfg["shortner_api"] = api_key
             v_cfg["api"] = api_key
+            v_cfg["is_on"] = True
             curr_r[v_key] = v_cfg
-            save_fn(**{v_key: v_cfg})
+            save_fn(**{v_key: v_cfg, f"is_verify_{slot}": True})
             clear_user_session(user_id)
 
             try:
