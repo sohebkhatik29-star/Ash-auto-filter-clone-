@@ -209,7 +209,7 @@ async def callbacks(client, query):
             "cset_v_", "cset_del_v_", "cset_set_v_"
         ))
     ):
-        return await handle_token_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
+        return await handle_token_callbacks(client, query, data, user_id, r, client_save, lambda: record(client), cancel_user_listeners, edit_or_reply)
 
     # 5. Force Subscribe
     if data.startswith("cset_fsub") or data in ("master_fsub_menu", "m_tgl_fsub", "m_clear_fsub", "m_add_fsub"):

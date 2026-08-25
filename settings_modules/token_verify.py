@@ -148,7 +148,7 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
         v_cfg = curr_r.get(v_key, {})
-        is_on = bool(v_cfg.get("is_on", False))
+        is_on = bool(v_cfg.get("is_on", False)) or bool(curr_r.get(f"is_verify_{slot}", False))
         prefix = slot_name(slot)
         text = f"🎯 <b>{prefix} TOKEN VERIFICATION:</b>"
         return await clean_show(text, reply_markup=single_token_verification_markup(slot, is_on, prefix_cb, target_bid=target_bid))
@@ -159,7 +159,8 @@ async def handle_token_callbacks(client, query, data, user_id, r, save_fn, get_r
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
         v_cfg = dict(curr_r.get(v_key, {}))
-        new_state = not bool(v_cfg.get("is_on", False))
+        curr_state = bool(v_cfg.get("is_on", False)) or bool(curr_r.get(f"is_verify_{slot}", False))
+        new_state = not curr_state
         v_cfg["is_on"] = new_state
         curr_r[v_key] = v_cfg
         save_fn(**{v_key: v_cfg, f"is_verify_{slot}": new_state})
