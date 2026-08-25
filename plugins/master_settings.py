@@ -1302,9 +1302,9 @@ async def callbacks(client, query):
         return
 
     # --- AUTO DELETE --- #
-    if data in ("master_auto_delete_menu", "cset_autodelete", "cset_auto_delete_menu") or data.startswith("m_ad_") or data.startswith("m_set_ad") or data.startswith("m_tgl_ad"):
+    if data.startswith(("master_auto_delete_menu", "m_ad_", "m_set_ad", "m_tgl_ad", "cset_auto_delete", "cset_ad_", "cset_tgl_ad", "cset_set_ad", "cset_autodelete")):
         from settings_modules.auto_delete import handle_auto_delete_callbacks
-        return await handle_auto_delete_callbacks(client, query, data, user_id, r, save_master, cancel_user_listeners, edit_or_reply)
+        return await handle_auto_delete_callbacks(client, query, data, user_id, r, save_master, cancel_user_listeners, edit_or_reply, target_bid=target_bid)
 
 
     # --- PERMANENT LINK --- #

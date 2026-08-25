@@ -222,11 +222,16 @@ async def run_ad_button_builder(client, user_id, save_fn, cancel_listeners_fn, b
     )
 
 
-async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn):
-    is_master = str(data).startswith("m_") or data == "master_auto_delete_menu"
+async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=None):
+    if not target_bid and ":" in str(data):
+        last_p = str(data).split(":")[-1]
+        if last_p.isdigit() and len(last_p) >= 6:
+            target_bid = int(last_p)
+
+    is_master = str(data).startswith("m_") or str(data).startswith("master_") or "master" in str(data) or (target_bid is not None)
 
     # 1. Main Auto Delete Menu
-    if data in ("master_auto_delete_menu", "cset_autodelete", "cset_auto_delete_menu"):
+    if data in ("master_auto_delete_menu", "cset_autodelete", "cset_auto_delete_menu") or str(data).startswith(("master_auto_delete_menu", "cset_autodelete", "cset_auto_delete_menu")):
         ad_on = bool(r.get("auto_delete_enabled", False))
         ad_time = int(r.get("auto_delete_time", 600))
         ad_again = bool(r.get("auto_delete_get_again", True))
@@ -240,7 +245,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         )
         tgl_btn = "OFF AUTO DELETE" if ad_on else "ON AUTO DELETE"
         again_btn = "GET FILE AGAIN BUTTON - ✅" if ad_again else "GET FILE AGAIN BUTTON - ❌"
-        back_cb = "settings" if is_master else "clone_my_clone_info"
+        back_cb = f"manage_clone:{target_bid}" if target_bid else ("settings" if is_master else "clone_my_clone_info")
         return await edit_or_reply_fn(query, text, reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("SET TIME", callback_data="m_set_ad_custom" if is_master else "cset_set_ad_time")],
             [InlineKeyboardButton(tgl_btn, callback_data="m_tgl_ad" if is_master else "cset_tgl_ad")],
@@ -250,21 +255,21 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         ]))
 
     # 2. Toggle Auto Delete ON / OFF
-    if data in ("m_tgl_ad", "cset_tgl_ad", "cset_autodelete_toggle"):
+    if data in ("m_tgl_ad", "cset_tgl_ad", "cset_autodelete_toggle") or str(data).startswith(("m_tgl_ad", "cset_tgl_ad", "cset_autodelete_toggle")):
         new_s = not bool(r.get("auto_delete_enabled", False))
         save_fn(auto_delete_enabled=new_s)
         await query.answer(f"Auto delete {'Enabled' if new_s else 'Disabled'}!")
-        return await handle_auto_delete_callbacks(client, query, "master_auto_delete_menu" if is_master else "cset_auto_delete_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)
+        return await handle_auto_delete_callbacks(client, query, "master_auto_delete_menu" if is_master else "cset_auto_delete_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
 
     # 3. Toggle Get File Again Button
-    if data in ("m_tgl_ad_again", "cset_tgl_ad_again"):
+    if data in ("m_tgl_ad_again", "cset_tgl_ad_again") or str(data).startswith(("m_tgl_ad_again", "cset_tgl_ad_again")):
         new_ag = not bool(r.get("auto_delete_get_again", True))
         save_fn(auto_delete_get_again=new_ag)
         await query.answer(f"Get file again button {'Enabled' if new_ag else 'Disabled'}!")
-        return await handle_auto_delete_callbacks(client, query, "master_auto_delete_menu" if is_master else "cset_auto_delete_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)
+        return await handle_auto_delete_callbacks(client, query, "master_auto_delete_menu" if is_master else "cset_auto_delete_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
 
     # 4. Set Time (Seconds, Minutes, Hours, Days)
-    if data in ("m_set_ad_custom", "cset_set_ad_time"):
+    if data in ("m_set_ad_custom", "cset_set_ad_time") or str(data).startswith(("m_set_ad_custom", "cset_set_ad_time")):
         cancel_listeners_fn(client, user_id, user_id)
         sess_token = start_user_session(user_id, "set_ad_time")
         await query.answer()
@@ -304,7 +309,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         return
 
     # 5. AUTO DELETE MESSAGE Hub (Text, Picture, Button)
-    if data in ("m_ad_msg_menu", "cset_ad_msg_menu"):
+    if data in ("m_ad_msg_menu", "cset_ad_msg_menu") or str(data).startswith(("m_ad_msg_menu", "cset_ad_msg_menu")):
         text = (
             "📝 <b>AUTO DELETE MESSAGE:</b>\n\n"
             "<b>AUTO DELETE MESSAGE: YOU CAN CUSTOMISE YOUR CLONE BOT AUTO DELETE MESSAGE ANY WAY YOU LIKE.</b>"
@@ -322,7 +327,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         )
 
     # 6. AUTO DELETE TEXT Menu
-    if data in ("m_ad_text", "cset_ad_text"):
+    if data in ("m_ad_text", "cset_ad_text") or str(data).startswith(("m_ad_text", "cset_ad_text")):
         ad_txt = r.get("auto_delete_text") or "{user_mention} This message will be deleted in {time}"
         text = (
             "📝 <b>AUTO DELETE TEXT:</b>\n\n"
@@ -346,7 +351,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         )
 
     # 7. Set Auto Delete Text
-    if data in ("m_ad_set_txt", "cset_ad_set_txt"):
+    if data in ("m_ad_set_txt", "cset_ad_set_txt") or str(data).startswith(("m_ad_set_txt", "cset_ad_set_txt")):
         cancel_listeners_fn(client, user_id, user_id)
         sess_token = start_user_session(user_id, "set_ad_text")
         await query.answer()
@@ -388,13 +393,13 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         return
 
     # 8. Default Auto Delete Text
-    if data in ("m_ad_def_txt", "cset_ad_def_txt"):
+    if data in ("m_ad_def_txt", "cset_ad_def_txt") or str(data).startswith(("m_ad_def_txt", "cset_ad_def_txt")):
         save_fn(auto_delete_text="")
         await query.answer("Auto delete text reset to default!")
-        return await handle_auto_delete_callbacks(client, query, "m_ad_text" if is_master else "cset_ad_text", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)
+        return await handle_auto_delete_callbacks(client, query, "m_ad_text" if is_master else "cset_ad_text", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
 
     # 9. AUTO DELETE PICTURE Menu
-    if data in ("m_ad_pic", "cset_ad_pic"):
+    if data in ("m_ad_pic", "cset_ad_pic") or str(data).startswith(("m_ad_pic", "cset_ad_pic")):
         ad_pic = r.get("auto_delete_pic")
         has_pic = bool(ad_pic)
         spoiler = bool(r.get("auto_delete_pic_spoiler", False))
@@ -425,7 +430,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         )
 
     # 10. Set Auto Delete Pic
-    if data in ("m_ad_set_pic", "cset_ad_set_pic"):
+    if data in ("m_ad_set_pic", "cset_ad_set_pic") or str(data).startswith(("m_ad_set_pic", "cset_ad_set_pic")):
         cancel_listeners_fn(client, user_id, user_id)
         sess_token = start_user_session(user_id, "set_ad_pic")
         await query.answer()
@@ -472,13 +477,13 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         return
 
     # 11. Delete Auto Delete Pic
-    if data in ("m_ad_del_pic", "cset_ad_del_pic"):
+    if data in ("m_ad_del_pic", "cset_ad_del_pic") or str(data).startswith(("m_ad_del_pic", "cset_ad_del_pic")):
         save_fn(auto_delete_pic=None)
         await query.answer("Picture deleted successfully!")
-        return await handle_auto_delete_callbacks(client, query, "m_ad_pic" if is_master else "cset_ad_pic", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)
+        return await handle_auto_delete_callbacks(client, query, "m_ad_pic" if is_master else "cset_ad_pic", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
 
     # 12. View Auto Delete Pic
-    if data in ("m_ad_view_pic", "cset_ad_view_pic"):
+    if data in ("m_ad_view_pic", "cset_ad_view_pic") or str(data).startswith(("m_ad_view_pic", "cset_ad_view_pic")):
         ad_pic = r.get("auto_delete_pic")
         if not ad_pic:
             return await query.answer("No picture set!", show_alert=True)
@@ -496,21 +501,21 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         return
 
     # 13. Toggle Spoiler
-    if data in ("m_ad_tgl_spoil", "cset_ad_tgl_spoil"):
+    if data in ("m_ad_tgl_spoil", "cset_ad_tgl_spoil") or str(data).startswith(("m_ad_tgl_spoil", "cset_ad_tgl_spoil")):
         new_sp = not bool(r.get("auto_delete_pic_spoiler", False))
         save_fn(auto_delete_pic_spoiler=new_sp)
         await query.answer(f"Spoiler {'Enabled' if new_sp else 'Disabled'}!")
-        return await handle_auto_delete_callbacks(client, query, "m_ad_pic" if is_master else "cset_ad_pic", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)
+        return await handle_auto_delete_callbacks(client, query, "m_ad_pic" if is_master else "cset_ad_pic", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
 
     # 14. Toggle Invert Caption
-    if data in ("m_ad_tgl_invert", "cset_ad_tgl_invert"):
+    if data in ("m_ad_tgl_invert", "cset_ad_tgl_invert") or str(data).startswith(("m_ad_tgl_invert", "cset_ad_tgl_invert")):
         new_inv = not bool(r.get("auto_delete_pic_invert_caption", False))
         save_fn(auto_delete_pic_invert_caption=new_inv)
         await query.answer(f"Invert caption {'Enabled' if new_inv else 'Disabled'}!")
-        return await handle_auto_delete_callbacks(client, query, "m_ad_pic" if is_master else "cset_ad_pic", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)
+        return await handle_auto_delete_callbacks(client, query, "m_ad_pic" if is_master else "cset_ad_pic", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
 
     # 15. AUTO DELETE BUTTON Menu
-    if data in ("m_ad_btn", "cset_ad_btn"):
+    if data in ("m_ad_btn", "cset_ad_btn") or str(data).startswith(("m_ad_btn", "cset_ad_btn")):
         ad_btns = r.get("auto_delete_buttons", [])
         has_btns = bool(ad_btns)
         text = (
@@ -539,7 +544,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         return await edit_or_reply_fn(query, text, reply_markup=markup)
 
     # 16. Add Button Builder
-    if data in ("m_ad_btn_add", "cset_ad_btn_add"):
+    if data in ("m_ad_btn_add", "cset_ad_btn_add") or str(data).startswith(("m_ad_btn_add", "cset_ad_btn_add")):
         await query.answer()
         back_cb = "m_ad_btn" if is_master else "cset_ad_btn"
         current_pic = r.get("auto_delete_pic")
@@ -547,7 +552,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         return
 
     # 17. Remove Button
-    if data in ("m_ad_btn_rem", "cset_ad_btn_rem"):
+    if data in ("m_ad_btn_rem", "cset_ad_btn_rem") or str(data).startswith(("m_ad_btn_rem", "cset_ad_btn_rem")):
         save_fn(auto_delete_buttons=[])
         await query.answer("Buttons deleted!")
         back_cb = "m_ad_btn" if is_master else "cset_ad_btn"
@@ -569,7 +574,7 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         )
 
     # 18. See Button
-    if data in ("m_ad_btn_see", "cset_ad_btn_see"):
+    if data in ("m_ad_btn_see", "cset_ad_btn_see") or str(data).startswith(("m_ad_btn_see", "cset_ad_btn_see")):
         ad_btns = r.get("auto_delete_buttons", [])
         rows = []
         for r_item in ad_btns:
@@ -611,6 +616,6 @@ async def handle_auto_delete_callbacks(client, query, data, user_id, r, save_fn,
         save_fn(auto_delete_enabled=True, auto_delete_time=sec, auto_delete_minutes=max(1, sec // 60))
         time_str = format_auto_delete_time(sec)
         await query.answer(f"Auto delete set to {time_str}!")
-        return await handle_auto_delete_callbacks(client, query, "master_auto_delete_menu" if is_master else "cset_auto_delete_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)
+        return await handle_auto_delete_callbacks(client, query, "master_auto_delete_menu" if is_master else "cset_auto_delete_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
 
 

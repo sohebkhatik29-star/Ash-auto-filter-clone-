@@ -222,7 +222,7 @@ async def callbacks(client, query):
         return await handle_custom_button_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 
     # 9. Auto Delete
-    if data.startswith(("cset_auto_delete", "cset_ad_", "cset_tgl_ad", "cset_set_ad", "cset_autodelete")):
+    if data.startswith(("cset_auto_delete", "cset_ad_", "cset_tgl_ad", "cset_set_ad", "cset_autodelete", "master_auto_delete_menu", "m_ad_", "m_set_ad", "m_tgl_ad")):
         return await handle_auto_delete_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 
 
