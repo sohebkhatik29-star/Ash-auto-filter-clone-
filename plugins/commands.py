@@ -447,10 +447,12 @@ async def start(client, message):
                     f"✅ <b>Hey {message.from_user.mention}, you are successfully verified!</b>\n\n"
                     f"Now you have unlimited access for all files for <b>{dur_str}</b>."
                 )
-                markup = None
                 if orig_payload:
                     markup = InlineKeyboardMarkup([[InlineKeyboardButton("📥 GET YOUR FILE", url=f"https://telegram.me/{username}?start={orig_payload}")]])
-                return await message.reply_text(text=text, protect_content=True, reply_markup=markup)
+                    await message.reply_text(text=text, protect_content=True, reply_markup=markup)
+                    message.command = ["/start", orig_payload]
+                    return await start(client, message)
+                return await message.reply_text(text=text, protect_content=True)
             else:
                 return await message.reply_text("<b>Invalid link or Expired link !</b>", protect_content=True)
 

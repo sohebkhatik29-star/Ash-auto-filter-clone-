@@ -671,10 +671,12 @@ async def start(client, message):
             f"✅ <b>Hey {message.from_user.mention}, you are successfully verified!</b>\n\n"
             f"Now you have unlimited access for all files for <b>{dur_str}</b>."
         )
-        markup = None
         if orig_payload:
             markup = InlineKeyboardMarkup([[InlineKeyboardButton("📥 GET YOUR FILE", url=f"https://t.me/{me.username}?start={orig_payload}")]])
-        return await message.reply(success_text, reply_markup=markup)
+            await message.reply(success_text, reply_markup=markup)
+            message.command = ["/start", orig_payload]
+            return await start(client, message)
+        return await message.reply(success_text)
 
     try:
         decoded = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode("ascii")

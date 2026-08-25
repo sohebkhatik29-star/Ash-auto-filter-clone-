@@ -181,6 +181,10 @@ def consume_verify_token(token: str, user_id: int, bot_id=0):
         return None, 1
     rec = mongo_db.verify_tokens.find_one({"token": token, "user_id": int(user_id), "bot_id": int(bot_id)})
     if not rec:
+        rec = mongo_db.verify_tokens.find_one({"token": token, "user_id": int(user_id)})
+    if not rec:
+        rec = mongo_db.verify_tokens.find_one({"token": token})
+    if not rec:
         return None, 1
     mongo_db.verify_tokens.delete_one({"_id": rec["_id"]})
     if int(rec.get("expires_at", 0)) < int(time.time()):
