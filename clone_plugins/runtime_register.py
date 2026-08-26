@@ -41,74 +41,48 @@ async def clean_help(client, message):
 
 
 async def verification_link_handler(client, message):
-    """Handle verify_<token> before the normal /start handler.
-
-    A successful verification only unlocks the next step and shows GET YOUR FILE.
-    It deliberately does not call cmd.start(), so the file cannot be delivered
-    before the user presses GET YOUR FILE.  The normal /start handler then checks
-    the next verification slot (if any) or delivers the file after all slots pass.
-    """
+    """Handle verification /start payload without delivering the file."""
     if len(message.command) != 2:
         return
-
     data = message.command[1]
     if not (data.startswith("verify_") or data.startswith("verify-")):
         return
 
     me = client.me or (await client.get_me())
     token_str = data.split("_", 1)[1] if data.startswith("verify_") else data.split("-", 1)[1]
+    orig_payload, slot_used = cmd.consume_verify_token(token_str, message.from_user.id, me.id)
 
-    orig_payload, slot_used = cmd.consume_verify_token(
-        token_str, message.from_user.id, me.id
-    )
-
-    # Keep the same legacy access-token fallback used by the existing flow.
     if orig_payload is None and cmd.mongo_db is not None:
         rec_t = cmd.mongo_db.access_tokens.find_one({
-            "bot_id": me.id,
-            "token": token_str,
-            "user_id": int(message.from_user.id),
+            "bot_id": me.id, "token": token_str, "user_id": int(message.from_user.id)
         })
         if rec_t:
             orig_payload = ""
             slot_used = 1
 
     if orig_payload is None:
-        await message.reply(
-            "❌ <b>Invalid or expired verification link!</b>\n\n"
-            "Please verify again."
-        )
+        await message.reply("❌ <b>Invalid or expired verification link!</b>\n\nPlease verify again.")
         raise StopPropagation
 
     rec = cmd.bot_record(client)
     v_key = f"verify_{slot_used}" if slot_used > 1 else "verify_1"
     v_cfg = rec.get(v_key, {})
     time_mins = int(v_cfg.get("time", v_cfg.get("time_minutes", 1440)))
-
-    cmd.set_user_verified(
-        message.from_user.id,
-        me.id,
-        duration_minutes=time_mins,
-        slot=slot_used,
-    )
-
+    cmd.set_user_verified(message.from_user.id, me.id, duration_minutes=time_mins, slot=slot_used)
     dur_str = cmd.format_time_minutes(time_mins)
 
-    # Preserve verification logging.
     log_ch = rec.get("verify_log_channel")
     if log_ch:
         try:
             import datetime
             now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-            log_text = (
+            await client.send_message(int(log_ch), (
                 "🎯 <b>NEW USER VERIFIED</b>\n\n"
-                f"👤 <b>User:</b> {message.from_user.mention} "
-                f"(<code>{message.from_user.id}</code>)\n"
+                f"👤 <b>User:</b> {message.from_user.mention} (<code>{message.from_user.id}</code>)\n"
                 f"⏰ <b>Validity:</b> <code>{dur_str}</code>\n"
                 f"🔢 <b>Step:</b> <code>{slot_used}</code>\n"
                 f"📅 <b>Date:</b> <code>{now_str}</code>"
-            )
-            await client.send_message(int(log_ch), log_text)
+            ))
         except Exception:
             pass
 
@@ -116,22 +90,22 @@ async def verification_link_handler(client, message):
         f"✅ <b>Hey {message.from_user.mention}, you are successfully verified!</b>\n\n"
         f"Now you have unlimited access for all files for <b>{dur_str}</b>."
     )
-
-    # Never auto-open the original payload here.  The only next action is the
-    # explicit GET YOUR FILE button, which routes through the normal /start
-    # access-verification logic and therefore handles additional slots too.
     if orig_payload:
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton(
-                "📥 GET YOUR FILE",
-                url=f"https://t.me/{me.username}?start={orig_payload}"
-            )]
-        ])
-        await message.reply(success_text, reply_markup=markup)
+        await message.reply(success_text, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📥 GET YOUR FILE", url=f"https://t.me/{me.username}?start={orig_payload}")]
+        ]))
     else:
         await message.reply(success_text)
-
     raise StopPropagation
+
+
+async def start_handler(client, message):
+    """Use one /start handler so verification cannot race another /start handler."""
+    if len(message.command) == 2:
+        data = message.command[1]
+        if data.startswith("verify_") or data.startswith("verify-"):
+            return await verification_link_handler(client, message)
+    return await cmd.start(client, message)
 
 
 def register_clone_handlers(client):
@@ -139,20 +113,8 @@ def register_clone_handlers(client):
     master_manager.register(client)
     register_all_link_modules(client, is_master=False)
 
-    # Verification links must be consumed before every other /start handler.
-    # Use a strongly negative group so an older /start handler registered at
-    # group 0 cannot deliver the file or show a second verification panel first.
-    client.add_handler(
-        MessageHandler(
-            verification_link_handler,
-            filters.command("start") & filters.private
-        ),
-        group=-1000,
-    )
-
-    # Public clone commands
     command_map = {
-        "start": cmd.start,
+        "start": start_handler,
         "help": clean_help,
         "clone": cmd.clone_command,
         "getlink": single_link.genlink_prompt,
@@ -174,7 +136,6 @@ def register_clone_handlers(client):
         "mode": "mode", "restart": "restart", "delete": "delete",
         "start_msg": "start_msg",
     }
-
     for command, name in advanced_commands.items():
         fn = getattr(adv, name, None)
         if callable(fn):
@@ -186,9 +147,7 @@ def register_clone_handlers(client):
     callback = getattr(cmd, "callbacks", None)
     if callable(callback):
         client.add_handler(CallbackQueryHandler(callback), group=2)
-
     advanced_callback = getattr(adv, "callbacks", None)
     if callable(advanced_callback) and advanced_callback is not callback:
         client.add_handler(CallbackQueryHandler(advanced_callback), group=2)
-
     return client
