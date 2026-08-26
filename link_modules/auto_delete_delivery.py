@@ -13,17 +13,17 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 _TARGET_FUNCTIONS = {
-    "batch_start",          # link_modules.custom_batch delivery
-    "batch_start_deliver",  # link_modules.channel_batch delivery
-    "special_link_start",   # link_modules.special_link delivery
+    "batch_start",
+    "batch_start_deliver",
+    "special_link_start",
 }
 
 _SHORTENER_FUNCTIONS = {
-    "capture_single",       # /getlink
-    "start_batch",           # /batch
-    "_generate",             # /custom_batch
-    "special_link_callbacks",# /special_link
-    "universal_link_cmd",    # /universal_link
+    "capture_single",
+    "start_batch",
+    "_generate",
+    "special_link_callbacks",
+    "universal_link_cmd",
 }
 
 _URL_RE = re.compile(r"https?://[^\s<>\"']+")
@@ -160,12 +160,7 @@ async def _schedule_delete(client, delivered, warning, seconds):
 
 
 async def _shorten_generated_link(client, link):
-    """Shorten one generated link using the clone's Link Shortener settings.
-
-    The settings UI stores the domain as ``shortener_site``.  The shared
-    short-link helper historically expected ``base_site``, so this adapter
-    supplies both names without changing any other settings module.
-    """
+    """Shorten one generated link using the clone's Link Shortener settings."""
     if not link or not isinstance(link, str) or not link.startswith(("http://", "https://")):
         return link
 
@@ -198,7 +193,7 @@ def _extract_main_url(text):
     match = _URL_RE.search(str(text))
     if not match:
         return None
-    return match.group(0).rstrip(".,!?)"]")
+    return match.group(0).rstrip(".,!?)\\\"]")
 
 
 def _replace_main_url(text, original, shortened):
@@ -208,12 +203,7 @@ def _replace_main_url(text, original, shortened):
 
 
 def _shorten_markup_urls(markup, original, shortened):
-    """Preserve all existing buttons, changing only the generated-link URL.
-
-    Direct generated-link buttons become the shortened URL. Telegram share
-    buttons keep their share endpoint but receive the shortened URL as their
-    ``url=`` parameter. Other custom buttons are left untouched.
-    """
+    """Preserve all existing buttons, changing only the generated-link URL."""
     if not markup or not getattr(markup, "inline_keyboard", None):
         return markup
 
@@ -300,7 +290,6 @@ def install_link_auto_delete(client):
             warning = await _send_auto_delete_notice(client, int(chat_id), record, seconds)
             asyncio.create_task(_schedule_delete(client, delivered, warning, seconds))
         except Exception:
-            # Never break file delivery because Auto Delete configuration failed.
             pass
 
         return delivered
