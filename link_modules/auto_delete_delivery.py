@@ -1,19 +1,32 @@
-"""Shared auto-delete delivery helper for link-generated files.
+"""Shared auto-delete delivery and link-shortening helpers for link generators.
 
-This module is intentionally scoped to the link generator delivery handlers.
-It does not change unrelated bot messages or buttons.
+Auto Delete remains scoped to the link generator delivery handlers.
+Link shortening is separately scoped to the five requested link-generation flows:
+/getlink, /batch, /custom_batch, /special_link and /universal_link.
 """
 import asyncio
 import inspect
+import re
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 _TARGET_FUNCTIONS = {
-    "batch_start",          # link_modules.custom_batch
-    "batch_start_deliver",  # link_modules.channel_batch
-    "special_link_start",   # link_modules.special_link
+    "batch_start",          # link_modules.custom_batch delivery
+    "batch_start_deliver",  # link_modules.channel_batch delivery
+    "special_link_start",   # link_modules.special_link delivery
 }
+
+_SHORTENER_FUNCTIONS = {
+    "capture_single",       # /getlink
+    "start_batch",           # /batch
+    "_generate",             # /custom_batch
+    "special_link_callbacks",# /special_link
+    "universal_link_cmd",    # /universal_link
+}
+
+_URL_RE = re.compile(r"https?://[^\s<>\"']+")
 
 
 def _is_target_delivery_call():
@@ -25,6 +38,22 @@ def _is_target_delivery_call():
             fn = frame.f_code.co_name
             filename = frame.f_code.co_filename.replace("\\", "/")
             if fn in _TARGET_FUNCTIONS and "/link_modules/" in filename:
+                return True
+            frame = frame.f_back
+    finally:
+        del frame
+    return False
+
+
+def _is_target_shortener_call():
+    """Return True only while one of the five requested link generators is creating its link."""
+    frame = inspect.currentframe()
+    try:
+        frame = frame.f_back if frame else None
+        while frame:
+            fn = frame.f_code.co_name
+            filename = frame.f_code.co_filename.replace("\\", "/")
+            if fn in _SHORTENER_FUNCTIONS and "/link_modules/" in filename:
                 return True
             frame = frame.f_back
     finally:
@@ -130,15 +159,126 @@ async def _schedule_delete(client, delivered, warning, seconds):
             pass
 
 
+async def _shorten_generated_link(client, link):
+    """Shorten one generated link using the clone's Link Shortener settings.
+
+    The settings UI stores the domain as ``shortener_site``.  The shared
+    short-link helper historically expected ``base_site``, so this adapter
+    supplies both names without changing any other settings module.
+    """
+    if not link or not isinstance(link, str) or not link.startswith(("http://", "https://")):
+        return link
+
+    try:
+        from clone_plugins.commands import bot_record
+        from clone_plugins.users_api import get_short_link
+
+        record = bot_record(client) or {}
+        api_key = record.get("shortener_api")
+        site = record.get("base_site") or record.get("shortener_site")
+        if not api_key or not site:
+            return link
+
+        user = {
+            "shortener_api": api_key,
+            "base_site": site,
+            "shortener_site": site,
+        }
+        shortened = await get_short_link(user, link)
+        if shortened and isinstance(shortened, str) and shortened.startswith(("http://", "https://")):
+            return shortened.strip()
+    except Exception:
+        pass
+    return link
+
+
+def _extract_main_url(text):
+    if not text:
+        return None
+    match = _URL_RE.search(str(text))
+    if not match:
+        return None
+    return match.group(0).rstrip(".,!?)"]")
+
+
+def _replace_main_url(text, original, shortened):
+    if not text or not original or not shortened:
+        return text
+    return str(text).replace(original, shortened)
+
+
+def _shorten_markup_urls(markup, original, shortened):
+    """Preserve all existing buttons, changing only the generated-link URL.
+
+    Direct generated-link buttons become the shortened URL. Telegram share
+    buttons keep their share endpoint but receive the shortened URL as their
+    ``url=`` parameter. Other custom buttons are left untouched.
+    """
+    if not markup or not getattr(markup, "inline_keyboard", None):
+        return markup
+
+    new_rows = []
+    for row in markup.inline_keyboard:
+        new_row = []
+        for button in row:
+            button_url = getattr(button, "url", None)
+            if not button_url or not original:
+                new_row.append(button)
+                continue
+
+            new_url = button_url
+            if button_url == original:
+                new_url = shortened
+            elif "t.me/share/url" in button_url:
+                try:
+                    parsed = urlsplit(button_url)
+                    params = parse_qs(parsed.query, keep_blank_values=True)
+                    values = params.get("url") or []
+                    if values and values[0] == original:
+                        params["url"] = [shortened]
+                        query = urlencode(params, doseq=True)
+                        new_url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, query, parsed.fragment))
+                except Exception:
+                    pass
+
+            if new_url == button_url:
+                new_row.append(button)
+            else:
+                new_row.append(InlineKeyboardButton(button.text, url=new_url))
+        new_rows.append(new_row)
+
+    return InlineKeyboardMarkup(new_rows)
+
+
+async def _prepare_shortened_output(client, text, reply_markup):
+    if not _is_target_shortener_call():
+        return text, reply_markup
+
+    original = _extract_main_url(text)
+    if not original:
+        return text, reply_markup
+
+    shortened = await _shorten_generated_link(client, original)
+    if not shortened or shortened == original:
+        return text, reply_markup
+
+    return (
+        _replace_main_url(text, original, shortened),
+        _shorten_markup_urls(reply_markup, original, shortened),
+    )
+
+
 def install_link_auto_delete(client):
-    """Wrap only link-module copy_message deliveries with Auto Delete."""
+    """Install narrowly scoped Auto Delete and Link Shortener wrappers."""
     if getattr(client, "_ash_link_auto_delete_installed", False):
         return client
 
-    original = client.copy_message
+    original_copy_message = client.copy_message
+    original_send_message = client.send_message
+    original_edit_message_text = client.edit_message_text
 
     async def wrapped_copy_message(*args, **kwargs):
-        delivered = await original(*args, **kwargs)
+        delivered = await original_copy_message(*args, **kwargs)
 
         if not _is_target_delivery_call():
             return delivered
@@ -165,6 +305,46 @@ def install_link_auto_delete(client):
 
         return delivered
 
+    async def wrapped_send_message(*args, **kwargs):
+        if _is_target_shortener_call():
+            text = kwargs.get("text")
+            reply_markup = kwargs.get("reply_markup")
+            if text is None and len(args) >= 2:
+                text = args[1]
+            new_text, new_markup = await _prepare_shortened_output(client, text, reply_markup)
+            if "text" in kwargs:
+                kwargs["text"] = new_text
+            elif len(args) >= 2:
+                args = list(args)
+                args[1] = new_text
+                args = tuple(args)
+            if "reply_markup" in kwargs:
+                kwargs["reply_markup"] = new_markup
+            elif new_markup is not None:
+                kwargs["reply_markup"] = new_markup
+        return await original_send_message(*args, **kwargs)
+
+    async def wrapped_edit_message_text(*args, **kwargs):
+        if _is_target_shortener_call():
+            text = kwargs.get("text")
+            reply_markup = kwargs.get("reply_markup")
+            if text is None and len(args) >= 3:
+                text = args[2]
+            new_text, new_markup = await _prepare_shortened_output(client, text, reply_markup)
+            if "text" in kwargs:
+                kwargs["text"] = new_text
+            elif len(args) >= 3:
+                args = list(args)
+                args[2] = new_text
+                args = tuple(args)
+            if "reply_markup" in kwargs:
+                kwargs["reply_markup"] = new_markup
+            elif new_markup is not None:
+                kwargs["reply_markup"] = new_markup
+        return await original_edit_message_text(*args, **kwargs)
+
     client.copy_message = wrapped_copy_message
+    client.send_message = wrapped_send_message
+    client.edit_message_text = wrapped_edit_message_text
     client._ash_link_auto_delete_installed = True
     return client
