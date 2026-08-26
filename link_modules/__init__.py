@@ -11,10 +11,15 @@ from link_modules import channel_batch
 from link_modules import custom_batch
 from link_modules import special_link
 from link_modules import universal_link
+from link_modules.auto_delete_delivery import install_link_auto_delete
 
 
 def register_all_link_modules(client, is_master=False):
     """Register all link generation handlers for a Pyrogram client (Master or Clone)."""
+    # Install the Auto Delete wrapper once. It is narrowly scoped to the
+    # delivery functions in channel_batch, custom_batch and special_link.
+    install_link_auto_delete(client)
+
     # Register handlers with prioritized group offsets
     custom_batch.register(client, base_group=-101 if is_master else -4)
     channel_batch.register(client, base_group=-102 if is_master else -3)
