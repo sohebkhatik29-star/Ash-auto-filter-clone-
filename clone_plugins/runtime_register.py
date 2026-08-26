@@ -139,15 +139,15 @@ def register_clone_handlers(client):
     master_manager.register(client)
     register_all_link_modules(client, is_master=False)
 
-    # Verification links must be consumed before the normal /start handler.
-    # Group 0 + StopPropagation prevents the old handler from auto-delivering
-    # the file immediately after verification.
+    # Verification links must be consumed before every other /start handler.
+    # Use a strongly negative group so an older /start handler registered at
+    # group 0 cannot deliver the file or show a second verification panel first.
     client.add_handler(
         MessageHandler(
             verification_link_handler,
             filters.command("start") & filters.private
         ),
-        group=0,
+        group=-1000,
     )
 
     # Public clone commands
