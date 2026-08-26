@@ -130,7 +130,7 @@ async def _schedule_delete(client, delivered, warning, seconds):
             pass
 
 
-async def install_link_auto_delete(client):
+def install_link_auto_delete(client):
     """Wrap only link-module copy_message deliveries with Auto Delete."""
     if getattr(client, "_ash_link_auto_delete_installed", False):
         return client
