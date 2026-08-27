@@ -847,6 +847,27 @@ async def cb_handler(client: Client, query: CallbackQuery):
         from settings_modules.premium_plan import handle_user_buy_premium_view
         return await handle_user_buy_premium_view(client, query, rec=master_cfg, show_upi=(data == "c_prem_upi_view"))
 
+    elif data == "c_prem_user_back":
+        if query.message.photo:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            buttons = [
+                [InlineKeyboardButton("⚙️ SETTINGS", callback_data="master_settings"), InlineKeyboardButton("🤖 MY CLONE BOT", callback_data="my_clones")],
+                [InlineKeyboardButton("💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ", url="https://www.youtube.com/@tech_as_0")],
+                [InlineKeyboardButton("ℹ️ ʜᴇʟᴘ", callback_data="help"), InlineKeyboardButton("😊 ᴀʙᴏᴜᴛ", callback_data="about")]
+            ]
+            me = (await client.get_me()).mention
+            return await client.send_message(
+                chat_id=query.from_user.id,
+                text=script.START_TXT.format(query.from_user.mention, me),
+                reply_markup=InlineKeyboardMarkup(buttons),
+                disable_web_page_preview=True
+            )
+        else:
+            return await callbacks(client, type("Q", (), {"data": "start", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
+
     elif data == "about":
         buttons = [[
             InlineKeyboardButton("Hᴏᴍᴇ", callback_data="start"),

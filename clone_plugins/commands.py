@@ -863,6 +863,18 @@ async def callbacks(client, query):
         rec = bot_record(client)
         from settings_modules.premium_plan import handle_user_buy_premium_view
         return await handle_user_buy_premium_view(client, query, rec=rec, show_upi=(data == "c_prem_upi_view"))
+    if data == "c_prem_user_back":
+        v_text, v_markup = await access_verification(client, query.from_user.id)
+        if v_text and v_markup:
+            if query.message.photo:
+                try:
+                    await query.message.delete()
+                except Exception:
+                    pass
+                return await client.send_message(query.from_user.id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
+            return await query.message.edit_text(v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
+        # Fallback to start back
+        return await callbacks(client, type("Q", (), {"data": "start_back", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
 
     # Settings and clone management callbacks are handled by dedicated modules
     if data in (
@@ -905,7 +917,7 @@ def register(client):
         from settings_modules.premium_plan import handle_user_buy_premium_view
         return await handle_user_buy_premium_view(c, m, rec=bot_record(c), show_upi=False)
     client.add_handler(MessageHandler(plan_cmd,filters.command(["plan", "premium", "buy_premium"])&private),group=1)
-    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|c_buy_prem|c_prem_upi_view|settings|settings_back|log_channel|set_log_channel|delete_log_channel|database_channel|set_database_channel|delete_database_channel|admins_menu|add_admin_prompt|admin_info:\d+|adm_tgl:\d+:[a-z_]+|adm_trans:\d+|adm_rem:\d+|my_clone|google_backup|google_connect|link_shortener|add_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_on|protect_off)$")),group=0)
+    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|c_buy_prem|c_prem_upi_view|c_prem_user_back|settings|settings_back|log_channel|set_log_channel|delete_log_channel|database_channel|set_database_channel|delete_database_channel|admins_menu|add_admin_prompt|admin_info:\d+|adm_tgl:\d+:[a-z_]+|adm_trans:\d+|adm_rem:\d+|my_clone|google_backup|google_connect|link_shortener|add_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_on|protect_off)$")),group=0)
     return client
 
 

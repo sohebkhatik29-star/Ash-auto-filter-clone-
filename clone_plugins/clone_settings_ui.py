@@ -182,6 +182,24 @@ async def callbacks(client, query):
         from settings_modules.premium_plan import handle_user_buy_premium_view
         return await handle_user_buy_premium_view(client, query, rec=r, show_upi=(data == "c_prem_upi_view"))
 
+    if data == "c_prem_user_back":
+        from clone_plugins.commands import access_verification
+        v_text, v_markup = await access_verification(client, user_id)
+        if v_text and v_markup:
+            if query.message.photo:
+                try:
+                    await query.message.delete()
+                except Exception:
+                    pass
+                return await client.send_message(user_id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
+            return await query.message.edit_text(v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
+        # Fallback to start hub
+        text = (
+            f"🤖 <b>YOUR CLONE BOT - @{me.username}</b>\n\n"
+            "<i>YOU CAN CUSTOMISE YOUR BOT SETTINGS FROM GIVEN BELOW BUTTONS</i>"
+        )
+        return await edit_or_reply(query, text, reply_markup=clone_manage_hub_markup(me.username))
+
     # Master / clone creator callbacks that are ignored here
     if data in ("my_clone", "my_clones", "clone_my_bots", "create_clone_prompt", "clone_limit") or data.startswith(("manage_clone:", "cm:", "cad:", "cmdelete:")):
         return

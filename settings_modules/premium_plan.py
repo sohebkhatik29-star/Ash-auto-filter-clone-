@@ -62,7 +62,8 @@ def render_premium_plan_payload(rec: dict, user_mention: str = "User", show_upi:
             )
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("💳 UPI", callback_data="c_prem_upi_view")],
-            [InlineKeyboardButton("• SEND PAYMENT SCREENSHOT •", url=contact_url)]
+            [InlineKeyboardButton("• SEND PAYMENT SCREENSHOT •", url=contact_url)],
+            [InlineKeyboardButton("‹ BACK", callback_data="c_prem_user_back")]
         ])
 
     return text, photo_id, markup, has_spoiler, invert_caption
@@ -79,6 +80,7 @@ async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, s
     is_query = hasattr(query_or_msg, "message") and hasattr(query_or_msg, "answer")
     user = query_or_msg.from_user if is_query else getattr(query_or_msg, "from_user", None)
     user_mention = getattr(user, "mention", "User") if user else "User"
+    user_id = user.id if user else 0
 
     if is_query:
         try:
@@ -96,44 +98,54 @@ async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, s
 
     chat_id = msg.chat.id if hasattr(msg, "chat") and msg.chat else user_id
 
-    # If message already has photo, smoothly edit its caption in-place
+    # 1. If existing message already has photo, edit caption in place
     if is_query and msg and getattr(msg, "photo", None):
         try:
-            kw = {
-                "caption": text,
-                "reply_markup": markup,
-                "parse_mode": enums.ParseMode.HTML
-            }
-            if invert_caption:
-                kw["show_caption_above_media"] = True
-            if has_spoiler:
-                kw["has_spoiler"] = True
-            return await msg.edit_caption(**kw)
+            return await msg.edit_caption(
+                caption=text,
+                reply_markup=markup,
+                parse_mode=enums.ParseMode.HTML
+            )
         except Exception:
             pass
 
-    # If message is text-only and we have a photo, send the photo
+    # 2. If photo is configured and old message is text or needs new photo
     if photo_id:
+        if is_query and msg:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
         try:
-            kw_p = {
-                "chat_id": chat_id,
-                "photo": photo_id,
-                "caption": text,
-                "reply_markup": markup,
-                "parse_mode": enums.ParseMode.HTML
-            }
-            if invert_caption:
-                kw_p["show_caption_above_media"] = True
-            if has_spoiler:
-                kw_p["has_spoiler"] = True
-            return await client.send_photo(**kw_p)
+            return await client.send_photo(
+                chat_id=chat_id,
+                photo=photo_id,
+                caption=text,
+                reply_markup=markup,
+                parse_mode=enums.ParseMode.HTML,
+                has_spoiler=has_spoiler
+            )
         except Exception:
-            pass
+            try:
+                return await client.send_photo(
+                    chat_id=chat_id,
+                    photo=photo_id,
+                    caption=text,
+                    reply_markup=markup,
+                    parse_mode=enums.ParseMode.HTML
+                )
+            except Exception:
+                pass
 
-    # If no photo, edit or send text
-    if is_query and msg:
+    # 3. Fallback: If no photo or photo sending failed, edit or send text message
+    if is_query and msg and not getattr(msg, "photo", None):
         try:
-            return await msg.edit_text(text, reply_markup=markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
+            return await msg.edit_text(
+                text=text,
+                reply_markup=markup,
+                parse_mode=enums.ParseMode.HTML,
+                disable_web_page_preview=True
+            )
         except Exception:
             pass
 
