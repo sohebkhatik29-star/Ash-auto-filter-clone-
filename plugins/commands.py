@@ -842,7 +842,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         from plugins.master_settings import callbacks as master_cb
         return await master_cb(client, query)
 
-    elif data in ("m_buy_prem", "c_prem_upi_view"):
+    elif data in ("m_buy_prem", "c_buy_prem", "c_prem_upi_view"):
         master_cfg = await get_master_config(client)
         from settings_modules.premium_plan import handle_user_buy_premium_view
         return await handle_user_buy_premium_view(client, query, rec=master_cfg, show_upi=(data == "c_prem_upi_view"))

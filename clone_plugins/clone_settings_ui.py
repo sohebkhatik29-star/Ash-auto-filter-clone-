@@ -177,6 +177,11 @@ async def callbacks(client, query):
     def client_save(**kwargs):
         return save(client, **kwargs)
 
+    # User-facing Buy Premium view callbacks
+    if data in ("c_buy_prem", "c_prem_upi_view", "m_buy_prem"):
+        from settings_modules.premium_plan import handle_user_buy_premium_view
+        return await handle_user_buy_premium_view(client, query, rec=r, show_upi=(data == "c_prem_upi_view"))
+
     # Master / clone creator callbacks that are ignored here
     if data in ("my_clone", "my_clones", "clone_my_bots", "create_clone_prompt", "clone_limit") or data.startswith(("manage_clone:", "cm:", "cad:", "cmdelete:")):
         return

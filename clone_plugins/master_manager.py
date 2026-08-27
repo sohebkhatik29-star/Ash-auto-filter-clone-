@@ -176,7 +176,7 @@ async def handle_clone_callbacks(client, query):
         asyncio.create_task(_listen_and_create_clone(client, user_id, sess_token))
         return
 
-    if data.startswith("manage_clone:"):
+    if data.startswith("manage_clone:") or data.startswith("settings_back:"):
         bid = int(data.split(":")[1])
         if not owns(user_id, bid):
             return await query.answer("❌ You can manage only your own clones.", show_alert=True)
@@ -191,6 +191,13 @@ async def handle_clone_callbacks(client, query):
         except Exception:
             pass
         return
+
+    if data in ("c_buy_prem", "c_prem_upi_view"):
+        act = m.active_clone_edit.find_one({"user_id": int(user_id)}) if m is not None else None
+        bid = act.get("bot_id") if act else None
+        d = get_bot(bid) if bid else {}
+        from settings_modules.premium_plan import handle_user_buy_premium_view
+        return await handle_user_buy_premium_view(client, query, rec=d, show_upi=(data == "c_prem_upi_view"))
 
     if data.startswith("cm:"):
         _, raw, action = data.split(":")

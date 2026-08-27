@@ -105,7 +105,7 @@ async def handle_thumbnail_callbacks(client, query, data, user_id, r, save_fn, c
         except Exception:
             pass
 
-    back_cb = f"settings_back:{target_bid}" if target_bid else "settings_back"
+    back_cb = f"manage_clone:{target_bid}" if target_bid else "settings_back"
     main_cb = f"custom_thumbnail:{target_bid}" if target_bid else "custom_thumbnail"
 
     async def clean_show(text, reply_markup=None):

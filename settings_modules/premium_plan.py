@@ -94,33 +94,29 @@ async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, s
     if not msg:
         return
 
-    # Attempt in-place edit if CallbackQuery
-    if is_query and msg:
-        if msg.photo:
-            try:
-                kw = {
-                    "caption": text,
-                    "reply_markup": markup,
-                    "parse_mode": enums.ParseMode.HTML
-                }
-                if invert_caption:
-                    kw["show_caption_above_media"] = True
-                if has_spoiler:
-                    kw["has_spoiler"] = True
-                return await msg.edit_caption(**kw)
-            except Exception:
-                pass
-        else:
-            try:
-                return await msg.edit_text(text, reply_markup=markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
-            except Exception:
-                pass
+    chat_id = msg.chat.id if hasattr(msg, "chat") and msg.chat else user_id
 
-    # Send new message if edit fails or on initial command
+    # If message already has photo, smoothly edit its caption in-place
+    if is_query and msg and getattr(msg, "photo", None):
+        try:
+            kw = {
+                "caption": text,
+                "reply_markup": markup,
+                "parse_mode": enums.ParseMode.HTML
+            }
+            if invert_caption:
+                kw["show_caption_above_media"] = True
+            if has_spoiler:
+                kw["has_spoiler"] = True
+            return await msg.edit_caption(**kw)
+        except Exception:
+            pass
+
+    # If message is text-only and we have a photo, send the photo
     if photo_id:
         try:
             kw_p = {
-                "chat_id": msg.chat.id,
+                "chat_id": chat_id,
                 "photo": photo_id,
                 "caption": text,
                 "reply_markup": markup,
@@ -134,8 +130,15 @@ async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, s
         except Exception:
             pass
 
+    # If no photo, edit or send text
+    if is_query and msg:
+        try:
+            return await msg.edit_text(text, reply_markup=markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
+        except Exception:
+            pass
+
     return await client.send_message(
-        chat_id=msg.chat.id,
+        chat_id=chat_id,
         text=text,
         reply_markup=markup,
         parse_mode=enums.ParseMode.HTML,
@@ -155,7 +158,7 @@ async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, can
     def cb(name: str) -> str:
         return f"{name}:{target_bid}" if target_bid else name
 
-    back_main = f"settings_back:{target_bid}" if target_bid else "settings_back"
+    back_main = f"manage_clone:{target_bid}" if target_bid else "settings_back"
 
     async def clean_show(text, reply_markup=None):
         try:
