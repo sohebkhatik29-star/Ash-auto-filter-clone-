@@ -77,6 +77,21 @@ async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, s
         except Exception:
             rec = {}
 
+    # Merge with master_settings if any key is missing in clone doc
+    try:
+        from plugins.clone import mongo_db
+        if mongo_db is not None:
+            m_rec = mongo_db.master_settings.find_one({"type": "master_config"}) or mongo_db.master_settings.find_one({}) or {}
+            if m_rec:
+                merged = dict(m_rec)
+                if rec:
+                    for k, v in rec.items():
+                        if v is not None and v != "":
+                            merged[k] = v
+                rec = merged
+    except Exception:
+        pass
+
     is_query = hasattr(query_or_msg, "message") and hasattr(query_or_msg, "answer")
     user = query_or_msg.from_user if is_query else getattr(query_or_msg, "from_user", None)
     user_mention = getattr(user, "mention", "User") if user else "User"
@@ -91,6 +106,20 @@ async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, s
     text, photo_id, markup, has_spoiler, invert_caption = render_premium_plan_payload(
         rec, user_mention=user_mention, show_upi=show_upi
     )
+
+    # Resolve photo object (local file path or file_id)
+    photo_target = rec.get("premium_qr_path") or rec.get("premium_plan_photo_path")
+    if not photo_target or not (isinstance(photo_target, str) and os.path.exists(photo_target)):
+        photo_target = photo_id
+
+    if photo_target:
+        try:
+            from settings_modules.thumbnail import get_cached_thumb_path
+            cached = await get_cached_thumb_path(client, photo_target)
+            if cached and os.path.exists(cached):
+                photo_target = cached
+        except Exception:
+            pass
 
     msg = query_or_msg.message if is_query else query_or_msg
     if not msg:
@@ -110,7 +139,7 @@ async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, s
             pass
 
     # 2. If photo is configured and old message is text or needs new photo
-    if photo_id:
+    if photo_target:
         if is_query and msg:
             try:
                 await msg.delete()
@@ -119,7 +148,7 @@ async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, s
         try:
             return await client.send_photo(
                 chat_id=chat_id,
-                photo=photo_id,
+                photo=photo_target,
                 caption=text,
                 reply_markup=markup,
                 parse_mode=enums.ParseMode.HTML,
@@ -129,7 +158,7 @@ async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, s
             try:
                 return await client.send_photo(
                     chat_id=chat_id,
-                    photo=photo_id,
+                    photo=photo_target,
                     caption=text,
                     reply_markup=markup,
                     parse_mode=enums.ParseMode.HTML
@@ -400,9 +429,17 @@ async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, can
 
             if ans.photo:
                 photo_id = ans.photo.file_id
-                save_fn(premium_plan_photo=photo_id, premium_qr_pic=photo_id)
-                r["premium_plan_photo"] = photo_id
-                r["premium_qr_pic"] = photo_id
+                from settings_modules.thumbnail import save_thumbnail_media
+                local_path = await save_thumbnail_media(client, ans, user_id, prefix=f"prem_qr_{target_bid or 'master'}")
+                upd = {
+                    "premium_plan_photo": photo_id,
+                    "premium_qr_pic": photo_id
+                }
+                if local_path:
+                    upd["premium_qr_path"] = local_path
+                    upd["premium_plan_photo_path"] = local_path
+                save_fn(**upd)
+                r.update(upd)
                 clear_user_session(user_id)
 
                 if prompt_msg:
@@ -416,9 +453,10 @@ async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, can
                     pass
 
                 back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=cb("cset_prem_pic_menu"))]])
+                photo_to_send = local_path or photo_id
                 return await client.send_photo(
                     chat_id=user_id,
-                    photo=photo_id,
+                    photo=photo_to_send,
                     caption="<b>SUCCESSFULLY PICTURE SET</b> ✅",
                     reply_markup=back_markup,
                     parse_mode=enums.ParseMode.HTML
@@ -436,9 +474,11 @@ async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, can
 
     # 5.2 Delete Picture
     if data_str.startswith("cset_prem_del_pic"):
-        save_fn(premium_plan_photo=None, premium_qr_pic=None)
+        save_fn(premium_plan_photo=None, premium_qr_pic=None, premium_qr_path=None, premium_plan_photo_path=None)
         r["premium_plan_photo"] = None
         r["premium_qr_pic"] = None
+        r["premium_qr_path"] = None
+        r["premium_plan_photo_path"] = None
         try:
             await query.answer("Picture deleted successfully!")
         except Exception:

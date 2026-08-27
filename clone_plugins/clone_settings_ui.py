@@ -183,17 +183,43 @@ async def callbacks(client, query):
         return await handle_user_buy_premium_view(client, query, rec=r, show_upi=(data == "c_prem_upi_view"))
 
     if data == "c_prem_user_back":
+        try:
+            await query.answer()
+        except Exception:
+            pass
         from clone_plugins.commands import access_verification
-        v_text, v_markup = await access_verification(client, user_id)
+        v_text, v_markup = await access_verification(client, user_id, "")
         if v_text and v_markup:
-            if query.message.photo:
+            if query.message and query.message.photo:
                 try:
                     await query.message.delete()
                 except Exception:
                     pass
                 return await client.send_message(user_id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
-            return await query.message.edit_text(v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
-        # Fallback to start hub
+            elif query.message:
+                try:
+                    return await query.message.edit_text(v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
+                except Exception:
+                    pass
+            return await client.send_message(user_id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
+        # Fallback to start
+        if query.message and query.message.photo:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            from clone_plugins import script
+            buttons = [
+                [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY CLONE BOT", callback_data="my_clone")],
+                [InlineKeyboardButton("💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ", url="https://www.youtube.com/@tech_as_0")],
+                [InlineKeyboardButton("ℹ️ ʜᴇʟᴘ", callback_data="help"), InlineKeyboardButton("😊 ᴀʙᴏᴜᴛ", callback_data="about")]
+            ]
+            return await client.send_message(
+                chat_id=user_id,
+                text=script.START_TXT.format(query.from_user.mention if query.from_user else "User", me.mention),
+                reply_markup=InlineKeyboardMarkup(buttons),
+                disable_web_page_preview=True
+            )
         text = (
             f"🤖 <b>YOUR CLONE BOT - @{me.username}</b>\n\n"
             "<i>YOU CAN CUSTOMISE YOUR BOT SETTINGS FROM GIVEN BELOW BUTTONS</i>"

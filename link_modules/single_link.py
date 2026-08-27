@@ -147,7 +147,28 @@ async def capture_single(client, message):
     user_id = message.from_user.id
     key = (client.me.id, user_id)
 
+    # 1. Do NOT capture if a user session is active (e.g. setting QR pic, caption, etc.)
+    try:
+        from clone_plugins.sessions import _USER_SESSIONS
+        if int(user_id) in _USER_SESSIONS:
+            return
+    except Exception:
+        pass
+
+    # 2. Do NOT capture if client is listening for input from this user/chat
+    for attr in ("_listeners", "listeners"):
+        try:
+            d = getattr(client, attr, None)
+            if isinstance(d, dict) and (user_id in d or message.chat.id in d):
+                return
+        except Exception:
+            pass
+
     if _batch_active(client, user_id):
+        return
+
+    # 3. Only proceed if getlink/single link flow was initiated
+    if key not in _PENDING:
         return
 
     txt = (message.text or message.caption or "").strip()

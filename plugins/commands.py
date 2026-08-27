@@ -848,7 +848,11 @@ async def cb_handler(client: Client, query: CallbackQuery):
         return await handle_user_buy_premium_view(client, query, rec=master_cfg, show_upi=(data == "c_prem_upi_view"))
 
     elif data == "c_prem_user_back":
-        if query.message.photo:
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        if query.message and query.message.photo:
             try:
                 await query.message.delete()
             except Exception:

@@ -240,7 +240,7 @@ async def send_fsub_prompt(client, message, payload):
     return True
 
 
-async def access_verification(client, user_id, original_payload):
+async def access_verification(client, user_id, original_payload=""):
     rec = bot_record(client)
     if not rec:
         return None, None
@@ -864,16 +864,42 @@ async def callbacks(client, query):
         from settings_modules.premium_plan import handle_user_buy_premium_view
         return await handle_user_buy_premium_view(client, query, rec=rec, show_upi=(data == "c_prem_upi_view"))
     if data == "c_prem_user_back":
-        v_text, v_markup = await access_verification(client, query.from_user.id)
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        v_text, v_markup = await access_verification(client, query.from_user.id, "")
         if v_text and v_markup:
-            if query.message.photo:
+            if query.message and query.message.photo:
                 try:
                     await query.message.delete()
                 except Exception:
                     pass
                 return await client.send_message(query.from_user.id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
-            return await query.message.edit_text(v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
+            elif query.message:
+                try:
+                    return await query.message.edit_text(v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
+                except Exception:
+                    pass
+            return await client.send_message(query.from_user.id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
         # Fallback to start back
+        if query.message and query.message.photo:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            me = (await client.get_me()).mention
+            buttons = [
+                [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY CLONE BOT", callback_data="my_clone")],
+                [InlineKeyboardButton("💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ", url="https://www.youtube.com/@tech_as_0")],
+                [InlineKeyboardButton("ℹ️ ʜᴇʟᴘ", callback_data="help"), InlineKeyboardButton("😊 ᴀʙᴏᴜᴛ", callback_data="about")]
+            ]
+            return await client.send_message(
+                chat_id=query.from_user.id,
+                text=script.START_TXT.format(query.from_user.mention, me),
+                reply_markup=InlineKeyboardMarkup(buttons),
+                disable_web_page_preview=True
+            )
         return await callbacks(client, type("Q", (), {"data": "start_back", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
 
     # Settings and clone management callbacks are handled by dedicated modules
@@ -977,7 +1003,7 @@ async def send_verify_log(client, user, log_type="verified", slot=1, validity=No
 
 _orig_access_verification = access_verification
 
-async def access_verification(client, user_id, original_payload):
+async def access_verification(client, user_id, original_payload=""):
     rec = bot_record(client)
     if not rec:
         return None, None
