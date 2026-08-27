@@ -192,12 +192,13 @@ async def handle_clone_callbacks(client, query):
             pass
         return
 
-    if data in ("c_buy_prem", "c_prem_upi_view"):
+    if data.startswith("c_buy_prem") or data.startswith("c_prem_upi_view"):
+        payload = data.split(":", 1)[1] if ":" in data else ""
         act = m.active_clone_edit.find_one({"user_id": int(user_id)}) if m is not None else None
         bid = act.get("bot_id") if act else None
         d = get_bot(bid) if bid else {}
         from settings_modules.premium_plan import handle_user_buy_premium_view
-        return await handle_user_buy_premium_view(client, query, rec=d, show_upi=(data == "c_prem_upi_view"))
+        return await handle_user_buy_premium_view(client, query, rec=d, show_upi=data.startswith("c_prem_upi_view"), payload=payload)
 
     if data.startswith("cm:"):
         _, raw, action = data.split(":")

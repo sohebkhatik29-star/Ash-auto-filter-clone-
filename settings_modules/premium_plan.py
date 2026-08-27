@@ -21,7 +21,7 @@ def get_contact_info(rec: dict):
         display = f"@{username}"
     return username, url, display
 
-def render_premium_plan_payload(rec: dict, user_mention: str = "User", show_upi: bool = False):
+def render_premium_plan_payload(rec: dict, user_mention: str = "User", show_upi: bool = False, payload: str = ""):
     """
     Generate (text, photo_id, reply_markup, has_spoiler, invert_caption)
     matching the exact VJ File Store style shown in user's video.
@@ -30,6 +30,10 @@ def render_premium_plan_payload(rec: dict, user_mention: str = "User", show_upi:
     photo_id = rec.get("premium_plan_photo") or rec.get("premium_qr_pic")
     has_spoiler = bool(rec.get("premium_spoiler", False))
     invert_caption = bool(rec.get("premium_invert_cap", False))
+
+    back_to_prem_cb = f"c_buy_prem:{payload}" if payload else "c_buy_prem"
+    back_to_verify_cb = f"c_prem_user_back:{payload}" if payload else "c_prem_user_back"
+    upi_cb = f"c_prem_upi_view:{payload}" if payload else "c_prem_upi_view"
 
     if show_upi:
         upi_id = rec.get("premium_upi_id") or "sonukhatik7193@oksbi"
@@ -42,7 +46,7 @@ def render_premium_plan_payload(rec: dict, user_mention: str = "User", show_upi:
         )
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("• SEND PAYMENT SCREENSHOT •", url=contact_url)],
-            [InlineKeyboardButton("‹ BACK", callback_data="c_buy_prem")]
+            [InlineKeyboardButton("‹ BACK", callback_data=back_to_prem_cb)]
         ])
     else:
         custom_txt = rec.get("premium_plan_text")
@@ -61,14 +65,14 @@ def render_premium_plan_payload(rec: dict, user_mention: str = "User", show_upi:
                 f"<b>Contact :-</b> {display_contact}"
             )
         markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💳 UPI", callback_data="c_prem_upi_view")],
+            [InlineKeyboardButton("💳 UPI", callback_data=upi_cb)],
             [InlineKeyboardButton("• SEND PAYMENT SCREENSHOT •", url=contact_url)],
-            [InlineKeyboardButton("‹ BACK", callback_data="c_prem_user_back")]
+            [InlineKeyboardButton("‹ BACK", callback_data=back_to_verify_cb)]
         ])
 
     return text, photo_id, markup, has_spoiler, invert_caption
 
-async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, show_upi: bool = False):
+async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, show_upi: bool = False, payload: str = ""):
     """Display user-facing Premium Plan or UPI details with QR photo and one-tap copy UPI ID."""
     if not rec:
         try:
@@ -102,9 +106,14 @@ async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, s
             await query_or_msg.answer()
         except Exception:
             pass
+        if not payload and ":" in str(getattr(query_or_msg, "data", "")):
+            try:
+                payload = str(query_or_msg.data).split(":", 1)[1]
+            except Exception:
+                pass
 
     text, photo_id, markup, has_spoiler, invert_caption = render_premium_plan_payload(
-        rec, user_mention=user_mention, show_upi=show_upi
+        rec, user_mention=user_mention, show_upi=show_upi, payload=payload
     )
 
     # Resolve photo object (local file path or file_id)
@@ -202,13 +211,31 @@ async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, can
     back_main = f"manage_clone:{target_bid}" if target_bid else "settings_back"
 
     async def clean_show(text, reply_markup=None):
-        try:
-            if query.message:
-                return await query.message.edit_text(text, reply_markup=reply_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
-            else:
+        msg = getattr(query, "message", None) or query
+        if msg:
+            if getattr(msg, "photo", None) or getattr(msg, "media", None):
+                try:
+                    return await msg.edit_caption(caption=text, reply_markup=reply_markup, parse_mode=enums.ParseMode.HTML)
+                except Exception as e:
+                    if "MESSAGE_NOT_MODIFIED" in str(e).upper():
+                        return msg
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
                 return await client.send_message(user_id, text, reply_markup=reply_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
-        except Exception:
-            return await client.send_message(user_id, text, reply_markup=reply_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
+            else:
+                try:
+                    return await msg.edit_text(text, reply_markup=reply_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
+                except Exception as e:
+                    if "MESSAGE_NOT_MODIFIED" in str(e).upper():
+                        return msg
+                    try:
+                        await msg.delete()
+                    except Exception:
+                        pass
+                    return await client.send_message(user_id, text, reply_markup=reply_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
+        return await client.send_message(user_id, text, reply_markup=reply_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
 
     # 1. Main Premium Plan Menu
     if (

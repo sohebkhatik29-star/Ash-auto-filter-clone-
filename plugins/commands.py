@@ -119,7 +119,12 @@ async def check_master_verification(client, user_id, original_payload):
     token = create_verify_token(user_id, client.me.id, original_payload, slot=pending_slot_num)
     me = client.me or (await client.get_me())
     raw_url = f"https://telegram.me/{me.username}?start=verify_{token}"
-    short_url = await get_short_link({"base_site": site_to_use, "shortener_api": api_to_use}, raw_url)
+    try:
+        short_url = await get_short_link({"base_site": site_to_use, "shortener_api": api_to_use}, raw_url)
+    except Exception:
+        short_url = raw_url
+    if not short_url:
+        short_url = raw_url
 
     first_name = "User"
     try:
@@ -141,8 +146,8 @@ async def check_master_verification(client, user_id, original_payload):
     btn = [[InlineKeyboardButton("🟢 VERIFY 🔗", url=short_url)]]
     if tutorial:
         btn.append([InlineKeyboardButton("🎬 HOW TO VERIFY ↗️", url=tutorial)])
-    if master_cfg.get("premium_is_on") or master_cfg.get("premium_users") is not None:
-        btn.append([InlineKeyboardButton("⭐ BUY PREMIUM - NO NEED TO VERIFY ⭐", callback_data="m_buy_prem")])
+    cb_data = f"m_buy_prem:{original_payload}" if original_payload else "m_buy_prem"
+    btn.append([InlineKeyboardButton("⭐ BUY PREMIUM - NO NEED TO VERIFY ⭐", callback_data=cb_data)])
 
     return text, InlineKeyboardMarkup(btn)
 
@@ -842,16 +847,33 @@ async def cb_handler(client: Client, query: CallbackQuery):
         from plugins.master_settings import callbacks as master_cb
         return await master_cb(client, query)
 
-    elif data in ("m_buy_prem", "c_buy_prem", "c_prem_upi_view"):
+    elif data.startswith("m_buy_prem") or data.startswith("c_buy_prem") or data.startswith("c_prem_upi_view"):
+        payload = data.split(":", 1)[1] if ":" in data else ""
         master_cfg = await get_master_config(client)
         from settings_modules.premium_plan import handle_user_buy_premium_view
-        return await handle_user_buy_premium_view(client, query, rec=master_cfg, show_upi=(data == "c_prem_upi_view"))
+        return await handle_user_buy_premium_view(client, query, rec=master_cfg, show_upi=data.startswith("c_prem_upi_view"), payload=payload)
 
-    elif data == "c_prem_user_back":
+    elif data.startswith("c_prem_user_back"):
+        payload = data.split(":", 1)[1] if ":" in data else ""
         try:
             await query.answer()
         except Exception:
             pass
+        v_text, v_markup = await check_master_verification(client, query.from_user.id, payload)
+        if v_text and v_markup:
+            if query.message and query.message.photo:
+                try:
+                    await query.message.delete()
+                except Exception:
+                    pass
+                return await client.send_message(query.from_user.id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
+            elif query.message:
+                try:
+                    return await query.message.edit_text(v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
+                except Exception:
+                    pass
+            return await client.send_message(query.from_user.id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
+
         if query.message and query.message.photo:
             try:
                 await query.message.delete()

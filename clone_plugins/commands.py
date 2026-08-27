@@ -30,8 +30,17 @@ def get_size(size):
 
 def bot_record(client):
     if mongo_db is None: return {}
-    try: return mongo_db.bots.find_one({"bot_id": client.me.id}) or {}
-    except Exception: return {}
+    try:
+        b_id = getattr(client, "me", None) and client.me.id
+        if b_id:
+            rec = mongo_db.bots.find_one({"bot_id": int(b_id)})
+            if rec: return rec
+            rec = mongo_db.bots.find_one({"token": getattr(client, "_token", "")})
+            if rec: return rec
+        m_rec = mongo_db.master_settings.find_one({"type": "master_config"}) or mongo_db.master_settings.find_one({})
+        return m_rec or {}
+    except Exception:
+        return {}
 
 
 def owner_id(client): return int(bot_record(client).get("user_id", 0))
@@ -295,7 +304,12 @@ async def access_verification(client, user_id, original_payload=""):
     token = create_verify_token(user_id, client.me.id, original_payload, slot=pending_slot_num)
     me = client.me or (await client.get_me())
     raw_verify_url = f"https://t.me/{me.username}?start=verify_{token}"
-    short_url = await get_short_link({"base_site": site_to_use, "shortener_api": api_to_use}, raw_verify_url)
+    try:
+        short_url = await get_short_link({"base_site": site_to_use, "shortener_api": api_to_use}, raw_verify_url)
+    except Exception:
+        short_url = raw_verify_url
+    if not short_url:
+        short_url = raw_verify_url
 
     first_name = "User"
     try:
@@ -319,10 +333,8 @@ async def access_verification(client, user_id, original_payload=""):
     ]
     if tutorial:
         buttons.append([InlineKeyboardButton("🍿 HOW TO VERIFY 🍿", url=tutorial)])
-    if rec.get("premium_is_on") or rec.get("premium_users") is not None:
-        buttons.append([InlineKeyboardButton("💎 BUY PREMIUM - NO NEED TO VERIFY 💎", callback_data="c_buy_prem")])
-    elif rec.get("owner_username"):
-        buttons.append([InlineKeyboardButton("💎 BUY PREMIUM - NO NEED TO VERIFY 💎", url=f"https://t.me/{rec.get('owner_username').lstrip('@')}")])
+    cb_data = f"c_buy_prem:{original_payload}" if original_payload else "c_buy_prem"
+    buttons.append([InlineKeyboardButton("💎 BUY PREMIUM - NO NEED TO VERIFY 💎", callback_data=cb_data)])
 
     return text, InlineKeyboardMarkup(buttons)
 
@@ -859,29 +871,31 @@ async def callbacks(client, query):
         if query.message.photo:
             return await query.message.edit_caption(caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
         return await query.message.edit_text(caption, reply_markup=InlineKeyboardMarkup(buttons))
-    if data in ("c_buy_prem", "c_prem_upi_view"):
+    if data.startswith("c_buy_prem") or data.startswith("c_prem_upi_view"):
+        payload = data.split(":", 1)[1] if ":" in data else ""
         rec = bot_record(client)
         from settings_modules.premium_plan import handle_user_buy_premium_view
-        return await handle_user_buy_premium_view(client, query, rec=rec, show_upi=(data == "c_prem_upi_view"))
-    if data == "c_prem_user_back":
+        return await handle_user_buy_premium_view(client, query, rec=rec, show_upi=data.startswith("c_prem_upi_view"), payload=payload)
+    if data.startswith("c_prem_user_back"):
+        payload = data.split(":", 1)[1] if ":" in data else ""
         try:
             await query.answer()
         except Exception:
             pass
-        v_text, v_markup = await access_verification(client, query.from_user.id, "")
+        v_text, v_markup = await access_verification(client, query.from_user.id, payload)
         if v_text and v_markup:
             if query.message and query.message.photo:
                 try:
                     await query.message.delete()
                 except Exception:
                     pass
-                return await client.send_message(query.from_user.id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
+                return await client.send_message(query.from_user.id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
             elif query.message:
                 try:
-                    return await query.message.edit_text(v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
+                    return await query.message.edit_text(v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
                 except Exception:
                     pass
-            return await client.send_message(query.from_user.id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
+            return await client.send_message(query.from_user.id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
         # Fallback to start back
         if query.message and query.message.photo:
             try:
@@ -943,7 +957,7 @@ def register(client):
         from settings_modules.premium_plan import handle_user_buy_premium_view
         return await handle_user_buy_premium_view(c, m, rec=bot_record(c), show_upi=False)
     client.add_handler(MessageHandler(plan_cmd,filters.command(["plan", "premium", "buy_premium"])&private),group=1)
-    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|c_buy_prem|c_prem_upi_view|c_prem_user_back|settings|settings_back|log_channel|set_log_channel|delete_log_channel|database_channel|set_database_channel|delete_database_channel|admins_menu|add_admin_prompt|admin_info:\d+|adm_tgl:\d+:[a-z_]+|adm_trans:\d+|adm_rem:\d+|my_clone|google_backup|google_connect|link_shortener|add_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_on|protect_off)$")),group=0)
+    client.add_handler(CallbackQueryHandler(callbacks,filters.regex(r"^(close_data|verify:.*|help|about|start_back|c_buy_prem(:.*)?|c_prem_upi_view(:.*)?|c_prem_user_back(:.*)?|settings|settings_back|log_channel|set_log_channel|delete_log_channel|database_channel|set_database_channel|delete_database_channel|admins_menu|add_admin_prompt|admin_info:\d+|adm_tgl:\d+:[a-z_]+|adm_trans:\d+|adm_rem:\d+|my_clone|google_backup|google_connect|link_shortener|add_shortener|delete_shortener|custom_caption|caption_see|caption_delete|caption_edit|custom_button|button_add|button_delete|protect_menu|protect_on|protect_off)$")),group=0)
     return client
 
 

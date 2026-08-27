@@ -178,30 +178,32 @@ async def callbacks(client, query):
         return save(client, **kwargs)
 
     # User-facing Buy Premium view callbacks
-    if data in ("c_buy_prem", "c_prem_upi_view", "m_buy_prem"):
+    if data.startswith("c_buy_prem") or data.startswith("c_prem_upi_view") or data.startswith("m_buy_prem"):
+        payload = data.split(":", 1)[1] if ":" in data else ""
         from settings_modules.premium_plan import handle_user_buy_premium_view
-        return await handle_user_buy_premium_view(client, query, rec=r, show_upi=(data == "c_prem_upi_view"))
+        return await handle_user_buy_premium_view(client, query, rec=r, show_upi=data.startswith("c_prem_upi_view"), payload=payload)
 
-    if data == "c_prem_user_back":
+    if data.startswith("c_prem_user_back"):
+        payload = data.split(":", 1)[1] if ":" in data else ""
         try:
             await query.answer()
         except Exception:
             pass
         from clone_plugins.commands import access_verification
-        v_text, v_markup = await access_verification(client, user_id, "")
+        v_text, v_markup = await access_verification(client, user_id, payload)
         if v_text and v_markup:
             if query.message and query.message.photo:
                 try:
                     await query.message.delete()
                 except Exception:
                     pass
-                return await client.send_message(user_id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
+                return await client.send_message(user_id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
             elif query.message:
                 try:
-                    return await query.message.edit_text(v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
+                    return await query.message.edit_text(v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
                 except Exception:
                     pass
-            return await client.send_message(user_id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML)
+            return await client.send_message(user_id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
         # Fallback to start
         if query.message and query.message.photo:
             try:
