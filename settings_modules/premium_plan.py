@@ -27,7 +27,6 @@ def render_premium_plan_payload(rec: dict, user_mention: str = "User", show_upi:
     matching the exact VJ File Store style shown in user's video.
     """
     _, contact_url, display_contact = get_contact_info(rec)
-    photo_id = rec.get("premium_plan_photo") or rec.get("premium_qr_pic")
     has_spoiler = bool(rec.get("premium_spoiler", False))
     invert_caption = bool(rec.get("premium_invert_cap", False))
 
@@ -36,6 +35,7 @@ def render_premium_plan_payload(rec: dict, user_mention: str = "User", show_upi:
     upi_cb = f"c_prem_upi_view:{payload}" if payload else "c_prem_upi_view"
 
     if show_upi:
+        photo_id = rec.get("premium_qr_pic") or rec.get("premium_plan_photo")
         upi_id = rec.get("premium_upi_id") or "sonukhatik7193@oksbi"
         text = (
             "<b>PAYMENT METHOD: UPI ⚡</b>\n\n"
@@ -49,6 +49,8 @@ def render_premium_plan_payload(rec: dict, user_mention: str = "User", show_upi:
             [InlineKeyboardButton("‹ BACK", callback_data=back_to_prem_cb)]
         ])
     else:
+        # Standard plan list: Only use photo if explicitly set for plan list (not UPI QR)
+        photo_id = rec.get("premium_plan_photo")
         custom_txt = rec.get("premium_plan_text")
         if custom_txt:
             text = custom_txt.replace("{user_mention}", user_mention).replace("{user}", user_mention)
@@ -72,8 +74,49 @@ def render_premium_plan_payload(rec: dict, user_mention: str = "User", show_upi:
 
     return text, photo_id, markup, has_spoiler, invert_caption
 
+_UI_BUSY_TRACKER = {}
+
+def _check_and_lock_ui(chat_id, msg_id, action_tag=""):
+    """Prevent race conditions / multiple panels when user clicks button multiple times rapidly."""
+    if not chat_id or not msg_id:
+        return True
+    now = time.time()
+    # Cleanup old entries (> 5 seconds)
+    stale_keys = [k for k, ts in _UI_BUSY_TRACKER.items() if now - ts > 5.0]
+    for k in stale_keys:
+        _UI_BUSY_TRACKER.pop(k, None)
+
+    key = (chat_id, msg_id, action_tag)
+    last_time = _UI_BUSY_TRACKER.get(key, 0)
+    if now - last_time < 1.2:
+        return False
+    _UI_BUSY_TRACKER[key] = now
+    return True
+
 async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, show_upi: bool = False, payload: str = ""):
     """Display user-facing Premium Plan or UPI details with QR photo and one-tap copy UPI ID."""
+    is_query = hasattr(query_or_msg, "message") and hasattr(query_or_msg, "answer")
+    user = query_or_msg.from_user if is_query else getattr(query_or_msg, "from_user", None)
+    user_mention = getattr(user, "mention", "User") if user else "User"
+    user_id = user.id if user else 0
+    msg = query_or_msg.message if is_query else query_or_msg
+    chat_id = (msg.chat.id if hasattr(msg, "chat") and msg.chat else user_id) if msg else user_id
+    msg_id = getattr(msg, "id", 0)
+
+    if is_query:
+        try:
+            await query_or_msg.answer()
+        except Exception:
+            pass
+        if not _check_and_lock_ui(chat_id, msg_id, f"buy_prem_{show_upi}"):
+            return
+
+        if not payload and ":" in str(getattr(query_or_msg, "data", "")):
+            try:
+                payload = str(query_or_msg.data).split(":", 1)[1]
+            except Exception:
+                pass
+
     if not rec:
         try:
             from clone_plugins.commands import bot_record
@@ -96,30 +139,16 @@ async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, s
     except Exception:
         pass
 
-    is_query = hasattr(query_or_msg, "message") and hasattr(query_or_msg, "answer")
-    user = query_or_msg.from_user if is_query else getattr(query_or_msg, "from_user", None)
-    user_mention = getattr(user, "mention", "User") if user else "User"
-    user_id = user.id if user else 0
-
-    if is_query:
-        try:
-            await query_or_msg.answer()
-        except Exception:
-            pass
-        if not payload and ":" in str(getattr(query_or_msg, "data", "")):
-            try:
-                payload = str(query_or_msg.data).split(":", 1)[1]
-            except Exception:
-                pass
-
     text, photo_id, markup, has_spoiler, invert_caption = render_premium_plan_payload(
         rec, user_mention=user_mention, show_upi=show_upi, payload=payload
     )
 
     # Resolve photo object (local file path or file_id)
-    photo_target = rec.get("premium_qr_path") or rec.get("premium_plan_photo_path")
-    if not photo_target or not (isinstance(photo_target, str) and os.path.exists(photo_target)):
-        photo_target = photo_id
+    photo_target = None
+    if show_upi:
+        photo_target = rec.get("premium_qr_path") or rec.get("premium_qr_pic") or rec.get("premium_plan_photo_path") or photo_id
+    else:
+        photo_target = rec.get("premium_plan_photo_path") or rec.get("premium_plan_photo")
 
     if photo_target:
         try:
@@ -130,62 +159,75 @@ async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, s
         except Exception:
             pass
 
-    msg = query_or_msg.message if is_query else query_or_msg
     if not msg:
         return
 
-    chat_id = msg.chat.id if hasattr(msg, "chat") and msg.chat else user_id
-
-    # 1. If existing message already has photo, edit caption in place
-    if is_query and msg and getattr(msg, "photo", None):
-        try:
-            return await msg.edit_caption(
-                caption=text,
-                reply_markup=markup,
-                parse_mode=enums.ParseMode.HTML
-            )
-        except Exception:
-            pass
-
-    # 2. If photo is configured and old message is text or needs new photo
+    # Scenario A: Target has a PHOTO (e.g. UPI view with QR code)
     if photo_target:
-        if is_query and msg:
+        if is_query and msg and getattr(msg, "photo", None):
+            # Already a photo message: edit caption in place!
             try:
-                await msg.delete()
-            except Exception:
-                pass
-        try:
-            return await client.send_photo(
-                chat_id=chat_id,
-                photo=photo_target,
-                caption=text,
-                reply_markup=markup,
-                parse_mode=enums.ParseMode.HTML,
-                has_spoiler=has_spoiler
-            )
-        except Exception:
-            try:
-                return await client.send_photo(
-                    chat_id=chat_id,
-                    photo=photo_target,
+                return await msg.edit_caption(
                     caption=text,
                     reply_markup=markup,
                     parse_mode=enums.ParseMode.HTML
                 )
             except Exception:
                 pass
+        else:
+            # Previous message was text: delete old text message and send photo
+            if is_query and msg:
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
+            try:
+                return await client.send_photo(
+                    chat_id=chat_id,
+                    photo=photo_target,
+                    caption=text,
+                    reply_markup=markup,
+                    parse_mode=enums.ParseMode.HTML,
+                    has_spoiler=has_spoiler
+                )
+            except Exception:
+                try:
+                    return await client.send_photo(
+                        chat_id=chat_id,
+                        photo=photo_target,
+                        caption=text,
+                        reply_markup=markup,
+                        parse_mode=enums.ParseMode.HTML
+                    )
+                except Exception:
+                    pass
 
-    # 3. Fallback: If no photo or photo sending failed, edit or send text message
-    if is_query and msg and not getattr(msg, "photo", None):
-        try:
-            return await msg.edit_text(
+    # Scenario B: Target is TEXT only (e.g. Plan list or UPI without QR code)
+    if is_query and msg:
+        if getattr(msg, "photo", None):
+            # Previous message was a photo: delete old photo and send text message
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+            return await client.send_message(
+                chat_id=chat_id,
                 text=text,
                 reply_markup=markup,
                 parse_mode=enums.ParseMode.HTML,
                 disable_web_page_preview=True
             )
-        except Exception:
-            pass
+        else:
+            # Previous message is text: edit in-place without creating a new message!
+            try:
+                return await msg.edit_text(
+                    text=text,
+                    reply_markup=markup,
+                    parse_mode=enums.ParseMode.HTML,
+                    disable_web_page_preview=True
+                )
+            except Exception:
+                pass
 
     return await client.send_message(
         chat_id=chat_id,
@@ -198,21 +240,25 @@ async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, s
 
 async def handle_user_back_from_premium(client, query, payload: str = ""):
     """Handle user clicking BACK from Premium/UPI view, reliably restoring verification panel or start menu."""
+    user = getattr(query, "from_user", None)
+    user_id = user.id if user else 0
+    msg = getattr(query, "message", None)
+    chat_id = msg.chat.id if (msg and getattr(msg, "chat", None)) else user_id
+    msg_id = getattr(msg, "id", 0)
+
     try:
         await query.answer()
     except Exception:
         pass
+
+    if not _check_and_lock_ui(chat_id, msg_id, "user_back"):
+        return
 
     if not payload and ":" in str(getattr(query, "data", "")):
         try:
             payload = str(query.data).split(":", 1)[1]
         except Exception:
             payload = ""
-
-    user = getattr(query, "from_user", None)
-    user_id = user.id if user else 0
-    msg = getattr(query, "message", None)
-    chat_id = msg.chat.id if (msg and getattr(msg, "chat", None)) else user_id
 
     # 1. Try to get verification panel (clone first, then master)
     v_text, v_markup = None, None
@@ -230,31 +276,47 @@ async def handle_user_back_from_premium(client, query, payload: str = ""):
             pass
 
     if v_text and v_markup:
-        sent = False
+        # If current message is text, EDIT IN-PLACE! Never create a new message.
+        if msg and not getattr(msg, "photo", None):
+            try:
+                return await msg.edit_text(
+                    text=v_text,
+                    reply_markup=v_markup,
+                    parse_mode=enums.ParseMode.HTML,
+                    disable_web_page_preview=True
+                )
+            except Exception:
+                try:
+                    return await msg.edit_text(
+                        text=v_text,
+                        reply_markup=v_markup,
+                        disable_web_page_preview=True
+                    )
+                except Exception:
+                    pass
+
+        # If current message is a photo (e.g. from UPI view), delete old photo & send text message
+        if msg:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
         try:
-            await client.send_message(
+            return await client.send_message(
                 chat_id=chat_id,
                 text=v_text,
                 reply_markup=v_markup,
                 parse_mode=enums.ParseMode.HTML,
                 disable_web_page_preview=True
             )
-            sent = True
         except Exception:
             try:
-                await client.send_message(
+                return await client.send_message(
                     chat_id=chat_id,
                     text=v_text,
                     reply_markup=v_markup,
                     disable_web_page_preview=True
                 )
-                sent = True
-            except Exception:
-                pass
-
-        if sent and msg:
-            try:
-                await msg.delete()
             except Exception:
                 pass
         return
@@ -304,17 +366,28 @@ async def handle_user_back_from_premium(client, query, payload: str = ""):
         except Exception:
             text = f"Welcome {user_mention} to {me_mention}!"
 
+        if msg and not getattr(msg, "photo", None):
+            try:
+                return await msg.edit_text(
+                    text=text,
+                    reply_markup=InlineKeyboardMarkup(buttons),
+                    disable_web_page_preview=True
+                )
+            except Exception:
+                pass
+
+        if msg:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+
         await client.send_message(
             chat_id=chat_id,
             text=text,
             reply_markup=InlineKeyboardMarkup(buttons),
             disable_web_page_preview=True
         )
-        if msg:
-            try:
-                await msg.delete()
-            except Exception:
-                pass
     except Exception:
         pass
 
