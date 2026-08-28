@@ -1,4 +1,5 @@
 # ASH FILE STORE & CLONE MANAGER
+import os
 import asyncio
 import random
 import base64
@@ -369,24 +370,90 @@ def settings_menu():
 async def deliver_file(client, user_id, file_id, protected=False):
     rec = bot_record(client)
     protected = protected or bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
-    msg = await client.send_cached_media(user_id, file_id, protect_content=protected)
-    media = getattr(msg, msg.media.value, None) if msg.media else None
-    size = get_size(media.file_size) if media and getattr(media, "file_size", None) else "Unknown"
-    name = getattr(media, "file_name", None) if media else None or "File"
-    caption_template = rec.get("custom_caption") or CUSTOM_FILE_CAPTION or f"<code>{name}</code>\n<code>Size: {size}</code>"
-    caption = format_caption(caption_template, media=media, source_msg=msg, default_caption=f"<code>{name}</code>\n<code>Size: {size}</code>")
-    try:
-        await msg.edit_caption(caption, parse_mode=enums.ParseMode.HTML)
-    except Exception:
+
+    thumb_to_use = (
+        rec.get("custom_thumb_path")
+        or rec.get("custom_thumbnail")
+        or rec.get("thumbnail")
+    )
+    thumb_path = None
+    if thumb_to_use:
         try:
-            await msg.edit_caption(caption)
+            from settings_modules.thumbnail import get_cached_thumb_path
+            thumb_path = await get_cached_thumb_path(client, thumb_to_use)
         except Exception:
             pass
+
+    invert_cap = bool(rec.get("invert_caption", False))
+    spoiler_anim = bool(rec.get("spoiler_animation", False))
+
     buttons = rec.get("custom_buttons", [])
     rows = [[InlineKeyboardButton(b["text"], url=b["url"])] for b in buttons if b.get("text") and b.get("url")]
-    if rows:
-        try: await msg.edit_reply_markup(InlineKeyboardMarkup(rows))
-        except Exception: pass
+    reply_markup = InlineKeyboardMarkup(rows) if rows else None
+
+    caption_template = rec.get("custom_caption") or CUSTOM_FILE_CAPTION
+    
+    msg = None
+    if thumb_path and os.path.exists(thumb_path):
+        # Try direct send_video
+        kw_v = {
+            "chat_id": user_id,
+            "video": file_id,
+            "thumb": thumb_path,
+            "supports_streaming": True,
+            "protect_content": protected,
+            "reply_markup": reply_markup,
+        }
+        if invert_cap:
+            kw_v["show_caption_above_media"] = True
+        if spoiler_anim:
+            kw_v["has_spoiler"] = True
+        if caption_template:
+            c_text = format_caption(caption_template, default_caption=f"<code>File</code>")
+            kw_v["caption"] = c_text
+            kw_v["parse_mode"] = enums.ParseMode.HTML
+        try:
+            msg = await client.send_video(**kw_v)
+        except Exception:
+            pass
+
+        # Try direct send_document
+        if not msg:
+            kw_d = {
+                "chat_id": user_id,
+                "document": file_id,
+                "thumb": thumb_path,
+                "protect_content": protected,
+                "reply_markup": reply_markup,
+            }
+            if caption_template:
+                c_text = format_caption(caption_template, default_caption=f"<code>File</code>")
+                kw_d["caption"] = c_text
+                kw_d["parse_mode"] = enums.ParseMode.HTML
+            try:
+                msg = await client.send_document(**kw_d)
+            except Exception:
+                pass
+
+    if not msg:
+        msg = await client.send_cached_media(user_id, file_id, protect_content=protected)
+        media = getattr(msg, msg.media.value, None) if msg.media else None
+        size = get_size(media.file_size) if media and getattr(media, "file_size", None) else "Unknown"
+        name = getattr(media, "file_name", None) if media else None or "File"
+        caption_tmpl = rec.get("custom_caption") or CUSTOM_FILE_CAPTION or f"<code>{name}</code>\n<code>Size: {size}</code>"
+        caption = format_caption(caption_tmpl, media=media, source_msg=msg, default_caption=f"<code>{name}</code>\n<code>Size: {size}</code>")
+        try:
+            await msg.edit_caption(caption, parse_mode=enums.ParseMode.HTML)
+        except Exception:
+            try:
+                await msg.edit_caption(caption)
+            except Exception:
+                pass
+        if reply_markup:
+            try:
+                await msg.edit_reply_markup(reply_markup)
+            except Exception:
+                pass
     if rec.get("auto_delete_enabled", False):
         ad_sec = int(rec.get("auto_delete_time") or (int(rec.get("auto_delete_minutes", 15)) * 60))
         time_str = format_auto_delete_time(ad_sec)
