@@ -18,6 +18,11 @@ from settings_modules.thumbnail import get_cached_thumb_path, save_thumbnail_med
 
 _PENDING = {}
 
+def is_single_link_pending(bot_id: int, user_id: int) -> bool:
+    """Return True if user is in an active /getlink workflow."""
+    key = (int(bot_id), int(user_id))
+    return key in _PENDING
+
 def _payload(token: str) -> str:
     return base64.urlsafe_b64encode(f"msg_{token}".encode()).decode().rstrip("=")
 
@@ -60,6 +65,21 @@ def _batch_active(client, user_id):
     except Exception:
         return False
 
+def _choice_markup(has_thumb: bool = False):
+    if has_thumb:
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("CONTINUE OR GENERATE LINK", callback_data="sl_continue")],
+            [InlineKeyboardButton("🖼️ VIEW SINGLE THUMBNAIL", callback_data="sl_view_thumb")],
+            [InlineKeyboardButton("🔄 CHANGE SINGLE THUMBNAIL", callback_data="sl_thumb")],
+            [InlineKeyboardButton("🗑️ REMOVE SINGLE THUMBNAIL", callback_data="sl_del_thumb")],
+            [InlineKeyboardButton("‹ CANCEL", callback_data="sl_cancel")]
+        ])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("CONTINUE OR GENERATE LINK", callback_data="sl_continue")],
+        [InlineKeyboardButton("SET SINGLE FILE THUMBNAIL", callback_data="sl_thumb")],
+        [InlineKeyboardButton("‹ CANCEL", callback_data="sl_cancel")]
+    ])
+
 async def genlink_prompt(client, message):
     if not message.from_user:
         return
@@ -75,11 +95,8 @@ async def genlink_prompt(client, message):
         except Exception:
             pass
 
-    markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("CONTINUE OR GENERATE LINK", callback_data="sl_continue")],
-        [InlineKeyboardButton("SET SINGLE FILE THUMBNAIL", callback_data="sl_thumb")],
-        [InlineKeyboardButton("‹ CANCEL", callback_data="sl_cancel")]
-    ])
+    has_thumb = bool(isinstance(old, dict) and (old.get("thumb") or old.get("thumb_path")))
+    markup = _choice_markup(has_thumb)
 
     sent = await message.reply(
         "⚡ <b>GENERATE SINGLE LINK</b>\n\n"
@@ -87,7 +104,13 @@ async def genlink_prompt(client, message):
         reply_markup=markup,
         disable_web_page_preview=True
     )
-    _PENDING[key] = {"step": "choice", "prompt_id": sent.id, "time": int(time.time())}
+    _PENDING[key] = {
+        "step": "choice",
+        "thumb": old.get("thumb") if isinstance(old, dict) else None,
+        "thumb_path": old.get("thumb_path") if isinstance(old, dict) else None,
+        "prompt_id": sent.id,
+        "time": int(time.time())
+    }
     raise StopPropagation
 
 async def single_link_callback(client, query):
@@ -96,6 +119,7 @@ async def single_link_callback(client, query):
     user_id = query.from_user.id
     data = query.data or ""
     key = (client.me.id, user_id)
+    state = _PENDING.get(key) or {}
 
     if data == "sl_cancel":
         _PENDING.pop(key, None)
@@ -114,10 +138,20 @@ async def single_link_callback(client, query):
             await query.answer()
         except Exception:
             pass
-        _PENDING[key] = {"step": "message", "thumb": None, "thumb_path": None, "prompt_id": query.message.id, "time": int(time.time())}
+        cur_thumb = state.get("thumb")
+        cur_path = state.get("thumb_path")
+        _PENDING[key] = {
+            "step": "message",
+            "thumb": cur_thumb,
+            "thumb_path": cur_path,
+            "prompt_id": query.message.id,
+            "time": int(time.time())
+        }
+        
+        info_note = "\n\n<i>(Custom thumbnail attached)</i>" if (cur_thumb or cur_path) else "\n\n<i>(Bot permanent default thumbnail will be used)</i>"
         try:
             await query.message.edit_text(
-                "⚡ <b>SEND ME YOUR MESSAGE WHICH YOU WANT TO STORE:</b>\n\n"
+                f"⚡ <b>SEND ME YOUR MESSAGE / FILE WHICH YOU WANT TO STORE:</b>{info_note}\n\n"
                 "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ CANCEL", callback_data="sl_cancel")]])
             )
@@ -130,7 +164,13 @@ async def single_link_callback(client, query):
             await query.answer()
         except Exception:
             pass
-        _PENDING[key] = {"step": "thumb", "prompt_id": query.message.id, "time": int(time.time())}
+        _PENDING[key] = {
+            "step": "thumb",
+            "thumb": state.get("thumb"),
+            "thumb_path": state.get("thumb_path"),
+            "prompt_id": query.message.id,
+            "time": int(time.time())
+        }
         try:
             await query.message.edit_text(
                 "🖼️ <b>SEND ME A PICTURE FOR THIS LINK THUMBNAIL.</b>\n\n"
@@ -139,6 +179,77 @@ async def single_link_callback(client, query):
             )
         except Exception:
             pass
+        return
+
+    if data == "sl_view_thumb":
+        cur_thumb = state.get("thumb")
+        cur_path = state.get("thumb_path")
+        if not (cur_thumb or (cur_path and os.path.exists(cur_path))):
+            try:
+                await query.answer("No single custom thumbnail set for this link yet!", show_alert=True)
+            except Exception:
+                pass
+            return
+        
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        
+        back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="sl_back_choice")]])
+        photo_target = cur_thumb or cur_path
+        try:
+            await client.send_photo(
+                chat_id=user_id,
+                photo=photo_target,
+                caption="🖼️ <b>SINGLE FILE THUMBNAIL FOR THIS LINK</b>",
+                reply_markup=back_markup
+            )
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return
+
+    if data == "sl_del_thumb":
+        state["thumb"] = None
+        state["thumb_path"] = None
+        _PENDING[key] = state
+        try:
+            await query.answer("Single File Thumbnail removed!", show_alert=True)
+        except Exception:
+            pass
+        
+        try:
+            await query.message.edit_text(
+                "🗑️ <b>Single File Thumbnail Removed!</b>\n\n"
+                "<b>Now send your file / video to generate link (bot's default permanent thumbnail will be used), or choose an option below:</b>",
+                reply_markup=_choice_markup(has_thumb=False)
+            )
+        except Exception:
+            pass
+        return
+
+    if data == "sl_back_choice":
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        has_thumb = bool(state.get("thumb") or state.get("thumb_path"))
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        sent = await client.send_message(
+            chat_id=user_id,
+            text="⚡ <b>GENERATE SINGLE LINK</b>\n\n<b>Choose an option below to proceed:</b>",
+            reply_markup=_choice_markup(has_thumb)
+        )
+        state["prompt_id"] = sent.id
+        state["step"] = "choice"
+        _PENDING[key] = state
         return
 
 async def capture_single(client, message):
@@ -207,10 +318,19 @@ async def capture_single(client, message):
             except Exception:
                 pass
 
+            markup = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("🖼️ VIEW THUMBNAIL", callback_data="sl_view_thumb"),
+                    InlineKeyboardButton("🗑️ REMOVE THUMBNAIL", callback_data="sl_del_thumb")
+                ],
+                [InlineKeyboardButton("‹ CANCEL", callback_data="sl_cancel")]
+            ])
+
             new_prompt = await message.reply(
                 "✅ <b>THUMBNAIL SAVED FOR THIS LINK!</b>\n\n"
                 "<b>NOW SEND YOUR FILE / VIDEO WHICH YOU WANT TO STORE:</b>\n\n"
-                "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
+                "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>",
+                reply_markup=markup
             )
             _PENDING[key] = {
                 "step": "message",
@@ -333,7 +453,13 @@ async def capture_single(client, message):
         ]
     ])
 
-    note = "\n\n🖼️ <b>Custom thumbnail cover set!</b>" if (thumb or thumb_path) else ""
+    if thumb or thumb_path:
+        note = "\n\n🖼️ <b>Single File Custom Thumbnail applied to this link!</b>"
+    elif rec.get("custom_thumbnail") or rec.get("custom_thumb_path"):
+        note = "\n\n🖼️ <b>Bot Permanent Thumbnail will be applied!</b>"
+    else:
+        note = ""
+
     await message.reply(
         "⚡ <b>HERE IS YOUR LINK :</b>\n\n"
         f"🔗 {link}{note}",
@@ -409,6 +535,7 @@ async def open_single(client, message):
         spoiler_anim = bool(rec.get("spoiler_animation", False))
         caption_to_use = None
 
+        # Hierarchy: 1) Single thumbnail set for this link; 2) Bot's permanent custom thumbnail
         thumb_to_use = (
             record.get("single_thumbnail_path")
             or record.get("single_thumbnail")
@@ -483,7 +610,13 @@ async def open_single(client, message):
                 try:
                     delivered = await client.send_video(**kw)
                 except Exception:
-                    pass
+                    # Retry without custom thumb if send_video thumb param failed
+                    if "thumb" in kw:
+                        kw.pop("thumb", None)
+                        try:
+                            delivered = await client.send_video(**kw)
+                        except Exception:
+                            pass
 
         # 2. Document file
         if not delivered and (media_type == "document" or (src_msg and src_msg.document)):
@@ -505,7 +638,12 @@ async def open_single(client, message):
                 try:
                     delivered = await client.send_document(**kw_d)
                 except Exception:
-                    pass
+                    if "thumb" in kw_d:
+                        kw_d.pop("thumb", None)
+                        try:
+                            delivered = await client.send_document(**kw_d)
+                        except Exception:
+                            pass
 
         # 3. Fallback: Copy message
         if not delivered:

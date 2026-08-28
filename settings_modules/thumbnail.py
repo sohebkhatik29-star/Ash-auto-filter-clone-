@@ -1,9 +1,11 @@
 # 🖼️ CUSTOM THUMBNAIL SETTINGS MODULE
 import os
 import asyncio
-from pyrogram import enums
+from pyrogram import enums, filters
+from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from clone_plugins.sessions import start_user_session, is_user_session_active, clear_user_session
+from plugins.clone import mongo_db
 
 def _thumbs_dir() -> str:
     """Absolute cache directory for thumbnails."""
@@ -76,6 +78,76 @@ async def get_cached_thumb_path(client, thumb_val):
         pass
 
     return None
+
+async def save_permanent_thumbnail(client, user_id, message_or_photo):
+    """Save permanent thumbnail in DB and local cache for client/user."""
+    bot_id = client.me.id if getattr(client, "me", None) else "master"
+    prefix = f"thumb_{user_id}_{bot_id}"
+    local_path = await save_thumbnail_media(client, message_or_photo, user_id, prefix=prefix)
+    
+    photo_id = None
+    if hasattr(message_or_photo, "photo") and message_or_photo.photo:
+        photo_id = message_or_photo.photo.file_id
+    elif hasattr(message_or_photo, "file_id"):
+        photo_id = message_or_photo.file_id
+
+    if mongo_db is not None:
+        try:
+            # Update clone bot doc if this is a clone bot
+            if getattr(client, "me", None) and client.me.id:
+                mongo_db.bots.update_one(
+                    {"bot_id": client.me.id},
+                    {"$set": {"custom_thumbnail": photo_id, "custom_thumb_path": local_path}},
+                    upsert=False
+                )
+            # Also update user doc and master settings doc
+            mongo_db.users.update_one(
+                {"id": int(user_id)},
+                {"$set": {"custom_thumbnail": photo_id, "custom_thumb_path": local_path}},
+                upsert=True
+            )
+            from config import ADMINS
+            if int(user_id) in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]:
+                mongo_db.master_settings.update_one(
+                    {"type": "master_config"},
+                    {"$set": {"custom_thumbnail": photo_id, "custom_thumb_path": local_path}},
+                    upsert=True
+                )
+        except Exception:
+            pass
+
+    return photo_id, local_path
+
+async def delete_permanent_thumbnail(client, user_id):
+    """Delete permanent thumbnail from DB and local cache."""
+    bot_id = client.me.id if getattr(client, "me", None) else "master"
+    clean_id = f"thumb_{user_id}_{bot_id}"
+    p = os.path.join(_thumbs_dir(), f"{clean_id}.jpg")
+    if os.path.exists(p):
+        try:
+            os.remove(p)
+        except Exception:
+            pass
+
+    if mongo_db is not None:
+        try:
+            if getattr(client, "me", None) and client.me.id:
+                mongo_db.bots.update_one(
+                    {"bot_id": client.me.id},
+                    {"$set": {"custom_thumbnail": None, "custom_thumb_path": None}}
+                )
+            mongo_db.users.update_one(
+                {"id": int(user_id)},
+                {"$set": {"custom_thumbnail": None, "custom_thumb_path": None}}
+            )
+            from config import ADMINS
+            if int(user_id) in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]:
+                mongo_db.master_settings.update_one(
+                    {"type": "master_config"},
+                    {"$set": {"custom_thumbnail": None, "custom_thumb_path": None}}
+                )
+        except Exception:
+            pass
 
 def thumbnail_menu_text(has_thumb: bool) -> str:
     status = "<b>ALREADY ADDED PICTURE...</b>" if has_thumb else "<b>YOU DIDN'T ADD ANY PICTURE...</b>"
@@ -162,16 +234,10 @@ async def handle_thumbnail_callbacks(client, query, data, user_id, r, save_fn, c
 
     # 3. Delete Thumbnail
     if data_str in ("m_del_thumb", "cset_del_thumb") or data_str.startswith(("m_del_thumb:", "cset_del_thumb:")):
+        await delete_permanent_thumbnail(client, user_id)
         save_fn(custom_thumbnail=None, custom_thumb_path=None)
         r["custom_thumbnail"] = None
         r["custom_thumb_path"] = None
-        clean_id = f"thumb_{user_id}_{target_bid or 'master'}"
-        p = os.path.join(_thumbs_dir(), f"{clean_id}.jpg")
-        if os.path.exists(p):
-            try:
-                os.remove(p)
-            except Exception:
-                pass
         try:
             await query.answer("Thumbnail deleted successfully!")
         except Exception:
@@ -227,10 +293,7 @@ async def handle_thumbnail_callbacks(client, query, data, user_id, r, save_fn, c
                 return
 
             if ans.photo:
-                photo_id = ans.photo.file_id
-                p_prefix = f"thumb_{user_id}_{target_bid or 'master'}"
-                local_p = await save_thumbnail_media(client, ans, user_id, prefix=p_prefix)
-
+                photo_id, local_p = await save_permanent_thumbnail(client, user_id, ans)
                 save_fn(custom_thumbnail=photo_id, custom_thumb_path=local_p)
                 r["custom_thumbnail"] = photo_id
                 r["custom_thumb_path"] = local_p
@@ -265,3 +328,160 @@ async def handle_thumbnail_callbacks(client, query, data, user_id, r, save_fn, c
 
         asyncio.create_task(_thumb_worker())
         return
+
+
+# ========================================================================= #
+# DIRECT PHOTO THUMBNAIL HANDLER (Video Cover Seva Style) & COMMANDS        #
+# ========================================================================= #
+
+async def handle_direct_photo_thumbnail(client, message):
+    """When a user sends a photo directly in private chat, save as custom thumbnail."""
+    if not message.from_user:
+        return
+    user_id = message.from_user.id
+
+    # 1. Do NOT capture if user has an active prompt session (e.g. caption, QR, token verify, fsub, etc.)
+    try:
+        from clone_plugins.sessions import _USER_SESSIONS
+        if int(user_id) in _USER_SESSIONS:
+            return
+    except Exception:
+        pass
+
+    # 2. Do NOT capture if client is listening for input from this user
+    for attr in ("_listeners", "listeners"):
+        try:
+            d = getattr(client, attr, None)
+            if isinstance(d, dict) and (user_id in d or message.chat.id in d):
+                return
+        except Exception:
+            pass
+
+    # 3. Do NOT capture if in getlink pending session or batch session
+    try:
+        from link_modules.single_link import is_single_link_pending
+        if is_single_link_pending(client.me.id, user_id):
+            return
+    except Exception:
+        pass
+    try:
+        from link_modules.channel_batch import is_channel_batch_active
+        if is_channel_batch_active(client.me.id, user_id):
+            return
+    except Exception:
+        pass
+    try:
+        from link_modules.special_link import is_special_link_active
+        if is_special_link_active(client.me.id, user_id):
+            return
+    except Exception:
+        pass
+
+    # Save photo directly as user / bot permanent custom thumbnail
+    photo_id, local_p = await save_permanent_thumbnail(client, user_id, message)
+    
+    markup = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🖼️ VIEW THUMBNAIL", callback_data="cset_view_thumb"),
+            InlineKeyboardButton("🗑️ DELETE THUMBNAIL", callback_data="cset_del_thumb")
+        ]
+    ])
+
+    await message.reply(
+        "✅ <b>Thumbnail Updated!</b>\n\n"
+        "<b>Now send any video to apply this cover.</b>",
+        reply_markup=markup,
+        parse_mode=enums.ParseMode.HTML
+    )
+
+
+async def thumb_commands_handler(client, message):
+    """Handle /setthumb, /delthumb, /viewthumb commands in private chat."""
+    if not message.from_user:
+        return
+    user_id = message.from_user.id
+    cmd = (message.command[0] if message.command else "").lower()
+
+    if cmd in ("setthumb", "set_thumb", "thumb"):
+        replied = message.reply_to_message
+        if replied and replied.photo:
+            photo_id, local_p = await save_permanent_thumbnail(client, user_id, replied)
+            markup = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("🖼️ VIEW THUMBNAIL", callback_data="cset_view_thumb"),
+                    InlineKeyboardButton("🗑️ DELETE THUMBNAIL", callback_data="cset_del_thumb")
+                ]
+            ])
+            return await message.reply(
+                "✅ <b>Thumbnail Updated!</b>\n\n"
+                "<b>Now send any video to apply this cover.</b>",
+                reply_markup=markup,
+                parse_mode=enums.ParseMode.HTML
+            )
+        else:
+            sess_token = start_user_session(user_id, "cmd_set_thumb")
+            prompt_msg = await message.reply(
+                "🖼️ <b>Send me a picture to set as your custom thumbnail.</b>\n\n"
+                "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>",
+                parse_mode=enums.ParseMode.HTML
+            )
+            try:
+                ans = await client.listen(chat_id=user_id, timeout=120)
+                if not is_user_session_active(user_id, sess_token):
+                    return
+                clear_user_session(user_id)
+                txt = (ans.text or ans.caption or "").strip()
+                if txt.lower() == "/cancel":
+                    try: await ans.delete()
+                    except Exception: pass
+                    try: await prompt_msg.delete()
+                    except Exception: pass
+                    return await message.reply("❌ Cancelled.")
+                if ans.photo:
+                    photo_id, local_p = await save_permanent_thumbnail(client, user_id, ans)
+                    markup = InlineKeyboardMarkup([
+                        [
+                            InlineKeyboardButton("🖼️ VIEW THUMBNAIL", callback_data="cset_view_thumb"),
+                            InlineKeyboardButton("🗑️ DELETE THUMBNAIL", callback_data="cset_del_thumb")
+                        ]
+                    ])
+                    return await message.reply(
+                        "✅ <b>Thumbnail Updated!</b>\n\n"
+                        "<b>Now send any video to apply this cover.</b>",
+                        reply_markup=markup,
+                        parse_mode=enums.ParseMode.HTML
+                    )
+                else:
+                    return await message.reply("⚠️ <b>Please send a valid photo picture.</b>")
+            except Exception:
+                clear_user_session(user_id)
+                return
+
+    if cmd in ("delthumb", "del_thumb", "removethumb"):
+        await delete_permanent_thumbnail(client, user_id)
+        return await message.reply("🗑️ <b>Custom Thumbnail Deleted Successfully!</b>", parse_mode=enums.ParseMode.HTML)
+
+    if cmd in ("viewthumb", "view_thumb", "showthumb"):
+        bot_id = client.me.id if getattr(client, "me", None) else "master"
+        clean_id = f"thumb_{user_id}_{bot_id}"
+        p = os.path.join(_thumbs_dir(), f"{clean_id}.jpg")
+        
+        doc = mongo_db.users.find_one({"id": int(user_id)}) if mongo_db is not None else None
+        photo_id = doc.get("custom_thumbnail") if doc else None
+        
+        sent = False
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🗑️ DELETE THUMBNAIL", callback_data="cset_del_thumb")]])
+        if photo_id:
+            try:
+                await message.reply_photo(photo=photo_id, caption="🖼️ <b>Your Current Custom Thumbnail</b>", reply_markup=markup)
+                sent = True
+            except Exception:
+                sent = False
+        if not sent and os.path.exists(p):
+            try:
+                await message.reply_photo(photo=p, caption="🖼️ <b>Your Current Custom Thumbnail</b>", reply_markup=markup)
+                sent = True
+            except Exception:
+                sent = False
+        if not sent:
+            return await message.reply("⚠️ <b>You haven't set any custom thumbnail yet!</b>")
