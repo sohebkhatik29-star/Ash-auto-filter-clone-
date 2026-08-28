@@ -631,14 +631,35 @@ async def start(client, message):
 
             reply_markup = InlineKeyboardMarkup(button) if button else None
             del_msg = None
-            attempts = []
-            base_kw = {
-                "chat_id": message.from_user.id,
-                "caption": f_caption,
-                "parse_mode": enums.ParseMode.HTML,
-                "reply_markup": reply_markup,
-                "protect_content": user_protect,
-            }
+
+            thumb_to_use = (user_info.get("custom_thumbnail") or user_info.get("custom_thumb_path") or master_cfg.get("custom_thumbnail") or master_cfg.get("custom_thumb_path")) if user_info else (master_cfg.get("custom_thumbnail") or master_cfg.get("custom_thumb_path"))
+            if thumb_to_use and (msg.video or msg.document):
+                try:
+                    from settings_modules.thumbnail import deliver_media_with_custom_thumb
+                    del_msg = await deliver_media_with_custom_thumb(
+                        client=client,
+                        chat_id=message.from_user.id,
+                        file_id=(msg.video.file_id if msg.video else msg.document.file_id),
+                        media_type="video" if msg.video else "document",
+                        thumb_val=thumb_to_use,
+                        caption=f_caption,
+                        reply_markup=reply_markup,
+                        protect_content=user_protect,
+                        invert_caption=invert_cap,
+                        has_spoiler=spoiler_anim,
+                    )
+                except Exception:
+                    pass
+
+            if not del_msg:
+                attempts = []
+                base_kw = {
+                    "chat_id": message.from_user.id,
+                    "caption": f_caption,
+                    "parse_mode": enums.ParseMode.HTML,
+                    "reply_markup": reply_markup,
+                    "protect_content": user_protect,
+                }
 
             kw1 = dict(base_kw)
             if invert_cap:

@@ -376,13 +376,6 @@ async def deliver_file(client, user_id, file_id, protected=False):
         or rec.get("custom_thumbnail")
         or rec.get("thumbnail")
     )
-    thumb_path = None
-    if thumb_to_use:
-        try:
-            from settings_modules.thumbnail import get_cached_thumb_path
-            thumb_path = await get_cached_thumb_path(client, thumb_to_use)
-        except Exception:
-            pass
 
     invert_cap = bool(rec.get("invert_caption", False))
     spoiler_anim = bool(rec.get("spoiler_animation", False))
@@ -392,48 +385,26 @@ async def deliver_file(client, user_id, file_id, protected=False):
     reply_markup = InlineKeyboardMarkup(rows) if rows else None
 
     caption_template = rec.get("custom_caption") or CUSTOM_FILE_CAPTION
+    formatted_caption = format_caption(caption_template, default_caption=f"<code>File</code>") if caption_template else None
     
     msg = None
-    if thumb_path and os.path.exists(thumb_path):
-        # Try direct send_video
-        kw_v = {
-            "chat_id": user_id,
-            "video": file_id,
-            "thumb": thumb_path,
-            "supports_streaming": True,
-            "protect_content": protected,
-            "reply_markup": reply_markup,
-        }
-        if invert_cap:
-            kw_v["show_caption_above_media"] = True
-        if spoiler_anim:
-            kw_v["has_spoiler"] = True
-        if caption_template:
-            c_text = format_caption(caption_template, default_caption=f"<code>File</code>")
-            kw_v["caption"] = c_text
-            kw_v["parse_mode"] = enums.ParseMode.HTML
+    if thumb_to_use:
         try:
-            msg = await client.send_video(**kw_v)
+            from settings_modules.thumbnail import deliver_media_with_custom_thumb
+            msg = await deliver_media_with_custom_thumb(
+                client=client,
+                chat_id=user_id,
+                file_id=file_id,
+                media_type="video",
+                thumb_val=thumb_to_use,
+                caption=formatted_caption,
+                reply_markup=reply_markup,
+                protect_content=protected,
+                invert_caption=invert_cap,
+                has_spoiler=spoiler_anim,
+            )
         except Exception:
             pass
-
-        # Try direct send_document
-        if not msg:
-            kw_d = {
-                "chat_id": user_id,
-                "document": file_id,
-                "thumb": thumb_path,
-                "protect_content": protected,
-                "reply_markup": reply_markup,
-            }
-            if caption_template:
-                c_text = format_caption(caption_template, default_caption=f"<code>File</code>")
-                kw_d["caption"] = c_text
-                kw_d["parse_mode"] = enums.ParseMode.HTML
-            try:
-                msg = await client.send_document(**kw_d)
-            except Exception:
-                pass
 
     if not msg:
         msg = await client.send_cached_media(user_id, file_id, protect_content=protected)

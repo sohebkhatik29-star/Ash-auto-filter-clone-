@@ -579,8 +579,41 @@ async def open_single(client, message):
 
         delivered = None
 
-        # 1. Direct send_video if video file
-        if media_type == "video" or (src_msg and src_msg.video):
+        target_file_id = file_id or (
+            src_msg.video.file_id if src_msg and src_msg.video else (
+                src_msg.document.file_id if src_msg and src_msg.document else None
+            )
+        )
+        detected_media_type = media_type or (
+            "video" if (src_msg and src_msg.video) else (
+                "document" if (src_msg and src_msg.document) else "video"
+            )
+        )
+
+        if target_file_id and thumb_to_use:
+            from settings_modules.thumbnail import deliver_media_with_custom_thumb
+            try:
+                delivered = await deliver_media_with_custom_thumb(
+                    client=client,
+                    chat_id=message.from_user.id,
+                    file_id=target_file_id,
+                    media_type=detected_media_type,
+                    thumb_val=thumb_to_use,
+                    caption=caption_to_use,
+                    reply_markup=markup,
+                    protect_content=is_protect,
+                    invert_caption=invert_cap,
+                    has_spoiler=spoiler_anim,
+                    duration=duration or (src_msg.video.duration if src_msg and src_msg.video else None),
+                    width=width or (src_msg.video.width if src_msg and src_msg.video else None),
+                    height=height or (src_msg.video.height if src_msg and src_msg.video else None),
+                    file_name=file_name or (src_msg.video.file_name if src_msg and src_msg.video else (src_msg.document.file_name if src_msg and src_msg.document else None)),
+                )
+            except Exception:
+                pass
+
+        # 1. Direct send_video if video file and not delivered yet
+        if not delivered and (media_type == "video" or (src_msg and src_msg.video)):
             vid_id = file_id or (src_msg.video.file_id if src_msg and src_msg.video else None)
             if vid_id:
                 kw = {
