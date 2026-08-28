@@ -210,15 +210,21 @@ async def deliver_media_with_custom_thumb(
         elif isinstance(reply_markup, dict):
             markup_json = json.dumps(reply_markup)
 
-    # 3. Deliver via Bot API HTTP if thumb exists
-    if bot_token and thumb_path and os.path.exists(thumb_path) and os.path.getsize(thumb_path) > 0:
+    # 3. Resolve direct Telegram photo file_id vs local thumbnail path
+    direct_photo_id = None
+    cands = thumb_val if isinstance(thumb_val, (list, tuple, set)) else [thumb_val]
+    for c in cands:
+        if isinstance(c, str) and c and "/" not in c and "\\" not in c:
+            direct_photo_id = c
+            break
+
+    # 4. Deliver via Bot API HTTP (Instant Server-Side Cover Replacement)
+    if bot_token and (thumb_path or direct_photo_id):
         # A. Try sendVideo
         v_fields = {
             "chat_id": str(chat_id),
             "video": str(file_id),
             "supports_streaming": "true",
-            "thumbnail": "attach://thumb",
-            "cover": "attach://cover",
         }
         if caption:
             v_fields["caption"] = caption
@@ -238,10 +244,15 @@ async def deliver_media_with_custom_thumb(
         if height:
             v_fields["height"] = str(height)
 
-        v_files = {
-            "thumb": thumb_path,
-            "cover": thumb_path,
-        }
+        v_files = None
+        if thumb_path and os.path.exists(thumb_path) and os.path.getsize(thumb_path) > 0:
+            v_fields["thumbnail"] = "attach://thumb"
+            v_fields["cover"] = "attach://cover"
+            v_files = {"thumb": thumb_path, "cover": thumb_path}
+        elif direct_photo_id:
+            v_fields["thumbnail"] = str(direct_photo_id)
+            v_fields["cover"] = str(direct_photo_id)
+
         try:
             res = await post_bot_api(bot_token, "sendVideo", v_fields, v_files)
             if isinstance(res, dict) and res.get("ok") and "result" in res:
@@ -257,7 +268,6 @@ async def deliver_media_with_custom_thumb(
         d_fields = {
             "chat_id": str(chat_id),
             "document": str(file_id),
-            "thumbnail": "attach://thumb",
         }
         if caption:
             d_fields["caption"] = caption
@@ -266,7 +276,14 @@ async def deliver_media_with_custom_thumb(
             d_fields["reply_markup"] = markup_json
         if protect_content:
             d_fields["protect_content"] = "true"
-        d_files = {"thumb": thumb_path}
+
+        d_files = None
+        if thumb_path and os.path.exists(thumb_path) and os.path.getsize(thumb_path) > 0:
+            d_fields["thumbnail"] = "attach://thumb"
+            d_files = {"thumb": thumb_path}
+        elif direct_photo_id:
+            d_fields["thumbnail"] = str(direct_photo_id)
+
         try:
             res_d = await post_bot_api(bot_token, "sendDocument", d_fields, d_files)
             if isinstance(res_d, dict) and res_d.get("ok") and "result" in res_d:
