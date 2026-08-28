@@ -96,31 +96,39 @@ async def get_cached_thumb_path(client, thumb_val):
     """Return an absolute local file path ready for send_video / send_document thumb parameter."""
     if not thumb_val:
         return None
-    # 1. Already a local file path
-    if isinstance(thumb_val, str) and os.path.exists(thumb_val) and os.path.getsize(thumb_val) > 0:
-        return optimize_image(os.path.abspath(thumb_val))
 
-    clean_id = "".join(c for c in str(thumb_val)[-24:] if c.isalnum()) or "thumb"
-    path = os.path.join(_thumbs_dir(), f"{clean_id}.jpg")
-    if os.path.exists(path) and os.path.getsize(path) > 0:
-        return optimize_image(path)
+    candidates = thumb_val if isinstance(thumb_val, (list, tuple, set)) else [thumb_val]
+    for cand in candidates:
+        if not cand:
+            continue
+        # 1. Already a valid local file path on disk
+        if isinstance(cand, str) and ("/" in cand or "\\" in cand):
+            if os.path.exists(cand) and os.path.getsize(cand) > 0:
+                return optimize_image(os.path.abspath(cand))
+            # If path does not exist on disk, do NOT try to download a path string as a Telegram file_id
+            continue
 
-    # 2. Download via current client (file_id of the photo)
-    try:
-        downloaded = await client.download_media(thumb_val, file_name=path)
-        if downloaded and os.path.exists(downloaded) and os.path.getsize(downloaded) > 0:
-            return optimize_image(downloaded)
-    except Exception:
-        pass
+        clean_id = "".join(c for c in str(cand)[-24:] if c.isalnum()) or f"thumb_{int(time.time())}"
+        path = os.path.join(_thumbs_dir(), f"{clean_id}.jpg")
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            return optimize_image(path)
 
-    # 3. Fallback to StreamBot if available
-    try:
-        from AshCore.bot import StreamBot
-        downloaded = await StreamBot.download_media(thumb_val, file_name=path)
-        if downloaded and os.path.exists(downloaded) and os.path.getsize(downloaded) > 0:
-            return optimize_image(downloaded)
-    except Exception:
-        pass
+        # 2. Download via current client (file_id of the photo or Message/Photo object)
+        try:
+            downloaded = await client.download_media(cand, file_name=path)
+            if downloaded and os.path.exists(downloaded) and os.path.getsize(downloaded) > 0:
+                return optimize_image(downloaded)
+        except Exception:
+            pass
+
+        # 3. Fallback to StreamBot if available
+        try:
+            from AshCore.bot import StreamBot
+            downloaded = await StreamBot.download_media(cand, file_name=path)
+            if downloaded and os.path.exists(downloaded) and os.path.getsize(downloaded) > 0:
+                return optimize_image(downloaded)
+        except Exception:
+            pass
 
     return None
 
@@ -151,15 +159,24 @@ async def deliver_media_with_custom_thumb(
     bot_token = None
     if getattr(client, "bot_token", None):
         bot_token = client.bot_token
+    elif getattr(client, "token", None):
+        bot_token = client.token
     elif getattr(client, "_token", None):
         bot_token = client._token
-    if not bot_token:
+    elif getattr(client, "name", None) and ":" in str(client.name):
+        bot_token = str(client.name)
+
+    if not bot_token and mongo_db is not None:
         try:
             b_id = getattr(client, "me", None) and client.me.id
-            if b_id and mongo_db is not None:
+            if b_id:
                 rec = mongo_db.bots.find_one({"bot_id": int(b_id)})
                 if rec:
                     bot_token = rec.get("token") or rec.get("bot_token")
+            if not bot_token and getattr(client, "me", None) and client.me.username:
+                rec_u = mongo_db.bots.find_one({"username": client.me.username})
+                if rec_u:
+                    bot_token = rec_u.get("token") or rec_u.get("bot_token")
         except Exception:
             pass
     if not bot_token:

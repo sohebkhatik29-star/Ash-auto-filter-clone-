@@ -536,18 +536,20 @@ async def open_single(client, message):
         caption_to_use = None
 
         # Hierarchy: 1) Single thumbnail set for this link; 2) Bot's permanent custom thumbnail
-        thumb_to_use = (
-            record.get("single_thumbnail_path")
-            or record.get("single_thumbnail")
-            or record.get("custom_thumb_path")
-            or record.get("custom_thumbnail")
-            or rec.get("custom_thumb_path")
-            or rec.get("custom_thumbnail")
-        )
+        thumb_candidates = [
+            record.get("single_thumbnail"),
+            record.get("single_thumbnail_path"),
+            record.get("custom_thumbnail"),
+            record.get("custom_thumb_path"),
+            rec.get("custom_thumbnail"),
+            rec.get("custom_thumb_path"),
+        ]
+        thumb_candidates = [c for c in thumb_candidates if c]
+        thumb_to_use = thumb_candidates[0] if thumb_candidates else None
 
         thumb_path = None
-        if thumb_to_use:
-            thumb_path = await get_cached_thumb_path(client, thumb_to_use)
+        if thumb_candidates:
+            thumb_path = await get_cached_thumb_path(client, thumb_candidates)
 
         file_id = record.get("file_id")
         media_type = record.get("media_type")

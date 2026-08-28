@@ -236,7 +236,7 @@ async def callbacks(client, query):
     # 7. Thumbnail
     if (
         data in ("custom_thumbnail", "cset_thumbnail", "m_set_thumb", "m_del_thumb", "m_view_thumb", "cset_set_thumb", "cset_del_thumb", "cset_view_thumb")
-        or data.startswith(("custom_thumbnail:", "m_set_thumb:", "m_del_thumb:", "m_view_thumb:", "cset_"))
+        or data.startswith(("custom_thumbnail:", "m_set_thumb:", "m_del_thumb:", "m_view_thumb:", "cset_thumb", "cset_set_thumb", "cset_del_thumb", "cset_view_thumb"))
     ):
         return await handle_thumbnail_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 

@@ -371,11 +371,13 @@ async def deliver_file(client, user_id, file_id, protected=False):
     rec = bot_record(client)
     protected = protected or bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
 
-    thumb_to_use = (
-        rec.get("custom_thumb_path")
-        or rec.get("custom_thumbnail")
-        or rec.get("thumbnail")
-    )
+    thumb_candidates = [
+        rec.get("custom_thumbnail"),
+        rec.get("custom_thumb_path"),
+        rec.get("thumbnail"),
+    ]
+    thumb_candidates = [c for c in thumb_candidates if c]
+    thumb_to_use = thumb_candidates if thumb_candidates else None
 
     invert_cap = bool(rec.get("invert_caption", False))
     spoiler_anim = bool(rec.get("spoiler_animation", False))
