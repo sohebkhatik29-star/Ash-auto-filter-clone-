@@ -50,7 +50,7 @@ def _post_multipart_sync(url: str, fields: dict, files: dict = None):
                 with open(filepath, 'rb') as f:
                     file_bytes = f.read()
                 mime = mimetypes.guess_type(filepath)[0] or 'image/jpeg'
-                body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; filename="thumb.jpg"\r\nContent-Type: {mime}\r\n\r\n'.encode('utf-8'))
+                body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; filename="{name}.jpg"\r\nContent-Type: {mime}\r\n\r\n'.encode('utf-8'))
                 body.extend(file_bytes)
                 body.extend(b'\r\n')
             except Exception:
@@ -200,6 +200,8 @@ async def deliver_media_with_custom_thumb(
             "chat_id": str(chat_id),
             "video": str(file_id),
             "supports_streaming": "true",
+            "thumbnail": "attach://thumb",
+            "cover": "attach://cover",
         }
         if caption:
             v_fields["caption"] = caption
@@ -220,7 +222,7 @@ async def deliver_media_with_custom_thumb(
             v_fields["height"] = str(height)
 
         v_files = {
-            "thumbnail": thumb_path,
+            "thumb": thumb_path,
             "cover": thumb_path,
         }
         try:
@@ -238,6 +240,7 @@ async def deliver_media_with_custom_thumb(
         d_fields = {
             "chat_id": str(chat_id),
             "document": str(file_id),
+            "thumbnail": "attach://thumb",
         }
         if caption:
             d_fields["caption"] = caption
@@ -246,7 +249,7 @@ async def deliver_media_with_custom_thumb(
             d_fields["reply_markup"] = markup_json
         if protect_content:
             d_fields["protect_content"] = "true"
-        d_files = {"thumbnail": thumb_path}
+        d_files = {"thumb": thumb_path}
         try:
             res_d = await post_bot_api(bot_token, "sendDocument", d_fields, d_files)
             if isinstance(res_d, dict) and res_d.get("ok") and "result" in res_d:
