@@ -195,6 +195,130 @@ async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, s
         disable_web_page_preview=True
     )
 
+
+async def handle_user_back_from_premium(client, query, payload: str = ""):
+    """Handle user clicking BACK from Premium/UPI view, reliably restoring verification panel or start menu."""
+    try:
+        await query.answer()
+    except Exception:
+        pass
+
+    if not payload and ":" in str(getattr(query, "data", "")):
+        try:
+            payload = str(query.data).split(":", 1)[1]
+        except Exception:
+            payload = ""
+
+    user = getattr(query, "from_user", None)
+    user_id = user.id if user else 0
+    msg = getattr(query, "message", None)
+    chat_id = msg.chat.id if (msg and getattr(msg, "chat", None)) else user_id
+
+    # 1. Try to get verification panel (clone first, then master)
+    v_text, v_markup = None, None
+    try:
+        from clone_plugins.commands import access_verification
+        v_text, v_markup = await access_verification(client, user_id, payload)
+    except Exception:
+        pass
+
+    if not v_markup:
+        try:
+            from plugins.commands import check_master_verification
+            v_text, v_markup = await check_master_verification(client, user_id, payload)
+        except Exception:
+            pass
+
+    if v_text and v_markup:
+        sent = False
+        try:
+            await client.send_message(
+                chat_id=chat_id,
+                text=v_text,
+                reply_markup=v_markup,
+                parse_mode=enums.ParseMode.HTML,
+                disable_web_page_preview=True
+            )
+            sent = True
+        except Exception:
+            try:
+                await client.send_message(
+                    chat_id=chat_id,
+                    text=v_text,
+                    reply_markup=v_markup,
+                    disable_web_page_preview=True
+                )
+                sent = True
+            except Exception:
+                pass
+
+        if sent and msg:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+        return
+
+    # 2. If no verification is pending (e.g. user already verified or no verification needed):
+    if payload:
+        try:
+            from clone_plugins.commands import start as clone_start
+            class PseudoMsg:
+                def __init__(self):
+                    self.from_user = user
+                    self.chat = msg.chat if msg else user
+                    self.command = ["start", payload]
+                    self.text = f"/start {payload}"
+                    self.id = getattr(msg, "id", 0)
+                async def reply(self, *args, **kwargs):
+                    return await client.send_message(chat_id, *args, **kwargs)
+                async def reply_text(self, *args, **kwargs):
+                    return await client.send_message(chat_id, *args, **kwargs)
+                async def reply_photo(self, *args, **kwargs):
+                    return await client.send_photo(chat_id, *args, **kwargs)
+            p_msg = PseudoMsg()
+            await clone_start(client, p_msg)
+            if msg:
+                try: await msg.delete()
+                except Exception: pass
+            return
+        except Exception:
+            pass
+
+    # 3. Fallback: Show start menu
+    try:
+        me = getattr(client, "me", None) or (await client.get_me())
+        me_mention = me.mention if me else "Bot"
+        user_mention = user.mention if user else "User"
+        from clone_plugins import script
+        from config import BOT_USERNAME, UPDATE_CHANNEL, tg_link
+
+        buttons = [
+            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY OWN BOT", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
+            [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
+            [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
+        ]
+        start_txt = getattr(script, "CLONE_START_TXT", getattr(script, "START_TXT", "Welcome!"))
+        try:
+            text = start_txt.format(user_mention, me_mention)
+        except Exception:
+            text = f"Welcome {user_mention} to {me_mention}!"
+
+        await client.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=InlineKeyboardMarkup(buttons),
+            disable_web_page_preview=True
+        )
+        if msg:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 # ----------------- ADMIN SETTINGS HANDLER ----------------- #
 
 async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=None):

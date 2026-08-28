@@ -68,6 +68,13 @@ async def get_master_config(client):
 
 
 async def check_master_verification(client, user_id, original_payload):
+    try:
+        me = client.me or (await client.get_me())
+        bot_id = me.id if me else 0
+    except Exception:
+        me = getattr(client, "me", None)
+        bot_id = me.id if me else 0
+
     master_cfg = await get_master_config(client)
     if not master_cfg:
         return None, None
@@ -101,7 +108,7 @@ async def check_master_verification(client, user_id, original_payload):
     total_steps = len(active_slots)
 
     for idx, (s_num, s_cfg, s_site, s_api) in enumerate(active_slots):
-        if not check_user_verified(user_id, client.me.id, slot=s_num):
+        if not check_user_verified(user_id, bot_id, slot=s_num):
             pending_slot_num = s_num
             pending_slot_cfg = s_cfg
             site_to_use = s_site
@@ -116,9 +123,9 @@ async def check_master_verification(client, user_id, original_payload):
     mins = int(pending_slot_cfg.get("time", pending_slot_cfg.get("time_minutes", 1440)))
     time_str = format_time_minutes(mins)
 
-    token = create_verify_token(user_id, client.me.id, original_payload, slot=pending_slot_num)
-    me = client.me or (await client.get_me())
-    raw_url = f"https://telegram.me/{me.username}?start=verify_{token}"
+    token = create_verify_token(user_id, bot_id, original_payload, slot=pending_slot_num)
+    bot_username = me.username if me else ""
+    raw_url = f"https://telegram.me/{bot_username}?start=verify_{token}"
     try:
         short_url = await get_short_link({"base_site": site_to_use, "shortener_api": api_to_use}, raw_url)
     except Exception:
@@ -126,10 +133,11 @@ async def check_master_verification(client, user_id, original_payload):
     if not short_url:
         short_url = raw_url
 
+    import html
     first_name = "User"
     try:
         u = await client.get_users(user_id)
-        first_name = u.first_name or "User"
+        first_name = html.escape(u.first_name or "User")
     except Exception:
         pass
 
@@ -855,44 +863,8 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
     elif data.startswith("c_prem_user_back"):
         payload = data.split(":", 1)[1] if ":" in data else ""
-        try:
-            await query.answer()
-        except Exception:
-            pass
-        v_text, v_markup = await check_master_verification(client, query.from_user.id, payload)
-        if v_text and v_markup:
-            if query.message and query.message.photo:
-                try:
-                    await query.message.delete()
-                except Exception:
-                    pass
-                return await client.send_message(query.from_user.id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
-            elif query.message:
-                try:
-                    return await query.message.edit_text(v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
-                except Exception:
-                    pass
-            return await client.send_message(query.from_user.id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
-
-        if query.message and query.message.photo:
-            try:
-                await query.message.delete()
-            except Exception:
-                pass
-            buttons = [
-                [InlineKeyboardButton("⚙️ SETTINGS", callback_data="master_settings"), InlineKeyboardButton("🤖 MY CLONE BOT", callback_data="my_clones")],
-                [InlineKeyboardButton("💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ", url="https://www.youtube.com/@tech_as_0")],
-                [InlineKeyboardButton("ℹ️ ʜᴇʟᴘ", callback_data="help"), InlineKeyboardButton("😊 ᴀʙᴏᴜᴛ", callback_data="about")]
-            ]
-            me = (await client.get_me()).mention
-            return await client.send_message(
-                chat_id=query.from_user.id,
-                text=script.START_TXT.format(query.from_user.mention, me),
-                reply_markup=InlineKeyboardMarkup(buttons),
-                disable_web_page_preview=True
-            )
-        else:
-            return await callbacks(client, type("Q", (), {"data": "start", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
+        from settings_modules.premium_plan import handle_user_back_from_premium
+        return await handle_user_back_from_premium(client, query, payload=payload)
 
     elif data == "about":
         buttons = [[

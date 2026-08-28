@@ -185,48 +185,8 @@ async def callbacks(client, query):
 
     if data.startswith("c_prem_user_back"):
         payload = data.split(":", 1)[1] if ":" in data else ""
-        try:
-            await query.answer()
-        except Exception:
-            pass
-        from clone_plugins.commands import access_verification
-        v_text, v_markup = await access_verification(client, user_id, payload)
-        if v_text and v_markup:
-            if query.message and query.message.photo:
-                try:
-                    await query.message.delete()
-                except Exception:
-                    pass
-                return await client.send_message(user_id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
-            elif query.message:
-                try:
-                    return await query.message.edit_text(v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
-                except Exception:
-                    pass
-            return await client.send_message(user_id, v_text, reply_markup=v_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
-        # Fallback to start
-        if query.message and query.message.photo:
-            try:
-                await query.message.delete()
-            except Exception:
-                pass
-            from clone_plugins import script
-            buttons = [
-                [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY CLONE BOT", callback_data="my_clone")],
-                [InlineKeyboardButton("💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ", url="https://www.youtube.com/@tech_as_0")],
-                [InlineKeyboardButton("ℹ️ ʜᴇʟᴘ", callback_data="help"), InlineKeyboardButton("😊 ᴀʙᴏᴜᴛ", callback_data="about")]
-            ]
-            return await client.send_message(
-                chat_id=user_id,
-                text=script.START_TXT.format(query.from_user.mention if query.from_user else "User", me.mention),
-                reply_markup=InlineKeyboardMarkup(buttons),
-                disable_web_page_preview=True
-            )
-        text = (
-            f"🤖 <b>YOUR CLONE BOT - @{me.username}</b>\n\n"
-            "<i>YOU CAN CUSTOMISE YOUR BOT SETTINGS FROM GIVEN BELOW BUTTONS</i>"
-        )
-        return await edit_or_reply(query, text, reply_markup=clone_manage_hub_markup(me.username))
+        from settings_modules.premium_plan import handle_user_back_from_premium
+        return await handle_user_back_from_premium(client, query, payload=payload)
 
     # Master / clone creator callbacks that are ignored here
     if data in ("my_clone", "my_clones", "clone_my_bots", "create_clone_prompt", "clone_limit") or data.startswith(("manage_clone:", "cm:", "cad:", "cmdelete:")):
