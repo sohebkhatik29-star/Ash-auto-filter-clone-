@@ -672,13 +672,7 @@ async def special_link_start(client, message):
     elif access_res:
         v_text, access_markup = "<b>🔐 Please verify first to access this link.</b>", access_res
     if access_markup:
-        if v_photo:
-            try:
-                await message.reply_photo(photo=v_photo, caption=v_text, reply_markup=access_markup)
-                raise StopPropagation
-            except Exception:
-                pass
-        await message.reply(v_text, reply_markup=access_markup, disable_web_page_preview=True)
+        await cmd.send_verify_prompt(client, message, v_text, access_markup, v_photo)
         raise StopPropagation
     if await cmd.send_fsub_prompt(client, message, payload):
         raise StopPropagation

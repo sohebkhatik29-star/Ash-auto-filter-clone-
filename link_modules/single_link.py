@@ -13,7 +13,7 @@ from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins.users_api import get_user, get_short_link, format_caption, format_auto_delete_time
 from plugins.clone import mongo_db
-from clone_plugins.commands import bot_record, force_markup, access_verification, send_fsub_prompt
+from clone_plugins.commands import bot_record, force_markup, access_verification, send_fsub_prompt, send_verify_prompt
 from settings_modules.thumbnail import get_cached_thumb_path, save_thumbnail_media
 
 _PENDING = {}
@@ -516,13 +516,7 @@ async def open_single(client, message):
     elif access_res:
         v_text, access_markup = "<b>🔐 Please verify first to access this file.</b>", access_res
     if access_markup:
-        if v_photo:
-            try:
-                await message.reply_photo(photo=v_photo, caption=v_text, reply_markup=access_markup)
-                raise StopPropagation
-            except Exception:
-                pass
-        await message.reply(v_text, reply_markup=access_markup, disable_web_page_preview=True)
+        await send_verify_prompt(client, message, v_text, access_markup, v_photo)
         raise StopPropagation
     if await send_fsub_prompt(client, message, payload):
         raise StopPropagation

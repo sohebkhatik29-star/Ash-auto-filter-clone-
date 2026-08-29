@@ -713,6 +713,7 @@ async def handle_token_callbacks(
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
         v_cfg = dict(curr_r.get(v_key, {}))
         v_cfg.pop("verify_pic", None)
+        v_cfg.pop("verify_pic_path", None)
         curr_r[v_key] = v_cfg
         save_fn(**{v_key: v_cfg})
         try:
@@ -774,10 +775,18 @@ async def handle_token_callbacks(
                 clear_user_session(user_id)
                 return
             photo_file_id = ans.photo.file_id
+            local_path = None
+            try:
+                from settings_modules.thumbnail import save_thumbnail_media
+                local_path = await save_thumbnail_media(client, ans, user_id, prefix=f"v_pic_{slot}_{target_bid or 'master'}")
+            except Exception:
+                pass
             v_key = f"verify_{slot}" if slot > 1 else "verify_1"
             curr_r = get_rec_fn() if callable(get_rec_fn) else r
             v_cfg = dict(curr_r.get(v_key, {}))
             v_cfg["verify_pic"] = photo_file_id
+            if local_path:
+                v_cfg["verify_pic_path"] = local_path
             curr_r[v_key] = v_cfg
             save_fn(**{v_key: v_cfg})
             clear_user_session(user_id)

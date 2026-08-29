@@ -250,6 +250,55 @@ async def send_fsub_prompt(client, message, payload):
     return True
 
 
+async def send_verify_prompt(client, message, text, markup, photo=None):
+    """Deliver verification prompt with custom photo (resolving local cache or master bot download if needed)."""
+    if photo:
+        import os
+        # 1. If photo is already a valid local file path on disk
+        if isinstance(photo, str) and ("/" in photo or "\\" in photo) and os.path.exists(photo):
+            try:
+                await message.reply_photo(photo=photo, caption=text, reply_markup=markup)
+                return True
+            except Exception:
+                pass
+
+        # 2. Try direct reply_photo (works if file_id belongs to current bot)
+        try:
+            await message.reply_photo(photo=photo, caption=text, reply_markup=markup)
+            return True
+        except Exception:
+            pass
+
+        # 3. Resolve using get_cached_thumb_path or download via StreamBot / current client
+        try:
+            from settings_modules.thumbnail import get_cached_thumb_path
+            resolved_path = await get_cached_thumb_path(client, photo)
+            if resolved_path and os.path.exists(resolved_path):
+                await message.reply_photo(photo=resolved_path, caption=text, reply_markup=markup)
+                return True
+        except Exception:
+            pass
+
+        # 4. Fallback download via StreamBot directly into cache/v_pics/
+        try:
+            from AshCore.bot import StreamBot
+            os.makedirs("cache/v_pics", exist_ok=True)
+            clean_name = "".join(c for c in str(photo)[-20:] if c.isalnum()) or "v_pic"
+            target_path = f"cache/v_pics/{clean_name}.jpg"
+            if not os.path.exists(target_path):
+                downloaded = await StreamBot.download_media(photo, file_name=target_path)
+            else:
+                downloaded = target_path
+            if downloaded and os.path.exists(downloaded):
+                await message.reply_photo(photo=downloaded, caption=text, reply_markup=markup)
+                return True
+        except Exception:
+            pass
+
+    await message.reply_text(text, reply_markup=markup, disable_web_page_preview=True)
+    return True
+
+
 async def access_verification(client, user_id, original_payload=""):
     try:
         me = client.me or (await client.get_me())
@@ -373,7 +422,7 @@ async def access_verification(client, user_id, original_payload=""):
 
         # Custom verify message & picture resolution
         custom_msg = pending_slot_cfg.get("verify_msg") or pending_slot_cfg.get("verify_text") or rec.get("verify_msg")
-        custom_pic = pending_slot_cfg.get("verify_pic") or rec.get("verify_pic")
+        custom_pic = pending_slot_cfg.get("verify_pic_path") or pending_slot_cfg.get("verify_pic") or rec.get("verify_pic_path") or rec.get("verify_pic")
 
         if custom_msg:
             formatted_text = str(custom_msg).replace("{first_name}", first_name)\
@@ -832,12 +881,7 @@ async def start(client, message):
     access_markup = access_res[1] if access_res and len(access_res) > 1 else None
     v_photo = access_res[2] if access_res and len(access_res) > 2 else None
     if access_markup:
-        if v_photo:
-            try:
-                return await message.reply_photo(photo=v_photo, caption=v_text, reply_markup=access_markup)
-            except Exception:
-                pass
-        return await message.reply(v_text, reply_markup=access_markup, disable_web_page_preview=True)
+        return await send_verify_prompt(client, message, v_text, access_markup, v_photo)
 
     if await send_fsub_prompt(client, message, data):
         return
