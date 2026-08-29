@@ -326,9 +326,14 @@ async def open_single(client, message):
         return
     payload = message.command[1]
     access_res = await access_verification(client, message.from_user.id, payload)
-    if isinstance(access_res, tuple):
-        v_text, access_markup = access_res
-    else:
+    v_text = None
+    access_markup = None
+    free_notice = None
+    if isinstance(access_res, (tuple, list)):
+        v_text = access_res[0]
+        access_markup = access_res[1] if len(access_res) > 1 else None
+        free_notice = access_res[3] if len(access_res) > 3 else None
+    elif access_res:
         v_text, access_markup = "<b>🔐 Please verify first to access this file.</b>", access_res
     if access_markup:
         await message.reply(v_text, reply_markup=access_markup, disable_web_page_preview=True)
@@ -561,6 +566,12 @@ async def open_single(client, message):
                         except Exception:
                             pass
                     asyncio.create_task(_auto_del_task())
+
+            if free_notice and delivered:
+                try:
+                    await client.send_message(message.from_user.id, free_notice)
+                except Exception:
+                    pass
 
     except Exception:
         pass

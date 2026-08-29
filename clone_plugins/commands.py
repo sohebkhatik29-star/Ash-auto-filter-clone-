@@ -412,11 +412,7 @@ async def access_verification(client, user_id, original_payload=""):
                     f"• <b>Reset Window:</b> {window_text}\n\n"
                     f"You have {remaining} free uses remaining."
                 )
-                try:
-                    await client.send_message(user_id, usage_notice)
-                except Exception:
-                    pass
-                return None, None, None
+                return None, None, None, usage_notice
 
     # 1. Collect all active verification slots (1, 2, 3)
     active_slots = []
@@ -944,6 +940,7 @@ async def start(client, message):
     v_text = access_res[0] if access_res else None
     access_markup = access_res[1] if access_res and len(access_res) > 1 else None
     v_photo = access_res[2] if access_res and len(access_res) > 2 else None
+    free_notice = access_res[3] if access_res and len(access_res) > 3 else None
     if access_markup:
         return await send_verify_prompt(client, message, v_text, access_markup, v_photo)
 
@@ -952,6 +949,11 @@ async def start(client, message):
 
     try:
         await deliver_file(client, message.from_user.id, file_id, protected=prefix == "filep")
+        if free_notice:
+            try:
+                await client.send_message(message.from_user.id, free_notice)
+            except Exception:
+                pass
     except Exception as e:
         await message.reply(f"❌ Unable to deliver file: <code>{e}</code>")
 

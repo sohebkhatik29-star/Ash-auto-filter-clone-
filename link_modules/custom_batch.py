@@ -467,10 +467,12 @@ async def batch_start(client, message):
     v_text = None
     access_markup = None
     v_photo = None
+    free_notice = None
     if isinstance(access_res, (tuple, list)):
         v_text = access_res[0]
         access_markup = access_res[1] if len(access_res) > 1 else None
         v_photo = access_res[2] if len(access_res) > 2 else None
+        free_notice = access_res[3] if len(access_res) > 3 else None
     elif access_res:
         v_text, access_markup = "<b>🔐 Please verify first to access this batch.</b>", access_res
     if access_markup:
@@ -621,6 +623,12 @@ async def batch_start(client, message):
             await schedule_auto_delete(client, message.from_user.id, delivered_messages, ad_sec)
     except Exception:
         pass
+
+    if free_notice and delivered_messages:
+        try:
+            await client.send_message(message.from_user.id, free_notice)
+        except Exception:
+            pass
 
     raise StopPropagation
 

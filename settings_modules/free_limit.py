@@ -157,7 +157,15 @@ async def handle_free_limit_callbacks(client, query, data, user_id, r, save_fn, 
             await query.answer()
         except Exception:
             pass
-        await client.send_message(
+
+        # Delete the previous menu message so there are no duplicate stacked menus
+        try:
+            if getattr(query, "message", None):
+                await query.message.delete()
+        except Exception:
+            pass
+
+        prompt1 = await client.send_message(
             chat_id=user_id,
             text=(
                 "🆓 <b>SET FREE USAGE LIMIT:</b>\n\n"
@@ -170,23 +178,44 @@ async def handle_free_limit_callbacks(client, query, data, user_id, r, save_fn, 
             try:
                 ans = await client.listen(chat_id=user_id, timeout=120)
             except Exception:
+                try:
+                    await prompt1.delete()
+                except Exception:
+                    pass
                 await client.send_message(user_id, "❌ <b>Timeout. Process cancelled.</b>")
                 clear_user_session(user_id)
-                return
+                return await handle_free_limit_callbacks(client, None, menu_cb, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
+
             if not is_user_session_active(user_id, sess_token):
                 return
             txt = (ans.text or "").strip()
             if txt.lower() == "/cancel":
-                await client.send_message(user_id, "❌ <b>Cancelled.</b>")
+                try:
+                    await prompt1.delete()
+                    await ans.delete()
+                except Exception:
+                    pass
                 clear_user_session(user_id)
-                return
+                return await handle_free_limit_callbacks(client, None, menu_cb, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
+
             if not txt.isdigit() or int(txt) <= 0:
+                try:
+                    await prompt1.delete()
+                    await ans.delete()
+                except Exception:
+                    pass
                 await client.send_message(user_id, "❌ <b>Invalid number. Must be a positive integer (e.g. 2, 5, 1500).</b>")
                 clear_user_session(user_id)
-                return
+                return await handle_free_limit_callbacks(client, None, menu_cb, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
+
             count = int(txt)
-            
-            await client.send_message(
+            try:
+                await prompt1.delete()
+                await ans.delete()
+            except Exception:
+                pass
+
+            prompt2 = await client.send_message(
                 user_id,
                 f"🆓 <b>Step 2/2: Send the reset time duration for {count} files:</b>\n\n"
                 "<b>Examples:</b>\n"
@@ -201,25 +230,45 @@ async def handle_free_limit_callbacks(client, query, data, user_id, r, save_fn, 
             try:
                 ans2 = await client.listen(chat_id=user_id, timeout=120)
             except Exception:
+                try:
+                    await prompt2.delete()
+                except Exception:
+                    pass
                 await client.send_message(user_id, "❌ <b>Timeout. Process cancelled.</b>")
                 clear_user_session(user_id)
-                return
+                return await handle_free_limit_callbacks(client, None, menu_cb, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
+
             if not is_user_session_active(user_id, sess_token):
                 return
             txt2 = (ans2.text or "").strip()
             if txt2.lower() == "/cancel":
-                await client.send_message(user_id, "❌ <b>Cancelled.</b>")
+                try:
+                    await prompt2.delete()
+                    await ans2.delete()
+                except Exception:
+                    pass
                 clear_user_session(user_id)
-                return
-            
+                return await handle_free_limit_callbacks(client, None, menu_cb, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
+
             duration_sec, display_str, num, unit = parse_free_limit_duration(txt2)
             if not duration_sec:
+                try:
+                    await prompt2.delete()
+                    await ans2.delete()
+                except Exception:
+                    pass
                 await client.send_message(
                     user_id,
                     "❌ <b>Invalid time duration.</b>\n\nPlease use formats like <code>1s</code>, <code>1m</code> (or <code>1</code>), <code>1h</code>, <code>1d</code>, <code>1month</code>, <code>1year</code>."
                 )
                 clear_user_session(user_id)
-                return
+                return await handle_free_limit_callbacks(client, None, menu_cb, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
+
+            try:
+                await prompt2.delete()
+                await ans2.delete()
+            except Exception:
+                pass
 
             window_text = f"Every {display_str}"
             new_cfg = {
@@ -234,10 +283,7 @@ async def handle_free_limit_callbacks(client, query, data, user_id, r, save_fn, 
             r["free_limit"] = new_cfg
             save_fn(free_limit=new_cfg)
             clear_user_session(user_id)
-            await client.send_message(
-                user_id,
-                f"✅ <b>FREE USAGE LIMIT SET TO {count} FILES EVERY {display_str.upper()}!</b>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK TO FREE USAGE LIMIT", callback_data=menu_cb)]])
-            )
+            return await handle_free_limit_callbacks(client, None, menu_cb, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
+
         asyncio.create_task(_limit_worker())
         return
