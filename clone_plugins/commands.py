@@ -1135,10 +1135,10 @@ async def callbacks(client, query):
         "settings", "settings_back", "log_channel", "set_log_channel", "delete_log_channel",
         "database_channel", "set_database_channel", "delete_database_channel",
         "admins_menu", "add_admin_prompt", "my_clone", "my_clones", "clone_my_bots", "create_clone_prompt", "clone_limit",
-        "link_shortener", "add_shortener", "delete_shortener",
+        "link_shortener", "add_shortener", "delete_shortener", "set_shortlink", "delete_shortlink", "tgl_shortlink", "m_tgl_shortlink", "m_set_main_shortener", "m_del_main_shortener",
         "custom_caption", "caption_see", "caption_delete", "caption_edit",
         "custom_button", "button_add", "button_delete", "protect_menu", "protect_toggle", "protect_on", "protect_off"
-    ) or data.startswith(("admin_info:", "adm_tgl:", "adm_trans:", "adm_rem:", "clone_", "cset_", "manage_clone:", "cm:", "cad:", "cmdelete:")):
+    ) or data.startswith(("admin_info:", "adm_tgl:", "adm_trans:", "adm_rem:", "clone_", "cset_", "manage_clone:", "cm:", "cad:", "cmdelete:", "link_shortener:", "m_set_main_shortener:", "m_del_main_shortener:", "set_shortlink:", "delete_shortlink:", "m_tgl_shortlink:")):
         return
     try:
         await query.answer()

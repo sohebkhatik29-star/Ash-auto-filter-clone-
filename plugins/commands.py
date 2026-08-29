@@ -874,10 +874,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
         return
 
     elif (
-        data in ("settings", "master_settings", "settings_back", "my_clone", "my_clones", "clone_my_bots", "create_clone_prompt", "clone_limit", "add_clone_prompt", "clone", "google_backup", "google_connect", "link_shortener", "delete_shortener", "add_shortener", "custom_caption", "custom_thumbnail", "custom_button", "protect_menu", "start_photo_menu")
+        data in ("settings", "master_settings", "settings_back", "my_clone", "my_clones", "clone_my_bots", "create_clone_prompt", "clone_limit", "add_clone_prompt", "clone", "google_backup", "google_connect", "link_shortener", "delete_shortener", "add_shortener", "set_shortlink", "delete_shortlink", "tgl_shortlink", "m_tgl_shortlink", "custom_caption", "custom_thumbnail", "custom_button", "protect_menu", "start_photo_menu")
         or data.startswith((
             "master_", "manage_clone:", "cm:", "cad:", "cmdelete:", "protect_", "protect_menu", "caption_", "button_",
-            "start_pic_", "link_shortener", "delete_shortener", "log_channel", "database_channel",
+            "start_pic_", "link_shortener", "delete_shortener", "set_shortlink", "delete_shortlink", "tgl_shortlink", "log_channel", "database_channel",
             "m_", "cset_", "cset_fsub", "custom_", "settings_back"
         ))
     ):

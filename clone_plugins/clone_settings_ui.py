@@ -261,7 +261,13 @@ async def callbacks(client, query):
         return await handle_protect_content_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 
     # 12. Link Shortener
-    if data in ("link_shortener", "cset_shortener"):
+    if (
+        data in ("link_shortener", "cset_shortener", "m_set_main_shortener", "m_del_main_shortener", "add_shortener", "delete_shortener", "set_shortlink", "delete_shortlink", "m_tgl_shortlink", "tgl_shortlink")
+        or data.startswith((
+            "link_shortener:", "cset_shortener:", "m_set_main_shortener:", "m_del_main_shortener:",
+            "add_shortener:", "delete_shortener:", "set_shortlink:", "delete_shortlink:", "m_tgl_shortlink:", "tgl_shortlink:"
+        ))
+    ):
         return await handle_shortener_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 
     # 13. Monetization
