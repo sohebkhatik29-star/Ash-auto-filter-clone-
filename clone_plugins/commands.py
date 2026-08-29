@@ -1019,22 +1019,28 @@ async def base_site_handler(client,message):
 
 async def shortener(client, message):
     user_id = message.from_user.id
-    user = await get_user(user_id)
-    if not (user.get("base_site") and user.get("shortener_api")):
-        rec = bot_record(client)
-        if rec.get("base_site") and rec.get("shortener_api"):
-            user = {"base_site": rec.get("base_site"), "shortener_api": rec.get("shortener_api")}
-        else:
-            return await message.reply(
-                "<b>Link Shortener</b>\n\n"
-                "To shorten your links using your preferred provider, make sure to connect it with me first.\n\n"
-                "Use /settings to connect your shortener provider."
-            )
+    rec = bot_record(client)
+    # Check clone owner settings first, fallback to user record
+    site = rec.get("shortener_site") or rec.get("base_site")
+    api = rec.get("shortener_api")
+    if not (site and api):
+        user = await get_user(user_id)
+        site = user.get("base_site") or user.get("shortener_site")
+        api = user.get("shortener_api")
+
+    if not (site and api):
+        return await message.reply(
+            "<b>Link Shortener</b>\n\n"
+            "To shorten your links using your preferred provider, make sure to connect it with me first.\n\n"
+            "Use /settings to connect your shortener provider."
+        )
+
+    config = {"base_site": site, "shortener_api": api}
     ans = await client.ask(message.chat.id, "Send your Link which you want to shorten", timeout=120)
     link = (ans.text or "").strip()
     if not link or link.startswith("/"):
         return await message.reply("❌ Invalid link or cancelled.")
-    short_link = await get_short_link(user, link)
+    short_link = await get_short_link(config, link)
     if not short_link or short_link == link:
         return await message.reply("Something went wrong, please try later")
     markup = InlineKeyboardMarkup([

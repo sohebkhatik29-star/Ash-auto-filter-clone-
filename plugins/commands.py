@@ -755,8 +755,16 @@ async def shortener_cmd_handler(client, message):
     if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
         return
     user_id = message.from_user.id
-    user = await get_user(user_id)
-    if not (user.get("base_site") and user.get("shortener_api")):
+    from plugins.clone import mongo_db
+    m_rec = (mongo_db.master_settings.find_one({"type": "master_config"}) or mongo_db.master_settings.find_one({})) if mongo_db is not None else {}
+    site = m_rec.get("shortener_site") or m_rec.get("base_site")
+    api = m_rec.get("shortener_api")
+    if not (site and api):
+        user = await get_user(user_id)
+        site = user.get("base_site") or user.get("shortener_site")
+        api = user.get("shortener_api")
+
+    if not (site and api):
         return await message.reply(
             "<b>Link Shortener</b>\n\n"
             "To shorten your links using your preferred provider, make sure to connect it with me first.\n\n"
@@ -767,7 +775,7 @@ async def shortener_cmd_handler(client, message):
     if not link or link.startswith("/"):
         return await message.reply("❌ Invalid link or cancelled.")
     from clone_plugins.users_api import get_short_link
-    short_link = await get_short_link(user, link)
+    short_link = await get_short_link({"base_site": site, "shortener_api": api}, link)
     if not short_link or short_link == link:
         return await message.reply("Something went wrong, please try later")
     markup = InlineKeyboardMarkup([
