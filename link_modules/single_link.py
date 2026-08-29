@@ -506,11 +506,22 @@ async def open_single(client, message):
 
     payload = message.command[1]
     access_res = await access_verification(client, message.from_user.id, payload)
-    if isinstance(access_res, tuple):
-        v_text, access_markup = access_res
-    else:
+    v_text = None
+    access_markup = None
+    v_photo = None
+    if isinstance(access_res, (tuple, list)):
+        v_text = access_res[0]
+        access_markup = access_res[1] if len(access_res) > 1 else None
+        v_photo = access_res[2] if len(access_res) > 2 else None
+    elif access_res:
         v_text, access_markup = "<b>🔐 Please verify first to access this file.</b>", access_res
     if access_markup:
+        if v_photo:
+            try:
+                await message.reply_photo(photo=v_photo, caption=v_text, reply_markup=access_markup)
+                raise StopPropagation
+            except Exception:
+                pass
         await message.reply(v_text, reply_markup=access_markup, disable_web_page_preview=True)
         raise StopPropagation
     if await send_fsub_prompt(client, message, payload):

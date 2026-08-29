@@ -264,7 +264,12 @@ async def handle_user_back_from_premium(client, query, payload: str = ""):
     v_text, v_markup = None, None
     try:
         from clone_plugins.commands import access_verification
-        v_text, v_markup = await access_verification(client, user_id, payload)
+        v_res = await access_verification(client, user_id, payload)
+        if isinstance(v_res, (tuple, list)):
+            v_text = v_res[0]
+            v_markup = v_res[1] if len(v_res) > 1 else None
+        elif v_res:
+            v_text, v_markup = "<b>🔐 Please verify first to access this file.</b>", v_res
     except Exception:
         pass
 

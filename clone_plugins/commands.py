@@ -371,15 +371,29 @@ async def access_verification(client, user_id, original_payload=""):
         except Exception:
             pass
 
-        text = (
-            f"Hey <b>{first_name}</b>,\n\n"
-            f"<blockquote>YOU ARE NOT VERIFIED TODAY, PLEASE CLICK ON VERIFY BUTTON AND GET UNLIMITED ACCESS FOR NEXT {time_str}.\n\n"
-            f"IF YOU DONOT KNOW HOW TO VERIFY THEN CLICK ON HOW TO VERIFY BUTTON AND WATCH THE VIDEO.\n\n"
-            f"THIS IS AN ADS-BASED ACCESS TOKEN. IF YOU PASS ONE ACCESS TOKEN, YOU CAN ACCESS MESSAGES FROM LINKS FOR NEXT {time_str}.</blockquote>\n\n"
-            f"<b>#VERIFICATION:-</b> {step_index}/{total_steps}\n\n"
-            f"<blockquote>IF YOU WANT DIRECT FILES WITHOUT ANY VERIFICATIONS THEN BUY BOT SUBSCRIPTION 🥲\n\n"
-            f"💳 CLICK ON BUY PREMIUM BUTTON TO BUY SUBSCRIPTION</blockquote>"
-        )
+        # Custom verify message & picture resolution
+        custom_msg = pending_slot_cfg.get("verify_msg") or pending_slot_cfg.get("verify_text") or rec.get("verify_msg")
+        custom_pic = pending_slot_cfg.get("verify_pic") or rec.get("verify_pic")
+
+        if custom_msg:
+            formatted_text = str(custom_msg).replace("{first_name}", first_name)\
+                                            .replace("{user_mention}", first_name)\
+                                            .replace("{time}", time_str)\
+                                            .replace("{time_str}", time_str)\
+                                            .replace("{step}", str(step_index))\
+                                            .replace("{step_index}", str(step_index))\
+                                            .replace("{total_steps}", str(total_steps))
+            text = formatted_text
+        else:
+            text = (
+                f"Hey <b>{first_name}</b>,\n\n"
+                f"<blockquote>YOU ARE NOT VERIFIED TODAY, PLEASE CLICK ON VERIFY BUTTON AND GET UNLIMITED ACCESS FOR NEXT {time_str}.\n\n"
+                f"IF YOU DONOT KNOW HOW TO VERIFY THEN CLICK ON HOW TO VERIFY BUTTON AND WATCH THE VIDEO.\n\n"
+                f"THIS IS AN ADS-BASED ACCESS TOKEN. IF YOU PASS ONE ACCESS TOKEN, YOU CAN ACCESS MESSAGES FROM LINKS FOR NEXT {time_str}.</blockquote>\n\n"
+                f"<b>#VERIFICATION:-</b> {step_index}/{total_steps}\n\n"
+                f"<blockquote>IF YOU WANT DIRECT FILES WITHOUT ANY VERIFICATIONS THEN BUY BOT SUBSCRIPTION 🥲\n\n"
+                f"💳 CLICK ON BUY PREMIUM BUTTON TO BUY SUBSCRIPTION</blockquote>"
+            )
 
         buttons = [
             [InlineKeyboardButton("🟢 VERIFY 🟢", url=short_url)]
@@ -392,7 +406,7 @@ async def access_verification(client, user_id, original_payload=""):
             cb_data = f"c_buy_prem:{original_payload}" if original_payload else "c_buy_prem"
             buttons.append([InlineKeyboardButton("💎 BUY PREMIUM - NO NEED TO VERIFY 💎", callback_data=cb_data)])
 
-        return text, InlineKeyboardMarkup(buttons)
+        return text, InlineKeyboardMarkup(buttons), custom_pic
 
     # Case 3: Token Verification is OFF, but Premium is ON!
     elif premium_is_active:
@@ -404,11 +418,11 @@ async def access_verification(client, user_id, original_payload=""):
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("💎 BUY PREMIUM - TO ACCESS CONTENTS 💎", callback_data=cb_data)]
         ])
-        return text, markup
+        return text, markup, None
 
     # Case 4: Both Token Verification is OFF and Premium is OFF!
     else:
-        return None, None
+        return None, None, None
 
 
 def settings_menu():
@@ -813,8 +827,16 @@ async def start(client, message):
     if prefix not in ("file", "filep") or not file_id:
         return await message.reply("❌ Invalid or expired file link.")
 
-    v_text, access_markup = await access_verification(client, message.from_user.id, data)
+    access_res = await access_verification(client, message.from_user.id, data)
+    v_text = access_res[0] if access_res else None
+    access_markup = access_res[1] if access_res and len(access_res) > 1 else None
+    v_photo = access_res[2] if access_res and len(access_res) > 2 else None
     if access_markup:
+        if v_photo:
+            try:
+                return await message.reply_photo(photo=v_photo, caption=v_text, reply_markup=access_markup)
+            except Exception:
+                pass
         return await message.reply(v_text, reply_markup=access_markup, disable_web_page_preview=True)
 
     if await send_fsub_prompt(client, message, data):
