@@ -434,6 +434,7 @@ async def callbacks(client, query):
             if target_bid:
                 m_inner.bots.update_one({"bot_id": int(target_bid)}, {"$set": kwargs}, upsert=True)
             else:
+                m_inner.master_settings.update_one({"type": "master_config"}, {"$set": kwargs}, upsert=True)
                 m_inner.master_settings.update_one({}, {"$set": kwargs}, upsert=True)
 
     me = await client.get_me()
@@ -510,7 +511,7 @@ async def callbacks(client, query):
         from settings_modules.free_limit import handle_free_limit_callbacks
         return await handle_free_limit_callbacks(
             client, query, data, user_id, r, save_master,
-            lambda uid: cancel_user_listeners(client, uid, uid),
+            cancel_user_listeners,
             edit_or_reply, target_bid=target_bid
         )
 

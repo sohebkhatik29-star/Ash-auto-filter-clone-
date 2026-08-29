@@ -76,6 +76,20 @@ def parse_free_limit_duration(text: str):
     return None, None, None, None
 
 
+def _safe_cancel_listeners(cancel_fn, client, user_id):
+    if not cancel_fn:
+        return
+    try:
+        cancel_fn(client, user_id, user_id)
+    except TypeError:
+        try:
+            cancel_fn(user_id)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 async def handle_free_limit_callbacks(client, query, data, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=None):
     if ":" in data:
         try:
@@ -127,7 +141,9 @@ async def handle_free_limit_callbacks(client, query, data, user_id, r, save_fn, 
         )
 
     if data in ("m_del_free_limit", "cset_del_free_limit") or data.startswith(("m_del_free_limit:", "cset_del_free_limit:", "master_del_free_limit:")):
-        save_fn(free_limit={"enabled": False, "count": 0, "duration_seconds": 0, "display": "None", "window_text": "None", "num": 0, "unit": "day"})
+        new_fl = {"enabled": False, "count": 0, "duration_seconds": 0, "display": "None", "window_text": "None", "num": 0, "unit": "day"}
+        r["free_limit"] = new_fl
+        save_fn(free_limit=new_fl)
         try:
             await query.answer("Free limit deleted!", show_alert=True)
         except Exception:
@@ -135,17 +151,19 @@ async def handle_free_limit_callbacks(client, query, data, user_id, r, save_fn, 
         return await handle_free_limit_callbacks(client, query, menu_cb, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
 
     if data in ("m_set_free_limit", "cset_set_free_limit") or data.startswith(("m_set_free_limit:", "cset_set_free_limit:", "master_set_free_limit:")):
-        cancel_listeners_fn(client, user_id, user_id)
+        _safe_cancel_listeners(cancel_listeners_fn, client, user_id)
         sess_token = start_user_session(user_id, f"free_limit_{target_bid or 'main'}")
         try:
             await query.answer()
         except Exception:
             pass
         await client.send_message(
-            user_id,
-            "🆓 <b>SET FREE USAGE LIMIT:</b>\n\n"
-            "<b>Step 1/2: Send how many free uses/files you want to allow (e.g., <code>2</code>, <code>5</code>, <code>1500</code>):</b>\n\n"
-            "<i>Send /cancel to abort.</i>"
+            chat_id=user_id,
+            text=(
+                "🆓 <b>SET FREE USAGE LIMIT:</b>\n\n"
+                "<b>Step 1/2: Send how many free uses/files you want to allow (e.g., <code>2</code>, <code>5</code>, <code>1500</code>):</b>\n\n"
+                "<i>Send /cancel to abort.</i>"
+            )
         )
 
         async def _limit_worker():
@@ -204,7 +222,7 @@ async def handle_free_limit_callbacks(client, query, data, user_id, r, save_fn, 
                 return
 
             window_text = f"Every {display_str}"
-            save_fn(free_limit={
+            new_cfg = {
                 "enabled": True,
                 "count": count,
                 "duration_seconds": duration_sec,
@@ -212,7 +230,9 @@ async def handle_free_limit_callbacks(client, query, data, user_id, r, save_fn, 
                 "window_text": window_text,
                 "num": num,
                 "unit": unit
-            })
+            }
+            r["free_limit"] = new_cfg
+            save_fn(free_limit=new_cfg)
             clear_user_session(user_id)
             await client.send_message(
                 user_id,
