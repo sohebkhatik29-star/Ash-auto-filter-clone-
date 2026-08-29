@@ -182,9 +182,15 @@ async def handle_free_limit_callbacks(client, query, data, user_id, r, save_fn, 
                     await prompt1.delete()
                 except Exception:
                     pass
-                await client.send_message(user_id, "❌ <b>Timeout. Process cancelled.</b>")
                 clear_user_session(user_id)
-                return await handle_free_limit_callbacks(client, None, menu_cb, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
+                await client.send_message(
+                    chat_id=user_id,
+                    text="❌ <b>Timeout. Process cancelled.</b>",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("‹ BACK TO FREE USAGE LIMIT", callback_data=menu_cb)]
+                    ])
+                )
+                return
 
             if not is_user_session_active(user_id, sess_token):
                 return
@@ -196,7 +202,14 @@ async def handle_free_limit_callbacks(client, query, data, user_id, r, save_fn, 
                 except Exception:
                     pass
                 clear_user_session(user_id)
-                return await handle_free_limit_callbacks(client, None, menu_cb, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
+                await client.send_message(
+                    chat_id=user_id,
+                    text="❌ <b>Process cancelled.</b>",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("‹ BACK TO FREE USAGE LIMIT", callback_data=menu_cb)]
+                    ])
+                )
+                return
 
             if not txt.isdigit() or int(txt) <= 0:
                 try:
@@ -204,9 +217,15 @@ async def handle_free_limit_callbacks(client, query, data, user_id, r, save_fn, 
                     await ans.delete()
                 except Exception:
                     pass
-                await client.send_message(user_id, "❌ <b>Invalid number. Must be a positive integer (e.g. 2, 5, 1500).</b>")
                 clear_user_session(user_id)
-                return await handle_free_limit_callbacks(client, None, menu_cb, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
+                await client.send_message(
+                    chat_id=user_id,
+                    text="❌ <b>Invalid number. Must be a positive integer (e.g. 2, 5, 1500).</b>",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("‹ BACK TO FREE USAGE LIMIT", callback_data=menu_cb)]
+                    ])
+                )
+                return
 
             count = int(txt)
             try:
@@ -234,9 +253,15 @@ async def handle_free_limit_callbacks(client, query, data, user_id, r, save_fn, 
                     await prompt2.delete()
                 except Exception:
                     pass
-                await client.send_message(user_id, "❌ <b>Timeout. Process cancelled.</b>")
                 clear_user_session(user_id)
-                return await handle_free_limit_callbacks(client, None, menu_cb, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
+                await client.send_message(
+                    chat_id=user_id,
+                    text="❌ <b>Timeout. Process cancelled.</b>",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("‹ BACK TO FREE USAGE LIMIT", callback_data=menu_cb)]
+                    ])
+                )
+                return
 
             if not is_user_session_active(user_id, sess_token):
                 return
@@ -248,7 +273,14 @@ async def handle_free_limit_callbacks(client, query, data, user_id, r, save_fn, 
                 except Exception:
                     pass
                 clear_user_session(user_id)
-                return await handle_free_limit_callbacks(client, None, menu_cb, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
+                await client.send_message(
+                    chat_id=user_id,
+                    text="❌ <b>Process cancelled.</b>",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("‹ BACK TO FREE USAGE LIMIT", callback_data=menu_cb)]
+                    ])
+                )
+                return
 
             duration_sec, display_str, num, unit = parse_free_limit_duration(txt2)
             if not duration_sec:
@@ -257,12 +289,15 @@ async def handle_free_limit_callbacks(client, query, data, user_id, r, save_fn, 
                     await ans2.delete()
                 except Exception:
                     pass
-                await client.send_message(
-                    user_id,
-                    "❌ <b>Invalid time duration.</b>\n\nPlease use formats like <code>1s</code>, <code>1m</code> (or <code>1</code>), <code>1h</code>, <code>1d</code>, <code>1month</code>, <code>1year</code>."
-                )
                 clear_user_session(user_id)
-                return await handle_free_limit_callbacks(client, None, menu_cb, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
+                await client.send_message(
+                    chat_id=user_id,
+                    text="❌ <b>Invalid time duration.</b>\n\nPlease use formats like <code>1s</code>, <code>1m</code> (or <code>1</code>), <code>1h</code>, <code>1d</code>, <code>1month</code>, <code>1year</code>.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("‹ BACK TO FREE USAGE LIMIT", callback_data=menu_cb)]
+                    ])
+                )
+                return
 
             try:
                 await prompt2.delete()
@@ -283,7 +318,14 @@ async def handle_free_limit_callbacks(client, query, data, user_id, r, save_fn, 
             r["free_limit"] = new_cfg
             save_fn(free_limit=new_cfg)
             clear_user_session(user_id)
-            return await handle_free_limit_callbacks(client, None, menu_cb, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=target_bid)
+
+            await client.send_message(
+                chat_id=user_id,
+                text=f"✅ <b>FREE USAGE LIMIT SET TO {count} FILES EVERY {display_str.upper()}!</b>",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("‹ BACK TO FREE USAGE LIMIT", callback_data=menu_cb)]
+                ])
+            )
 
         asyncio.create_task(_limit_worker())
         return
