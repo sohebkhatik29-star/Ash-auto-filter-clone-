@@ -266,10 +266,46 @@ async def access_verification(client, user_id, original_payload=""):
             rec = {}
     if not rec:
         return None, None
+
+    # Check if user is already a premium user
     if is_user_premium(user_id, rec):
+        try:
+            u_obj = await client.get_users(user_id)
+        except Exception:
+            class _U:
+                pass
+            u_obj = _U()
+            u_obj.id = user_id
+            u_obj.first_name = "User"
+            u_obj.last_name = None
+            u_obj.username = None
+            u_obj.mention = f"<a href='tg://user?id={user_id}'>User</a>"
+        try:
+            ist = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
+            today = _dt.datetime.now(ist).strftime("%Y-%m-%d")
+            if mongo_db is not None:
+                already = mongo_db.bypass_logs.find_one({
+                    "bot_id": int(bot_id),
+                    "user_id": int(user_id),
+                    "date": today,
+                })
+                if not already:
+                    mongo_db.bypass_logs.update_one(
+                        {"bot_id": int(bot_id), "user_id": int(user_id), "date": today},
+                        {"$set": {"logged_at": int(_time.time())}},
+                        upsert=True,
+                    )
+                    await send_verify_log(client, u_obj, log_type="bypass", payload=original_payload)
+            else:
+                await send_verify_log(client, u_obj, log_type="bypass", payload=original_payload)
+        except Exception:
+            try:
+                await send_verify_log(client, u_obj, log_type="bypass", payload=original_payload)
+            except Exception:
+                pass
         return None, None
 
-    # Collect all active verification slots (1, 2, 3)
+    # 1. Collect all active verification slots (1, 2, 3)
     active_slots = []
     for s in (1, 2, 3):
         v_key = f"verify_{s}" if s > 1 else "verify_1"
@@ -281,76 +317,98 @@ async def access_verification(client, user_id, original_payload=""):
 
     # Fallback to legacy verify configuration if enabled
     if not active_slots:
-        if rec.get("verify_enabled") and rec.get("base_site") and rec.get("shortener_api"):
+        if (rec.get("verify_enabled") or rec.get("verify_is_on")) and rec.get("base_site") and rec.get("shortener_api"):
             active_slots.append((1, {
                 "tutorial": rec.get("verify_tutorial"),
                 "time": rec.get("verify_ttl", 480) // 60
             }, rec.get("base_site"), rec.get("shortener_api")))
 
-    if not active_slots:
+    verify_is_active = len(active_slots) > 0
+    premium_is_active = bool(rec.get("premium_is_on", False) or rec.get("premium_enabled", False))
+
+    # Case 1 & 2: Token Verification is ON (with or without Premium)
+    if verify_is_active:
+        # Find the first slot that user has not verified
+        pending_slot_num = None
+        pending_slot_cfg = None
+        site_to_use = None
+        api_to_use = None
+        step_index = 0
+        total_steps = len(active_slots)
+
+        for idx, (s_num, s_cfg, s_site, s_api) in enumerate(active_slots):
+            if not check_user_verified(user_id, bot_id, slot=s_num):
+                pending_slot_num = s_num
+                pending_slot_cfg = s_cfg
+                site_to_use = s_site
+                api_to_use = s_api
+                step_index = idx + 1
+                break
+
+        if not pending_slot_num:
+            # User has verified all active steps
+            return None, None
+
+        tutorial = pending_slot_cfg.get("tutorial") or rec.get("verify_tutorial")
+        mins = int(pending_slot_cfg.get("time", pending_slot_cfg.get("time_minutes", 1440)))
+        time_str = format_time_minutes(mins)
+
+        token = create_verify_token(user_id, bot_id, original_payload, slot=pending_slot_num)
+        bot_username = me.username if me else ""
+        raw_verify_url = f"https://t.me/{bot_username}?start=verify_{token}"
+        try:
+            short_url = await get_short_link({"base_site": site_to_use, "shortener_api": api_to_use}, raw_verify_url)
+        except Exception:
+            short_url = raw_verify_url
+        if not short_url:
+            short_url = raw_verify_url
+
+        import html
+        first_name = "User"
+        try:
+            u = await client.get_users(user_id)
+            first_name = html.escape(u.first_name or "User")
+        except Exception:
+            pass
+
+        text = (
+            f"Hey <b>{first_name}</b>,\n\n"
+            f"<blockquote>YOU ARE NOT VERIFIED TODAY, PLEASE CLICK ON VERIFY BUTTON AND GET UNLIMITED ACCESS FOR NEXT {time_str}.\n\n"
+            f"IF YOU DONOT KNOW HOW TO VERIFY THEN CLICK ON HOW TO VERIFY BUTTON AND WATCH THE VIDEO.\n\n"
+            f"THIS IS AN ADS-BASED ACCESS TOKEN. IF YOU PASS ONE ACCESS TOKEN, YOU CAN ACCESS MESSAGES FROM LINKS FOR NEXT {time_str}.</blockquote>\n\n"
+            f"<b>#VERIFICATION:-</b> {step_index}/{total_steps}\n\n"
+            f"<blockquote>IF YOU WANT DIRECT FILES WITHOUT ANY VERIFICATIONS THEN BUY BOT SUBSCRIPTION 🥲\n\n"
+            f"💳 CLICK ON BUY PREMIUM BUTTON TO BUY SUBSCRIPTION</blockquote>"
+        )
+
+        buttons = [
+            [InlineKeyboardButton("🟢 VERIFY 🟢", url=short_url)]
+        ]
+        if tutorial:
+            buttons.append([InlineKeyboardButton("🍿 HOW TO VERIFY 🍿", url=tutorial)])
+        
+        # Only add Buy Premium button if Premium is ON!
+        if premium_is_active:
+            cb_data = f"c_buy_prem:{original_payload}" if original_payload else "c_buy_prem"
+            buttons.append([InlineKeyboardButton("💎 BUY PREMIUM - NO NEED TO VERIFY 💎", callback_data=cb_data)])
+
+        return text, InlineKeyboardMarkup(buttons)
+
+    # Case 3: Token Verification is OFF, but Premium is ON!
+    elif premium_is_active:
+        text = (
+            "☂️ <b>THIS CONTENT IS PREMIUM PROTECTED, ONLY PREMIUM USER CAN ACCESS THIS LINK CONTENT.</b>\n\n"
+            "<b>👇 CLICK ON BELOW BUTTON TO BUY PREMIUM.</b>"
+        )
+        cb_data = f"c_buy_prem:{original_payload}" if original_payload else "c_buy_prem"
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💎 BUY PREMIUM - TO ACCESS CONTENTS 💎", callback_data=cb_data)]
+        ])
+        return text, markup
+
+    # Case 4: Both Token Verification is OFF and Premium is OFF!
+    else:
         return None, None
-
-    # Find the first slot that user has not verified
-    pending_slot_num = None
-    pending_slot_cfg = None
-    site_to_use = None
-    api_to_use = None
-    step_index = 0
-    total_steps = len(active_slots)
-
-    for idx, (s_num, s_cfg, s_site, s_api) in enumerate(active_slots):
-        if not check_user_verified(user_id, bot_id, slot=s_num):
-            pending_slot_num = s_num
-            pending_slot_cfg = s_cfg
-            site_to_use = s_site
-            api_to_use = s_api
-            step_index = idx + 1
-            break
-
-    if not pending_slot_num:
-        return None, None
-
-    tutorial = pending_slot_cfg.get("tutorial") or rec.get("verify_tutorial")
-    mins = int(pending_slot_cfg.get("time", pending_slot_cfg.get("time_minutes", 1440)))
-    time_str = format_time_minutes(mins)
-
-    token = create_verify_token(user_id, bot_id, original_payload, slot=pending_slot_num)
-    bot_username = me.username if me else ""
-    raw_verify_url = f"https://t.me/{bot_username}?start=verify_{token}"
-    try:
-        short_url = await get_short_link({"base_site": site_to_use, "shortener_api": api_to_use}, raw_verify_url)
-    except Exception:
-        short_url = raw_verify_url
-    if not short_url:
-        short_url = raw_verify_url
-
-    import html
-    first_name = "User"
-    try:
-        u = await client.get_users(user_id)
-        first_name = html.escape(u.first_name or "User")
-    except Exception:
-        pass
-
-    text = (
-        f"Hey <b>{first_name}</b>,\n\n"
-        f"<blockquote>YOU ARE NOT VERIFIED TODAY, PLEASE CLICK ON VERIFY BUTTON AND GET UNLIMITED ACCESS FOR NEXT {time_str}.\n\n"
-        f"IF YOU DONOT KNOW HOW TO VERIFY THEN CLICK ON HOW TO VERIFY BUTTON AND WATCH THE VIDEO.\n\n"
-        f"THIS IS AN ADS-BASED ACCESS TOKEN. IF YOU PASS ONE ACCESS TOKEN, YOU CAN ACCESS MESSAGES FROM LINKS FOR NEXT {time_str}.</blockquote>\n\n"
-        f"<b>#VERIFICATION:-</b> {step_index}/{total_steps}\n\n"
-        f"<blockquote>IF YOU WANT DIRECT FILES WITHOUT ANY VERIFICATIONS THEN BUY BOT SUBSCRIPTION 🥲\n\n"
-        f"💳 CLICK ON BUY PREMIUM BUTTON TO BUY SUBSCRIPTION</blockquote>"
-    )
-
-    buttons = [
-        [InlineKeyboardButton("🟢 VERIFY 🟢", url=short_url)]
-    ]
-    if tutorial:
-        buttons.append([InlineKeyboardButton("🍿 HOW TO VERIFY 🍿", url=tutorial)])
-    cb_data = f"c_buy_prem:{original_payload}" if original_payload else "c_buy_prem"
-    buttons.append([InlineKeyboardButton("💎 BUY PREMIUM - NO NEED TO VERIFY 💎", callback_data=cb_data)])
-
-    return text, InlineKeyboardMarkup(buttons)
 
 
 def settings_menu():
@@ -1032,71 +1090,6 @@ async def send_verify_log(client, user, log_type="verified", slot=1, validity=No
         await client.send_message(int(log_ch), log_text)
     except Exception:
         pass
-
-_orig_access_verification = access_verification
-
-async def access_verification(client, user_id, original_payload=""):
-    rec = bot_record(client)
-    if not rec:
-        return None, None
-
-    # Collect active slots first (same as base)
-    active_slots = []
-    for s in (1, 2, 3):
-        v_key = f"verify_{s}" if s > 1 else "verify_1"
-        v_cfg = rec.get(v_key, {})
-        site = v_cfg.get("shortner_site") or v_cfg.get("site") or rec.get("base_site")
-        api = v_cfg.get("shortner_api") or v_cfg.get("api") or rec.get("shortener_api")
-        if v_cfg.get("is_on") and site and api:
-            active_slots.append((s, v_cfg, site, api))
-    if not active_slots:
-        if rec.get("verify_enabled") and rec.get("base_site") and rec.get("shortener_api"):
-            active_slots.append((1, {
-                "tutorial": rec.get("verify_tutorial"),
-                "time": rec.get("verify_ttl", 480) // 60
-            }, rec.get("base_site"), rec.get("shortener_api")))
-    if not active_slots:
-        return None, None
-
-    # Premium bypass: log once/day when verify is ON
-    if is_user_premium(user_id, rec):
-        try:
-            u_obj = await client.get_users(user_id)
-        except Exception:
-            class _U:
-                pass
-            u_obj = _U()
-            u_obj.id = user_id
-            u_obj.first_name = "User"
-            u_obj.last_name = None
-            u_obj.username = None
-            u_obj.mention = f"<a href='tg://user?id={user_id}'>User</a>"
-        try:
-            ist = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
-            today = _dt.datetime.now(ist).strftime("%Y-%m-%d")
-            if mongo_db is not None:
-                already = mongo_db.bypass_logs.find_one({
-                    "bot_id": int(client.me.id),
-                    "user_id": int(user_id),
-                    "date": today,
-                })
-                if not already:
-                    mongo_db.bypass_logs.update_one(
-                        {"bot_id": int(client.me.id), "user_id": int(user_id), "date": today},
-                        {"$set": {"logged_at": int(_time.time())}},
-                        upsert=True,
-                    )
-                    await send_verify_log(client, u_obj, log_type="bypass", payload=original_payload)
-            else:
-                await send_verify_log(client, u_obj, log_type="bypass", payload=original_payload)
-        except Exception:
-            try:
-                await send_verify_log(client, u_obj, log_type="bypass", payload=original_payload)
-            except Exception:
-                pass
-        return None, None
-
-    return await _orig_access_verification(client, user_id, original_payload)
 
 # Patch success log inside start() by wrapping the verify success block is hard;
 # instead monkey-patch set_user_verified side-effect via a thin wrapper used only from start.
