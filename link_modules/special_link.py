@@ -691,6 +691,7 @@ async def special_link_start(client, message):
     invert_cap = bool(rec.get("invert_caption", False))
     spoiler_anim = bool(rec.get("spoiler_animation", False))
 
+    delivered_messages = []
     for item in messages:
         c_id = int(item["chat_id"])
         m_id = int(item["message_id"])
@@ -737,13 +738,26 @@ async def special_link_start(client, message):
         fb_no_pm.pop("parse_mode", None)
         attempts.append(fb_no_pm)
 
+        delivered = None
         for attempt_kw in attempts:
             try:
-                await client.copy_message(**attempt_kw)
+                delivered = await client.copy_message(**attempt_kw)
                 await asyncio.sleep(0.08)
                 break
             except Exception:
                 continue
+
+        if delivered:
+            delivered_messages.append(delivered)
+
+    try:
+        ad_enabled = bool(rec.get("auto_delete_enabled", False))
+        ad_sec = int(rec.get("auto_delete_time") or (int(rec.get("auto_delete_minutes", 0) or 0) * 60) or 0)
+        if ad_enabled and ad_sec > 0 and delivered_messages:
+            from link_modules.auto_delete_delivery import schedule_auto_delete
+            await schedule_auto_delete(client, message.from_user.id, delivered_messages, ad_sec)
+    except Exception:
+        pass
 
     raise StopPropagation
 

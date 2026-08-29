@@ -159,6 +159,27 @@ async def _schedule_delete(client, delivered, warning, seconds):
             pass
 
 
+async def schedule_auto_delete(client, user_id, delivered_messages, seconds):
+    from clone_plugins.commands import bot_record
+    record = bot_record(client)
+    warning = await _send_auto_delete_notice(client, int(user_id), record, seconds)
+    
+    async def _delete_all():
+        await asyncio.sleep(seconds)
+        for msg in delivered_messages:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+        if warning:
+            try:
+                await warning.delete()
+            except Exception:
+                pass
+    
+    asyncio.create_task(_delete_all())
+
+
 async def _shorten_generated_link(client, link):
     """Shorten one generated link using the clone's Link Shortener settings."""
     if not link or not isinstance(link, str) or not link.startswith(("http://", "https://")):
@@ -259,40 +280,12 @@ async def _prepare_shortened_output(client, text, reply_markup):
 
 
 def install_link_auto_delete(client):
-    """Install narrowly scoped Auto Delete and Link Shortener wrappers."""
+    """Install narrowly scoped Link Shortener wrappers."""
     if getattr(client, "_ash_link_auto_delete_installed", False):
         return client
 
-    original_copy_message = client.copy_message
     original_send_message = client.send_message
     original_edit_message_text = client.edit_message_text
-
-    async def wrapped_copy_message(*args, **kwargs):
-        delivered = await original_copy_message(*args, **kwargs)
-
-        if not _is_target_delivery_call():
-            return delivered
-
-        try:
-            chat_id = kwargs.get("chat_id")
-            if chat_id is None and args:
-                chat_id = args[0]
-            if chat_id is None:
-                return delivered
-
-            from clone_plugins.commands import bot_record
-            record = bot_record(client)
-            if not record.get("auto_delete_enabled", False):
-                return delivered
-
-            seconds = int(record.get("auto_delete_time") or (int(record.get("auto_delete_minutes", 15)) * 60))
-            seconds = max(1, seconds)
-            warning = await _send_auto_delete_notice(client, int(chat_id), record, seconds)
-            asyncio.create_task(_schedule_delete(client, delivered, warning, seconds))
-        except Exception:
-            pass
-
-        return delivered
 
     async def wrapped_send_message(*args, **kwargs):
         if _is_target_shortener_call():
@@ -332,7 +325,6 @@ def install_link_auto_delete(client):
                 kwargs["reply_markup"] = new_markup
         return await original_edit_message_text(*args, **kwargs)
 
-    client.copy_message = wrapped_copy_message
     client.send_message = wrapped_send_message
     client.edit_message_text = wrapped_edit_message_text
     client._ash_link_auto_delete_installed = True

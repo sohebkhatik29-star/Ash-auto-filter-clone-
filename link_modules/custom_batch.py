@@ -275,6 +275,11 @@ async def _generate(client, query, session):
     url = f"https://t.me/{username}?start=batch_{token}"
     shown = url
 
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+
     old_chat = session.get("control_chat_id")
     old_msg = session.get("control_message_id")
     if old_chat and old_msg:
@@ -282,6 +287,8 @@ async def _generate(client, query, session):
             await client.delete_messages(int(old_chat), int(old_msg))
         except Exception:
             pass
+
+    mongo_db.custom_batch_sessions.delete_one({"_id": session["_id"]})
 
     text = (
         "✅ <b>CUSTOM BATCH LINK GENERATED</b>\n\n"
@@ -494,6 +501,7 @@ async def batch_start(client, message):
         or rec.get("custom_thumbnail")
     )
 
+    delivered_messages = []
     await message.reply(f"📦 <b>Sending {len(messages)} messages...</b>")
     for item in messages:
         c_id = int(item["chat_id"])
@@ -591,11 +599,23 @@ async def batch_start(client, message):
 
             for attempt_kw in attempts:
                 try:
-                    await client.copy_message(**attempt_kw)
+                    delivered = await client.copy_message(**attempt_kw)
                     await asyncio.sleep(0.1)
                     break
                 except Exception:
                     continue
+                    
+        if delivered:
+            delivered_messages.append(delivered)
+
+    try:
+        ad_enabled = bool(rec.get("auto_delete_enabled", False))
+        ad_sec = int(rec.get("auto_delete_time") or (int(rec.get("auto_delete_minutes", 0) or 0) * 60) or 0)
+        if ad_enabled and ad_sec > 0 and delivered_messages:
+            from link_modules.auto_delete_delivery import schedule_auto_delete
+            await schedule_auto_delete(client, message.from_user.id, delivered_messages, ad_sec)
+    except Exception:
+        pass
 
     raise StopPropagation
 

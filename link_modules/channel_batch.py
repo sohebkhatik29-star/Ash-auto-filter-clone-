@@ -302,6 +302,7 @@ async def batch_start_deliver(client, message):
     invert_cap = bool(rec.get("invert_caption", False))
     spoiler_anim = bool(rec.get("spoiler_animation", False))
 
+    delivered_messages = []
     for m_id in range(f_id, l_id + 1):
         if not _ACTIVE_DELIVERIES.get(delivery_key, False):
             break
@@ -348,17 +349,30 @@ async def batch_start_deliver(client, message):
         fb_no_pm.pop("parse_mode", None)
         attempts.append(fb_no_pm)
 
+        delivered = None
         for attempt_kw in attempts:
             try:
-                await client.copy_message(**attempt_kw)
+                delivered = await client.copy_message(**attempt_kw)
                 await asyncio.sleep(0.1)
                 break
             except Exception:
                 continue
 
+        if delivered:
+            delivered_messages.append(delivered)
+
     _ACTIVE_DELIVERIES.pop(delivery_key, None)
     try:
         await wait_msg.delete()
+    except Exception:
+        pass
+
+    try:
+        ad_enabled = bool(rec.get("auto_delete_enabled", False))
+        ad_sec = int(rec.get("auto_delete_time") or (int(rec.get("auto_delete_minutes", 0) or 0) * 60) or 0)
+        if ad_enabled and ad_sec > 0 and delivered_messages:
+            from link_modules.auto_delete_delivery import schedule_auto_delete
+            await schedule_auto_delete(client, user_id, delivered_messages, ad_sec)
     except Exception:
         pass
 
