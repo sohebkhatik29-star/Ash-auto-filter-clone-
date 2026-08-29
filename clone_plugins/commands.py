@@ -352,7 +352,71 @@ async def access_verification(client, user_id, original_payload=""):
                 await send_verify_log(client, u_obj, log_type="bypass", payload=original_payload)
             except Exception:
                 pass
-        return None, None
+        return None, None, None
+
+    # Check Free Usage Limit
+    f_limit = rec.get("free_limit", {})
+    if isinstance(f_limit, dict) and bool(f_limit.get("enabled", False)):
+        allowed_count = int(f_limit.get("count", 0))
+        if allowed_count > 0:
+            duration_sec = f_limit.get("duration_seconds")
+            if not duration_sec:
+                num = int(f_limit.get("num", 1) or 1)
+                unit = str(f_limit.get("unit", "day")).lower()
+                if "sec" in unit:
+                    duration_sec = num
+                elif "min" in unit:
+                    duration_sec = num * 60
+                elif "hour" in unit:
+                    duration_sec = num * 3600
+                elif "month" in unit:
+                    duration_sec = num * 30 * 86400
+                elif "year" in unit:
+                    duration_sec = num * 365 * 86400
+                elif "week" in unit:
+                    duration_sec = num * 7 * 86400
+                else:
+                    duration_sec = num * 86400
+
+            window_display = f_limit.get("display") or f_limit.get("window_text") or (f"Every {f_limit.get('num', 1)} {f_limit.get('unit', 'day').capitalize()}(s)" if f_limit.get("num") else "Every 1 Day(s)")
+            if not str(window_display).lower().startswith("every"):
+                window_text = f"Every {window_display}"
+            else:
+                window_text = str(window_display)
+
+            now = _time.time()
+            u_rec = mongo_db.free_usage.find_one({"bot_id": int(bot_id), "user_id": int(user_id)}) if mongo_db is not None else None
+            if not u_rec or (now - float(u_rec.get("window_start", 0))) >= float(duration_sec):
+                current_usage = 0
+                window_start = now
+            else:
+                current_usage = int(u_rec.get("count", 0))
+                window_start = float(u_rec.get("window_start", now))
+
+            if current_usage < allowed_count:
+                new_usage = current_usage + 1
+                remaining = allowed_count - new_usage
+                if mongo_db is not None:
+                    mongo_db.free_usage.update_one(
+                        {"bot_id": int(bot_id), "user_id": int(user_id)},
+                        {"$set": {
+                            "count": new_usage,
+                            "window_start": window_start,
+                            "updated_at": now
+                        }},
+                        upsert=True
+                    )
+                usage_notice = (
+                    f"📊 <b>Free Usage Details</b>\n"
+                    f"• <b>Usage:</b> {new_usage} / {allowed_count}\n"
+                    f"• <b>Reset Window:</b> {window_text}\n\n"
+                    f"You have {remaining} free uses remaining."
+                )
+                try:
+                    await client.send_message(user_id, usage_notice)
+                except Exception:
+                    pass
+                return None, None, None
 
     # 1. Collect all active verification slots (1, 2, 3)
     active_slots = []
