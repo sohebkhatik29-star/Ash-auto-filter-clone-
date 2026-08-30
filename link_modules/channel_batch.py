@@ -63,10 +63,9 @@ def _extract_chat_and_msg_id(message):
 
 
 async def start_batch(client, message):
-    from settings_modules.active_deactive import is_clone_deactivated, touch_bot_activity
-    if is_clone_deactivated(client):
-        return await message.reply("⚠️ <b>This bot is currently DEACTIVATED.</b>")
-    touch_bot_activity(client.me.id)
+    from settings_modules.active_deactive import check_clone_status_or_block
+    if await check_clone_status_or_block(client, message):
+        return
 
     if not is_allowed_batch(client, message.from_user.id):
         return await message.reply("❌ Batch generation is private. Only owner/moderators can use it.")

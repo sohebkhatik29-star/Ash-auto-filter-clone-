@@ -41,15 +41,20 @@ def save_master(**data):
 
 def is_admin(uid):
     try:
-        return int(uid) in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]
+        from settings_modules.master_admin_panel import is_master_admin
+        return is_master_admin(uid)
     except Exception:
-        return False
+        try:
+            return int(uid) in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]
+        except Exception:
+            return False
 
 def docs_for(uid):
     m = db()
     if m is None:
         return []
-    q = {} if is_admin(uid) else {"user_id": int(uid)}
+    # User's own clones only
+    q = {"user_id": int(uid)}
     return list(m.bots.find(q, {"token": 0}).sort("bot_id", 1))
 
 def cancel_user_listeners(client, chat_id, user_id=None):

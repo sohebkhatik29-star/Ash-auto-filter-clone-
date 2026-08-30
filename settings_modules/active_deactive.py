@@ -21,6 +21,85 @@ def touch_bot_activity(bot_id: int):
     except Exception:
         pass
 
+def is_clone_suspended(client_or_bid):
+    """Return (is_suspended, suspend_doc)."""
+    try:
+        from settings_modules.master_admin_panel import is_clone_suspended as _check_susp
+        return _check_susp(client_or_bid)
+    except Exception:
+        return False, {}
+
+async def check_clone_status_or_block(client, message_or_query) -> bool:
+    """
+    Check if clone bot is suspended or deactivated.
+    If suspended or deactivated, replies with notice and returns True (meaning BLOCKED).
+    If active, touches bot activity and returns False (meaning ALLOWED).
+    """
+    me = client.me or (await client.get_me())
+    from config import BOT_USERNAME
+    if me and me.username and BOT_USERNAME and me.username.lower() == BOT_USERNAME.lower():
+        return False
+
+    is_susp, susp_doc = is_clone_suspended(me.id)
+    if is_susp:
+        until = susp_doc.get("suspended_until")
+        dur_str = susp_doc.get("suspend_duration_str", "Temporary")
+        import datetime
+        until_str = datetime.datetime.fromtimestamp(until).strftime("%Y-%m-%d %H:%M:%S UTC") if until else "Permanent"
+        admin_name = susp_doc.get("suspended_by") or "Administrator"
+        text = (
+            f"⛔ <b>THIS BOT HAS BEEN SUSPENDED!</b>\n\n"
+            f"<blockquote>This clone bot has been suspended by Master Bot Administrator (@{admin_name}).</blockquote>\n\n"
+            f"<b>⏱ Duration:</b> <code>{dur_str}</code>\n"
+            f"<b>⏳ Expiry:</b> <code>{until_str}</code>\n"
+            f"<b>👮 Administrator:</b> @{admin_name}\n\n"
+            f"<i>If you are the bot owner or have questions, please contact @{admin_name}.</i>"
+        )
+        markup = None
+        if admin_name and not admin_name.startswith("User"):
+            markup = InlineKeyboardMarkup([[InlineKeyboardButton("💬 CONTACT ADMIN", url=f"https://t.me/{admin_name.lstrip('@')}")]])
+        msg = getattr(message_or_query, "message", None) or message_or_query
+        try:
+            if hasattr(msg, "reply_text"):
+                await msg.reply_text(text, reply_markup=markup)
+            elif hasattr(message_or_query, "answer"):
+                await message_or_query.answer("⛔ This bot is SUSPENDED by Administrator.", show_alert=True)
+        except Exception:
+            pass
+        return True
+
+    if is_clone_deactivated(me.id):
+        m = db()
+        doc = m.bots.find_one({"bot_id": me.id}) if m is not None else {}
+        owner_id = int(doc.get("user_id", 0))
+        from_uid = getattr(getattr(message_or_query, "from_user", None), "id", 0)
+        msg = getattr(message_or_query, "message", None) or message_or_query
+
+        if from_uid and from_uid == owner_id:
+            text = (
+                f"⚠️ <b>Your clone @{me.username} is currently DEACTIVATED.</b>\n\n"
+                f"<i>Your bot was deactivated manually or automatically by our system due to being inactive for 8 days.\n\n"
+                f"You can reactivate it anytime using Master Bot (@{BOT_USERNAME}) -> Settings -> Manage Clone -> Bot Status and click <b>ENABLE</b>.</i>"
+            )
+            buttons = [[InlineKeyboardButton("🤖 OPEN MASTER BOT ↗", url=f"https://t.me/{BOT_USERNAME}?start=clone")]]
+            try:
+                await msg.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+            except Exception:
+                pass
+        else:
+            text = (
+                "⚠️ <b>This bot is currently DEACTIVATED by its owner.</b>\n\n"
+                "<i>Please contact the bot administrator to activate it.</i>"
+            )
+            try:
+                await msg.reply_text(text)
+            except Exception:
+                pass
+        return True
+
+    touch_bot_activity(me.id)
+    return False
+
 def is_clone_deactivated(client_or_bid) -> bool:
     """Return True if the bot is currently deactivated."""
     try:

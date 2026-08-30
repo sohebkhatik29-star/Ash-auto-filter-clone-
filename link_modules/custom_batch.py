@@ -149,10 +149,9 @@ async def _debounce_indexer(client, bot_id, user_id, session_id):
 
 
 async def custom_batch_cmd(client, message):
-    from settings_modules.active_deactive import is_clone_deactivated, touch_bot_activity
-    if is_clone_deactivated(client):
-        return await message.reply("⚠️ <b>This bot is currently DEACTIVATED.</b>")
-    touch_bot_activity(client.me.id)
+    from settings_modules.active_deactive import check_clone_status_or_block
+    if await check_clone_status_or_block(client, message):
+        return
 
     if not cmd.is_owner_or_mod(client, message.from_user.id) and cmd.bot_record(client).get("mode", "private") == "private":
         return await message.reply("❌ Batch generation is private. Only owner/moderators can use it.")

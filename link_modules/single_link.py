@@ -87,10 +87,9 @@ async def genlink_prompt(client, message):
     if _batch_active(client, user_id):
         return
 
-    from settings_modules.active_deactive import is_clone_deactivated, touch_bot_activity
-    if is_clone_deactivated(client):
-        return await message.reply("⚠️ <b>This bot is currently DEACTIVATED.</b>")
-    touch_bot_activity(client.me.id)
+    from settings_modules.active_deactive import check_clone_status_or_block
+    if await check_clone_status_or_block(client, message):
+        return
 
     key = (client.me.id, user_id)
     old = _PENDING.get(key)

@@ -66,6 +66,19 @@ async def get_master_config(client):
         pass
     return await get_user(client.me.id)
 
+def get_master_start_markup(user_id: int):
+    from settings_modules.master_admin_panel import is_master_admin
+    buttons = []
+    if is_master_admin(user_id):
+        buttons.append([InlineKeyboardButton('👑 ADMIN PANEL', callback_data='admin_panel_main')])
+    buttons.extend([
+        [InlineKeyboardButton('⚙️ SETTINGS', callback_data='master_settings'), InlineKeyboardButton('🤖 MY CLONE BOT', callback_data='my_clones')],
+        [InlineKeyboardButton('💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ', url='https://www.youtube.com/@tech_as_0')],
+        [InlineKeyboardButton('🔍 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ', url=tg_link(SUPPORT_GROUP, 'ash_movie_j')), InlineKeyboardButton('🤖 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ', url=tg_link(UPDATE_CHANNEL, 'MoviesGroupG3'))],
+        [InlineKeyboardButton('💁‍♀️ ʜᴇʟᴘ', callback_data='help'), InlineKeyboardButton('😊 ᴀʙᴏᴜᴛ', callback_data='about')]
+    ])
+    return InlineKeyboardMarkup(buttons)
+
 
 async def check_master_verification(client, user_id, original_payload):
     try:
@@ -310,13 +323,7 @@ async def start(client, message):
         await db.add_user(message.from_user.id, message.from_user.first_name)
         await client.send_message(LOG_CHANNEL, script.LOG_TEXT.format(message.from_user.id, message.from_user.mention))
     if len(message.command) != 2:
-        buttons = [
-            [InlineKeyboardButton('⚙️ SETTINGS', callback_data='master_settings'), InlineKeyboardButton('🤖 MY CLONE BOT', callback_data='my_clones')],
-            [InlineKeyboardButton('💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ', url='https://www.youtube.com/@tech_as_0')],
-            [InlineKeyboardButton('🔍 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ', url=tg_link(SUPPORT_GROUP, 'ash_movie_j')), InlineKeyboardButton('🤖 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ', url=tg_link(UPDATE_CHANNEL, 'MoviesGroupG3'))],
-            [InlineKeyboardButton('💁‍♀️ ʜᴇʟᴘ', callback_data='help'), InlineKeyboardButton('😊 ᴀʙᴏᴜᴛ', callback_data='about')]
-        ]
-        reply_markup = InlineKeyboardMarkup(buttons)
+        reply_markup = get_master_start_markup(message.from_user.id)
         me = client.me
         u_info = await get_user(message.from_user.id)
         start_photo = (u_info.get("start_pic") if u_info else None) or random.choice(PICS)
@@ -830,6 +837,62 @@ async def base_site_handler(client, m: Message):
         await update_user_info(user_id, {"base_site": base_site})
         await m.reply("<b>Base Site updated successfully</b>")
 
+
+@Client.on_message(filters.command(["admin", "admin_panel"]) & filters.private)
+async def admin_panel_cmd_handler(client, message):
+    me = client.me or (await client.get_me())
+    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
+        return
+    from settings_modules.master_admin_panel import is_master_admin, admin_panel_main_markup, db, get_all_admins
+    user_id = message.from_user.id
+    if not is_master_admin(user_id):
+        return await message.reply("❌ <b>Access denied.</b> This command is restricted to Master Bot Administrators only.")
+    
+    m = db()
+    total_bots = m.bots.count_documents({}) if m is not None else 0
+    total_owners = 0
+    if m is not None:
+        agg = list(m.bots.aggregate([{"$group": {"_id": "$user_id"}}, {"$count": "total"}]))
+        total_owners = agg[0]["total"] if agg else 0
+    admin_count = len(get_all_admins())
+    
+    text = (
+        "👑 <b>MASTER BOT ADMIN CONTROL PANEL</b>\n\n"
+        "<blockquote>Welcome Administrator! Control and supervise all cloned bots, search clone owners, manage suspension, and configure bot settings.</blockquote>\n\n"
+        f"📊 <b>TOTAL CLONE OWNERS:</b> <code>{total_owners} Users</code>\n"
+        f"🤖 <b>TOTAL CLONE BOTS:</b> <code>{total_bots} Bots</code>\n"
+        f"👮 <b>MASTER BOT ADMINS:</b> <code>{admin_count} Admins</code>\n\n"
+        "<i>Select an option from the menu below:</i>"
+    )
+    return await message.reply_text(text, reply_markup=admin_panel_main_markup())
+
+
+@Client.on_message(filters.command(["search_owner", "search_clone"]) & filters.private)
+async def search_owner_cmd_handler(client, message):
+    me = client.me or (await client.get_me())
+    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
+        return
+    from settings_modules.master_admin_panel import is_master_admin
+    user_id = message.from_user.id
+    if not is_master_admin(user_id):
+        return await message.reply("❌ <b>Access denied.</b> Master Bot Administrators only.")
+
+    from plugins.master_settings import cancel_user_listeners
+    cancel_user_listeners(client, message.chat.id, user_id)
+
+    # Fake query to reuse search handler
+    class FakeQuery:
+        def __init__(self, msg, user):
+            self.message = msg
+            self.from_user = user
+            self.data = "admin_search_owner"
+        async def answer(self, *args, **kwargs):
+            pass
+
+    from settings_modules.master_admin_panel import handle_admin_panel_callbacks
+    return await handle_admin_panel_callbacks(client, FakeQuery(message, message.from_user))
+
+
 # Don't Remove Credit Tg - @movies_1780
 # Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
 # Ask Doubt on telegram @movies_1780
@@ -874,6 +937,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
             pass
         return
 
+    elif data == "admin_panel_main" or data.startswith("admin_"):
+        from settings_modules.master_admin_panel import handle_admin_panel_callbacks
+        return await handle_admin_panel_callbacks(client, query)
+
     elif (
         data in ("settings", "master_settings", "settings_back", "my_clone", "my_clones", "clone_my_bots", "create_clone_prompt", "clone_limit", "add_clone_prompt", "clone", "google_backup", "google_connect", "link_shortener", "delete_shortener", "add_shortener", "set_shortlink", "delete_shortlink", "tgl_shortlink", "m_tgl_shortlink", "custom_caption", "custom_thumbnail", "custom_button", "protect_menu", "start_photo_menu")
         or data.startswith((
@@ -909,17 +976,12 @@ async def cb_handler(client: Client, query: CallbackQuery):
         )
 
     elif data == "start":
-        buttons = [
-            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="master_settings"), InlineKeyboardButton("🤖 MY CLONE BOT", callback_data="my_clones")],
-            [InlineKeyboardButton("💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ", url="https://www.youtube.com/@tech_as_0")],
-            [InlineKeyboardButton("🔍 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ", url=tg_link(SUPPORT_GROUP, "ash_movie_j")), InlineKeyboardButton("🤖 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))],
-            [InlineKeyboardButton("💁‍♀️ ʜᴇʟᴘ", callback_data="help"), InlineKeyboardButton("😊 ᴀʙᴏᴜᴛ", callback_data="about")]
-        ]
+        reply_markup = get_master_start_markup(query.from_user.id)
         me2 = (await client.get_me()).mention
         await safe_edit_menu(
             query,
             text=script.START_TXT.format(query.from_user.mention, me2),
-            reply_markup=InlineKeyboardMarkup(buttons)
+            reply_markup=reply_markup
         )
 
     elif data == "clone":
