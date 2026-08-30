@@ -34,6 +34,54 @@ def render_shortener_text(site: str, api: str, is_enabled: bool) -> str:
         f"<b>API -</b> <code>{api_txt}</code>"
     )
 
+async def get_shortened_link_if_enabled(client, user_id, raw_link: str) -> str:
+    """
+    If the bot (or user) has link shortener configured AND shortener_enabled is True,
+    shortens raw_link and returns the shortened link.
+    If shortener is OFF (shortener_enabled is False) or not configured, returns raw_link.
+    """
+    try:
+        from clone_plugins.commands import bot_record
+        from clone_plugins.users_api import get_short_link, get_user
+        
+        rec = {}
+        try:
+            rec = bot_record(client) or {}
+        except Exception:
+            rec = {}
+            
+        site = None
+        api = None
+        enabled = None
+        if rec and isinstance(rec, dict):
+            site = rec.get("shortener_site") or rec.get("base_site")
+            api = rec.get("shortener_api")
+            enabled = rec.get("shortener_enabled")
+        
+        if not (site and api):
+            user = await get_user(user_id)
+            if user and isinstance(user, dict):
+                site = user.get("base_site") or user.get("shortener_site")
+                api = user.get("shortener_api")
+                if enabled is None:
+                    enabled = user.get("shortener_enabled")
+                    
+        has_creds = bool(site and api and site != "Not Set" and api != "Not Set")
+        if not has_creds:
+            return raw_link
+            
+        # If explicitly False -> OFF -> return raw link without shortening
+        if enabled is False:
+            return raw_link
+            
+        # If enabled is True (or truthy default when creds exist) -> ON -> shorten
+        shortened = await get_short_link({"base_site": site, "shortener_api": api}, raw_link)
+        if shortened and str(shortened).startswith("http"):
+            return str(shortened).strip()
+    except Exception as e:
+        print(f"Error in get_shortened_link_if_enabled: {e}")
+    return raw_link
+
 async def handle_shortener_callbacks(client, query, data, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=None):
     data_str = str(data or "")
     if not target_bid and ":" in data_str:
