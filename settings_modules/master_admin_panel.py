@@ -609,23 +609,26 @@ async def handle_admin_panel_callbacks(client, query):
             try:
                 ans = await client.listen(chat_id=user_id, timeout=120)
             except Exception:
-                await client.send_message(user_id, "❌ <b>Session timed out.</b>")
+                await query.message.edit_text("❌ <b>Session timed out.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK TO BOT", callback_data=f"admin_manage_clone:{bid}")]]))
                 clear_user_session(user_id)
                 return
             if not is_user_session_active(user_id, sess_token):
                 return
             txt = (ans.text or "").strip()
+            try:
+                await ans.delete()
+            except Exception:
+                pass
             if txt == "/cancel":
                 clear_user_session(user_id)
-                return await client.send_message(user_id, "❌ <b>Suspension cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK TO BOT", callback_data=f"admin_manage_clone:{bid}")]]))
+                return await query.message.edit_text("❌ <b>Suspension cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK TO BOT", callback_data=f"admin_manage_clone:{bid}")]]))
 
             secs, dur_str = parse_suspend_duration(txt)
             if dur_str is None:
                 clear_user_session(user_id)
-                return await client.send_message(
-                    user_id,
+                return await query.message.edit_text(
                     "❌ <b>Invalid duration format!</b> Please use formats like <code>10s</code>, <code>5m</code>, <code>1h</code>, <code>1d</code>, <code>1mo</code>, <code>1y</code>, or <code>permanent</code>.",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔁 TRY AGAIN", callback_data=f"admin_susp_custom:{bid}")]])
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔁 TRY AGAIN", callback_data=f"admin_susp_custom:{bid}")], [InlineKeyboardButton("‹ BACK TO BOT", callback_data=f"admin_manage_clone:{bid}")]])
                 )
 
             admin_uname = query.from_user.username or query.from_user.first_name or "Administrator"
@@ -665,11 +668,35 @@ async def handle_admin_panel_callbacks(client, query):
                 except Exception:
                     pass
 
-            await client.send_message(
-                user_id,
-                f"✅ <b>Clone bot @{bot_username} successfully suspended for {dur_str}!</b>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔍 VIEW BOT DETAILS", callback_data=f"admin_manage_clone:{bid}")]])
+            try:
+                await query.answer(f"✅ Bot @{bot_username} suspended for {dur_str}!", show_alert=True)
+            except Exception:
+                pass
+
+            # Refresh single clone view
+            fresh_doc = m.bots.find_one({"bot_id": bid})
+            owner_name, owner_uname = await resolve_user_display(client, fresh_doc.get("user_id", 0), m)
+            owner_str = f"{owner_name} (@{owner_uname})" if owner_uname else f"{owner_name} ({fresh_doc.get('user_id', 0)})"
+            last_act = fresh_doc.get("last_active_time")
+            last_act_str = datetime.datetime.fromtimestamp(last_act).strftime("%Y-%m-%d %H:%M:%S UTC") if last_act else "Never"
+
+            status_text = "⛔ <b>SUSPENDED</b>"
+            if secs and secs > 0:
+                status_text += f" (Until <code>{until_str}</code> - {dur_str})"
+            else:
+                status_text += " (Permanent)"
+            status_text += f"\n<b>Suspended By:</b> @{admin_uname}"
+
+            text = (
+                f"🤖 <b>CLONE BOT SUPERVISION: @{bot_username}</b>\n\n"
+                f"<b>• Bot Name:</b> {fresh_doc.get('name') or bot_username}\n"
+                f"<b>• Bot ID:</b> <code>{bid}</code>\n"
+                f"<b>• Owner:</b> {owner_str}\n"
+                f"<b>• Current Status:</b> {status_text}\n"
+                f"<b>• Last Active:</b> <code>{last_act_str}</code>\n\n"
+                "<i>Use the action buttons below to manage this clone bot:</i>"
             )
+            await query.message.edit_text(text, reply_markup=admin_manage_single_clone_markup(fresh_doc))
 
         asyncio.create_task(_listen_custom_suspend())
         return

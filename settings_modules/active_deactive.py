@@ -24,7 +24,7 @@ def touch_bot_activity(bot_id: int):
 def is_clone_suspended(client_or_bid):
     """Return (is_suspended, suspend_doc)."""
     try:
-        from settings_modules.master_admin_panel import is_clone_suspended as _check_susp
+        from settings_modules.master_admin_panel import is_clone_bot_suspended as _check_susp
         return _check_susp(client_or_bid)
     except Exception:
         return False, {}
