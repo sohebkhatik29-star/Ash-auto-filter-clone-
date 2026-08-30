@@ -516,6 +516,7 @@ async def start(client, message):
             BATCH_FILES[file_id] = msgs
             
         filesarr = []
+        user_protect = bool(master_cfg.get("protect_content", False))
         for msg in msgs:
             channel_id = int(msg.get("channel_id"))
             msgid = msg.get("msg_id")
@@ -552,18 +553,18 @@ async def start(client, message):
                 else:
                     reply_markup = None
                 try:
-                    msg = await info.copy(chat_id=message.from_user.id, caption=f_caption, protect_content=False, reply_markup=reply_markup)
+                    msg = await info.copy(chat_id=message.from_user.id, caption=f_caption, protect_content=user_protect, reply_markup=reply_markup)
                 except FloodWait as e:
                     await asyncio.sleep(e.value)
-                    msg = await info.copy(chat_id=message.from_user.id, caption=f_caption, protect_content=False, reply_markup=reply_markup)
+                    msg = await info.copy(chat_id=message.from_user.id, caption=f_caption, protect_content=user_protect, reply_markup=reply_markup)
                 except:
                     continue
             else:
                 try:
-                    msg = await info.copy(chat_id=message.from_user.id, protect_content=False)
+                    msg = await info.copy(chat_id=message.from_user.id, protect_content=user_protect)
                 except FloodWait as e:
                     await asyncio.sleep(e.value)
-                    msg = await info.copy(chat_id=message.from_user.id, protect_content=False)
+                    msg = await info.copy(chat_id=message.from_user.id, protect_content=user_protect)
                 except:
                     continue
             filesarr.append(msg)

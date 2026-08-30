@@ -257,7 +257,7 @@ async def callbacks(client, query):
         return await handle_permanent_link_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 
     # 11. Protect Content
-    if data in ("protect_menu", "cset_tgl_protect"):
+    if data in ("protect_menu", "cset_tgl_protect", "m_tgl_protect", "cset_protect", "cset_protect_toggle", "protect_toggle", "protect_on", "protect_off") or data.startswith(("protect_menu:", "m_tgl_protect:", "cset_tgl_protect:")):
         return await handle_protect_content_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 
     # 12. Link Shortener

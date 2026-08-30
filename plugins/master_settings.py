@@ -644,29 +644,11 @@ async def callbacks(client, query):
         return await callbacks(client, type("Q", (), {"data": "master_permanent_link", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
 
     # --- PROTECT CONTENT --- #
-    if data == "protect_menu":
-        protect = bool(r.get("protect_content", False))
-        status_txt = "ON ✅" if protect else "OFF ❌"
-        tgl_btn = "OFF PROTECT CONTENT" if protect else "ON PROTECT CONTENT"
-        text = (
-            "🔒 <b>PROTECT CONTENT:</b>\n\n"
-            "<b>PROTECT CONTENT: PREVENT USERS FROM FORWARDING AND SAVING MESSAGES SENT BY THIS BOT.</b>\n\n"
-            f"<b>PROTECT CONTENT - {status_txt}</b>"
+    if data in ("protect_menu", "m_tgl_protect") or data.startswith(("protect_menu:", "m_tgl_protect:")):
+        from settings_modules.protect_content import handle_protect_content_callbacks
+        return await handle_protect_content_callbacks(
+            client, query, data, user_id, r, save_master, cancel_user_listeners, edit_or_reply
         )
-        return await edit_or_reply(
-            query,
-            text,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(tgl_btn, callback_data="m_tgl_protect")],
-                [InlineKeyboardButton("‹ BACK", callback_data="settings")]
-            ])
-        )
-
-    if data == "m_tgl_protect":
-        protect = not bool(r.get("protect_content", False))
-        save_master(protect_content=protect)
-        await query.answer(f"Protect Content {'Enabled' if protect else 'Disabled'}!")
-        return await callbacks(client, type("Q", (), {"data": "protect_menu", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
 
     await query.answer()
 
