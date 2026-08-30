@@ -3,18 +3,14 @@
 # Ask Doubt on telegram @movies_1780
 
 import re
+import os
+import json
+import base64
 from pyrogram import filters, Client, enums
 from pyrogram.errors.exceptions.bad_request_400 import ChannelInvalid, UsernameInvalid, UsernameNotModified
 from config import ADMINS, LOG_CHANNEL, PUBLIC_FILE_STORE, WEBSITE_URL, WEBSITE_URL_MODE, BOT_USERNAME
 from plugins.users_api import get_user, get_short_link
-import re
-import os
-import json
-import base64
-
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
+from settings_modules.link_shortener import get_shortened_link_if_enabled
 
 async def allowed(_, __, message):
     if PUBLIC_FILE_STORE:
@@ -22,10 +18,6 @@ async def allowed(_, __, message):
     if message.from_user and message.from_user.id in ADMINS:
         return True
     return False
-
-# Don't Remove Credit Tg - @movies_1780
-# Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
-# Ask Doubt on telegram @movies_1780
 
 @Client.on_message((filters.document | filters.video | filters.audio) & filters.private & filters.create(allowed))
 async def incoming_gen_link(bot, message):
@@ -40,13 +32,12 @@ async def incoming_gen_link(bot, message):
     string += file_id
     outstr = base64.urlsafe_b64encode(string.encode("ascii")).decode().strip("=")
     user_id = message.from_user.id
-    user = await get_user(user_id)
     if WEBSITE_URL_MODE == True:
-        share_link = f"{WEBSITE_URL}?tech_as_0={outstr}"
+        raw_share_link = f"{WEBSITE_URL}?tech_as_0={outstr}"
     else:
-        share_link = f"https://t.me/{username}?start={outstr}"
+        raw_share_link = f"https://t.me/{username}?start={outstr}"
+    share_link = await get_shortened_link_if_enabled(bot, user_id, raw_share_link)
     await message.reply(f"<b>⭕ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ:\n\n🔗 ᴏʀɪɢɪɴᴀʟ ʟɪɴᴋ :- {share_link}</b>")
-        
 
 @Client.on_message(filters.command(['link', 'genlink', 'getlink']) & filters.create(allowed))
 async def gen_link_s(bot, message):
@@ -73,11 +64,9 @@ async def gen_link_s(bot, message):
     string += file_id
     outstr = base64.urlsafe_b64encode(string.encode("ascii")).decode().strip("=")
     user_id = message.from_user.id
-    user = await get_user(user_id)
     if WEBSITE_URL_MODE == True:
-        share_link = f"{WEBSITE_URL}?tech_as_0={outstr}"
+        raw_share_link = f"{WEBSITE_URL}?tech_as_0={outstr}"
     else:
-        share_link = f"https://t.me/{username}?start={outstr}"
+        raw_share_link = f"https://t.me/{username}?start={outstr}"
+    share_link = await get_shortened_link_if_enabled(bot, user_id, raw_share_link)
     await message.reply(f"<b>⭕ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ:\n\n🔗 ᴏʀɪɢɪɴᴀʟ ʟɪɴᴋ :- {share_link}</b>")
-
-

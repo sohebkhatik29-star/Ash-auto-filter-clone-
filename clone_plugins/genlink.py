@@ -131,7 +131,8 @@ async def capture_interactive(client, message):
 
     username = (await client.get_me()).username
     original = f"https://t.me/{username}?start={_encode(token)}"
-    link = original
+    from settings_modules.link_shortener import get_shortened_link_if_enabled
+    link = await get_shortened_link_if_enabled(client, message.from_user.id, original)
 
     markup = InlineKeyboardMarkup([
         [

@@ -445,7 +445,9 @@ async def capture_single(client, message):
     mongo_db.share_links.update_one({"token": b64_tok}, {"$set": doc}, upsert=True)
 
     username = (await client.get_me()).username
-    link = f"https://t.me/{username}?start=msg_{token}" 
+    raw_link = f"https://t.me/{username}?start=msg_{token}"
+    from settings_modules.link_shortener import get_shortened_link_if_enabled
+    link = await get_shortened_link_if_enabled(client, message.from_user.id, raw_link)
     markup = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📋 Copy Link 📋", url=f"https://t.me/share/url?url={link}"),

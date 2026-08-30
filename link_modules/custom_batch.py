@@ -273,7 +273,8 @@ async def _generate(client, query, session):
 
     username = (await client.get_me()).username
     url = f"https://t.me/{username}?start=batch_{token}"
-    shown = url
+    from settings_modules.link_shortener import get_shortened_link_if_enabled
+    shown = await get_shortened_link_if_enabled(client, int(session["user_id"]), url)
 
     try:
         await query.message.delete()

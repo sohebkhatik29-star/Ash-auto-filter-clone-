@@ -375,7 +375,8 @@ async def special_link_callbacks(client, query):
 
         username = (await client.get_me()).username
         orig_link = f"https://t.me/{username}?start=special_{token}"
-        shown_link = orig_link
+        from settings_modules.link_shortener import get_shortened_link_if_enabled
+        shown_link = await get_shortened_link_if_enabled(client, int(query.from_user.id), orig_link)
 
         text = f"Here is your special link:\n\n{shown_link}"
         await query.message.edit_text(
@@ -614,7 +615,8 @@ async def special_link_callbacks(client, query):
     elif action == "getlink":
         username = (await client.get_me()).username
         orig_link = f"https://t.me/{username}?start=special_{token}"
-        shown_link = orig_link
+        from settings_modules.link_shortener import get_shortened_link_if_enabled
+        shown_link = await get_shortened_link_if_enabled(client, int(query.from_user.id), orig_link)
 
         text = f"Here is your special link:\n\n{shown_link}"
         await query.message.edit_text(

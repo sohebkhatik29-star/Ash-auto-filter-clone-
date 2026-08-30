@@ -222,7 +222,8 @@ async def capture_batch_step(client, message):
 
         username = (await client.get_me()).username
         orig_link = f"https://t.me/{username}?start=cbatch_{token}"
-        shown_link = orig_link
+        from settings_modules.link_shortener import get_shortened_link_if_enabled
+        shown_link = await get_shortened_link_if_enabled(client, int(message.from_user.id), orig_link)
 
         try:
             await notice_msg.delete()

@@ -6,8 +6,6 @@ import mimetypes
 import urllib.request
 import urllib.parse
 import asyncio
-import time
-import pyrogram
 from pyrogram import enums, filters
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -311,13 +309,8 @@ async def deliver_media_with_custom_thumb(
         if caption:
             kw["caption"] = caption
             kw["parse_mode"] = enums.ParseMode.HTML
-            
         if thumb_path and os.path.exists(thumb_path):
-            if pyrogram.__version__.startswith("2"):
-                kw["thumbnail"] = thumb_path
-            else:
-                kw["thumb"] = thumb_path
-                
+            kw["thumb"] = thumb_path
         if duration:
             kw["duration"] = duration
         if width:
@@ -335,12 +328,10 @@ async def deliver_media_with_custom_thumb(
         except Exception:
             if "thumb" in kw:
                 kw.pop("thumb", None)
-            if "thumbnail" in kw:
-                kw.pop("thumbnail", None)
-            try:
-                delivered = await client.send_video(**kw)
-            except Exception:
-                pass
+                try:
+                    delivered = await client.send_video(**kw)
+                except Exception:
+                    pass
 
     # Document attempt
     if not delivered and (media_type == "document" or not media_type):
@@ -353,13 +344,8 @@ async def deliver_media_with_custom_thumb(
         if caption:
             kw_d["caption"] = caption
             kw_d["parse_mode"] = enums.ParseMode.HTML
-            
         if thumb_path and os.path.exists(thumb_path):
-            if pyrogram.__version__.startswith("2"):
-                kw_d["thumbnail"] = thumb_path
-            else:
-                kw_d["thumb"] = thumb_path
-                
+            kw_d["thumb"] = thumb_path
         if file_name:
             kw_d["file_name"] = file_name
         try:
@@ -367,12 +353,10 @@ async def deliver_media_with_custom_thumb(
         except Exception:
             if "thumb" in kw_d:
                 kw_d.pop("thumb", None)
-            if "thumbnail" in kw_d:
-                kw_d.pop("thumbnail", None)
-            try:
-                delivered = await client.send_document(**kw_d)
-            except Exception:
-                pass
+                try:
+                    delivered = await client.send_document(**kw_d)
+                except Exception:
+                    pass
 
     return delivered
 

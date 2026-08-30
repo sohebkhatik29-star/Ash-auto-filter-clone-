@@ -190,6 +190,10 @@ async def _shorten_generated_link(client, link):
         from clone_plugins.users_api import get_short_link
 
         record = bot_record(client) or {}
+        # Only shorten if shortener is actively enabled (ON)
+        if not bool(record.get("shortener_enabled", False)):
+            return link
+
         api_key = record.get("shortener_api")
         site = record.get("base_site") or record.get("shortener_site")
         if not api_key or not site:

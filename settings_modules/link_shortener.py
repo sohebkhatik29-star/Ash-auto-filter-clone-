@@ -47,42 +47,62 @@ async def handle_shortener_callbacks(client, query, data, user_id, r, save_fn, c
     site = r.get("shortener_site") or r.get("base_site") or "Not Set"
     api = r.get("shortener_api") or "Not Set"
     has_creds = bool(site and site != "Not Set" and api and api != "Not Set")
-    is_enabled = bool(r.get("shortener_enabled", True)) if has_creds else False
+    is_enabled = bool(r.get("shortener_enabled", False)) if has_creds else False
 
-    # Main Link Shortener Menu
+    # Helper to cleanly show/edit text without leaving old menus behind
+    async def clean_show(txt, markup):
+        msg = getattr(query, "message", None) or query
+        if msg and (getattr(msg, "photo", None) or getattr(msg, "media", None)):
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+            return await client.send_message(chat_id=user_id, text=txt, reply_markup=markup)
+        return await edit_or_reply_fn(query, txt, reply_markup=markup)
+
+    # 1. Main Link Shortener Menu
     if (
         data_str in ("link_shortener", "cset_shortener")
         or data_str.startswith(("link_shortener:", "cset_shortener:"))
     ):
+        try:
+            if query:
+                await query.answer()
+        except Exception:
+            pass
         text = render_shortener_text(site, api, is_enabled)
-        return await edit_or_reply_fn(
-            query,
+        return await clean_show(
             text,
-            reply_markup=shortener_settings_markup(site, api, is_enabled, back_cb=back_cb, bid=target_bid)
+            shortener_settings_markup(site, api, is_enabled, back_cb=back_cb, bid=target_bid)
         )
 
-    # Toggle Shortlink ON / OFF
+    # 2. Toggle Shortlink ON / OFF
     if (
         data_str in ("m_tgl_shortlink", "tgl_shortlink")
         or data_str.startswith(("m_tgl_shortlink:", "tgl_shortlink:"))
     ):
         if not has_creds:
             if query:
-                await query.answer("❌ Please set shortlink URL & API first!", show_alert=True)
+                try:
+                    await query.answer("❌ Please set shortlink URL & API first!", show_alert=True)
+                except Exception:
+                    pass
             return
         new_state = not is_enabled
         save_fn(shortener_enabled=new_state)
         r["shortener_enabled"] = new_state
         if query:
-            await query.answer(f"Shortlink turned {'ON' if new_state else 'OFF'}!")
+            try:
+                await query.answer(f"Shortlink turned {'ON' if new_state else 'OFF'}!")
+            except Exception:
+                pass
         text = render_shortener_text(site, api, new_state)
-        return await edit_or_reply_fn(
-            query,
+        return await clean_show(
             text,
-            reply_markup=shortener_settings_markup(site, api, new_state, back_cb=back_cb, bid=target_bid)
+            shortener_settings_markup(site, api, new_state, back_cb=back_cb, bid=target_bid)
         )
 
-    # Delete Shortlink
+    # 3. Delete Shortlink
     if (
         data_str in ("m_del_main_shortener", "delete_shortener", "delete_shortlink")
         or data_str.startswith(("m_del_main_shortener:", "delete_shortener:", "delete_shortlink:"))
@@ -93,15 +113,17 @@ async def handle_shortener_callbacks(client, query, data, user_id, r, save_fn, c
         r["base_site"] = None
         r["shortener_enabled"] = False
         if query:
-            await query.answer("Shortener deleted!")
+            try:
+                await query.answer("Shortener deleted!")
+            except Exception:
+                pass
         text = render_shortener_text("Not Set", "Not Set", False)
-        return await edit_or_reply_fn(
-            query,
+        return await clean_show(
             text,
-            reply_markup=shortener_settings_markup("Not Set", "Not Set", False, back_cb=back_cb, bid=target_bid)
+            shortener_settings_markup("Not Set", "Not Set", False, back_cb=back_cb, bid=target_bid)
         )
 
-    # Set Shortlink
+    # 4. Set Shortlink Wizard
     if (
         data_str in ("m_set_main_shortener", "add_shortener", "set_shortlink")
         or data_str.startswith(("m_set_main_shortener:", "add_shortener:", "set_shortlink:"))
@@ -114,109 +136,94 @@ async def handle_shortener_callbacks(client, query, data, user_id, r, save_fn, c
             except Exception:
                 pass
         
-        prompt1 = await client.send_message(
-            chat_id=user_id,
-            text=(
-                "<b>SEND ME A SHORTLINK URL OR DOMAIN...</b>\n\n"
-                "<b>FORMAT :</b>\n\n"
-                "https://vjlink.online - ❌\n\n"
-                "<code>vjlink.online</code> - ✅\n\n"
-                "/cancel - <b>CANCEL THIS PROCESS.</b>"
-            )
+        prompt_text = (
+            "<b>SEND ME A SHORTLINK URL OR DOMAIN...</b>\n\n"
+            "<b>FORMAT :</b>\n\n"
+            "https://vjlink.online - ❌\n\n"
+            "<code>vjlink.online</code> - ✅\n\n"
+            "/cancel - <b>CANCEL THIS PROCESS.</b>"
         )
+        prompt_markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ CANCEL", callback_data=menu_cb)]])
+        prompt_msg = await clean_show(prompt_text, prompt_markup)
 
         async def _m_short_worker():
+            nonlocal prompt_msg
             try:
                 ans = await client.listen(chat_id=user_id, timeout=120)
             except Exception:
-                try:
-                    await prompt1.delete()
-                except Exception:
-                    pass
                 clear_user_session(user_id)
-                await client.send_message(
-                    chat_id=user_id,
-                    text="❌ <b>Timeout. Process cancelled.</b>",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("‹ BACK", callback_data=menu_cb)]
-                    ])
+                cur_site = r.get("shortener_site") or r.get("base_site") or "Not Set"
+                cur_api = r.get("shortener_api") or "Not Set"
+                cur_en = bool(r.get("shortener_enabled", False)) if (cur_site != "Not Set" and cur_api != "Not Set") else False
+                await clean_show(
+                    render_shortener_text(cur_site, cur_api, cur_en),
+                    shortener_settings_markup(cur_site, cur_api, cur_en, back_cb=back_cb, bid=target_bid)
                 )
                 return
 
             if not is_user_session_active(user_id, sess_token):
                 return
 
-            st = (ans.text or "").strip()
-            if st == "/cancel":
-                try:
-                    await prompt1.delete()
-                    await ans.delete()
-                except Exception:
-                    pass
-                clear_user_session(user_id)
-                await client.send_message(
-                    chat_id=user_id,
-                    text="❌ <b>Process cancelled.</b>",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("‹ BACK", callback_data=menu_cb)]
-                    ])
-                )
-                return
-
-            st = st.replace("http://", "").replace("https://", "").strip("/")
             try:
-                await prompt1.delete()
                 await ans.delete()
             except Exception:
                 pass
 
-            prompt2 = await client.send_message(
-                chat_id=user_id,
-                text="<b>SEND ME SHORTLINK API...</b>\n\n/cancel - <b>CANCEL THIS PROCESS.</b>"
-            )
+            st = (ans.text or "").strip()
+            if st == "/cancel":
+                clear_user_session(user_id)
+                cur_site = r.get("shortener_site") or r.get("base_site") or "Not Set"
+                cur_api = r.get("shortener_api") or "Not Set"
+                cur_en = bool(r.get("shortener_enabled", False)) if (cur_site != "Not Set" and cur_api != "Not Set") else False
+                await clean_show(
+                    render_shortener_text(cur_site, cur_api, cur_en),
+                    shortener_settings_markup(cur_site, cur_api, cur_en, back_cb=back_cb, bid=target_bid)
+                )
+                return
+
+            st = st.replace("http://", "").replace("https://", "").strip("/")
+            
+            api_prompt_text = "<b>SEND ME SHORTLINK API...</b>\n\n/cancel - <b>CANCEL THIS PROCESS.</b>"
+            try:
+                if prompt_msg and hasattr(prompt_msg, "edit_text"):
+                    await prompt_msg.edit_text(api_prompt_text, reply_markup=prompt_markup)
+                else:
+                    prompt_msg = await clean_show(api_prompt_text, prompt_markup)
+            except Exception:
+                prompt_msg = await clean_show(api_prompt_text, prompt_markup)
 
             try:
                 ans2 = await client.listen(chat_id=user_id, timeout=120)
             except Exception:
-                try:
-                    await prompt2.delete()
-                except Exception:
-                    pass
                 clear_user_session(user_id)
-                await client.send_message(
-                    chat_id=user_id,
-                    text="❌ <b>Timeout. Process cancelled.</b>",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("‹ BACK", callback_data=menu_cb)]
-                    ])
+                cur_site = r.get("shortener_site") or r.get("base_site") or "Not Set"
+                cur_api = r.get("shortener_api") or "Not Set"
+                cur_en = bool(r.get("shortener_enabled", False)) if (cur_site != "Not Set" and cur_api != "Not Set") else False
+                await clean_show(
+                    render_shortener_text(cur_site, cur_api, cur_en),
+                    shortener_settings_markup(cur_site, cur_api, cur_en, back_cb=back_cb, bid=target_bid)
                 )
                 return
 
             if not is_user_session_active(user_id, sess_token):
                 return
 
-            ap = (ans2.text or "").strip()
-            if ap == "/cancel":
-                try:
-                    await prompt2.delete()
-                    await ans2.delete()
-                except Exception:
-                    pass
-                clear_user_session(user_id)
-                await client.send_message(
-                    chat_id=user_id,
-                    text="❌ <b>Process cancelled.</b>",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("‹ BACK", callback_data=menu_cb)]
-                    ])
-                )
-                return
-
             try:
-                await prompt2.delete()
                 await ans2.delete()
             except Exception:
                 pass
+
+            ap = (ans2.text or "").strip()
+            if ap == "/cancel":
+                clear_user_session(user_id)
+                cur_site = r.get("shortener_site") or r.get("base_site") or "Not Set"
+                cur_api = r.get("shortener_api") or "Not Set"
+                cur_en = bool(r.get("shortener_enabled", False)) if (cur_site != "Not Set" and cur_api != "Not Set") else False
+                await clean_show(
+                    render_shortener_text(cur_site, cur_api, cur_en),
+                    shortener_settings_markup(cur_site, cur_api, cur_en, back_cb=back_cb, bid=target_bid)
+                )
+                return
 
             save_fn(shortener_site=st, shortener_api=ap, base_site=st, shortener_enabled=True)
             r["shortener_site"] = st
@@ -225,14 +232,15 @@ async def handle_shortener_callbacks(client, query, data, user_id, r, save_fn, c
             r["shortener_enabled"] = True
             clear_user_session(user_id)
 
-            await client.send_message(
-                chat_id=user_id,
-                text="<b>SUCCESSFULLY SET SHORTLINK</b> ✅",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("‹ BACK", callback_data=menu_cb)]
-                ])
-            )
+            final_text = render_shortener_text(st, ap, True)
+            final_markup = shortener_settings_markup(st, ap, True, back_cb=back_cb, bid=target_bid)
+            try:
+                if prompt_msg and hasattr(prompt_msg, "edit_text"):
+                    await prompt_msg.edit_text(final_text, reply_markup=final_markup)
+                else:
+                    await clean_show(final_text, final_markup)
+            except Exception:
+                await clean_show(final_text, final_markup)
 
         asyncio.create_task(_m_short_worker())
         return
-
