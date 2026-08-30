@@ -105,6 +105,11 @@ async def start():
     await web.TCPSite(app, '0.0.0.0', int(PORT)).start()
     if CLONE_MODE:
         await restart_bots()
+    try:
+        from settings_modules.active_deactive import start_inactivity_checker
+        start_inactivity_checker(StreamBot)
+    except Exception:
+        pass
     print('Bot Started - ASH FILE STORE & CLONE MANAGER')
     await idle()
 

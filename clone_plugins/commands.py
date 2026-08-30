@@ -738,6 +738,27 @@ async def start(client, message):
         pass
 
     rec = bot_record(client)
+    deactivated = bool(rec.get("deactivated", False))
+    if deactivated:
+        owner_id = int(rec.get("user_id", 0))
+        if message.from_user and (message.from_user.id == owner_id or is_owner(client, message.from_user.id)):
+            text = (
+                f"⚠️ <b>Your clone @{me.username} is currently DEACTIVATED.</b>\n\n"
+                f"<i>Your bot was deactivated manually or automatically by our system due to being inactive for the last 8 days.\n\n"
+                f"You can reactivate it anytime using Master Bot (@{BOT_USERNAME}) -> Settings -> Manage Clone -> Bot Status and click <b>ENABLE</b>.</i>"
+            )
+            buttons = [[InlineKeyboardButton("🤖 OPEN MASTER BOT ↗", url=f"https://t.me/{BOT_USERNAME}?start=clone")]]
+            return await message.reply(text, reply_markup=InlineKeyboardMarkup(buttons))
+        else:
+            text = (
+                "⚠️ <b>This bot is currently DEACTIVATED by its owner.</b>\n\n"
+                "<i>Please contact the bot administrator to activate it.</i>"
+            )
+            return await message.reply(text)
+
+    from settings_modules.active_deactive import touch_bot_activity
+    touch_bot_activity(me.id)
+
     log_ch = rec.get("log_channel")
     if log_ch and is_new_user:
         try:

@@ -105,6 +105,7 @@ def master_settings_markup(back_cb="settings_back"):
         [InlineKeyboardButton("🔘 BUTTON", callback_data="custom_button"), InlineKeyboardButton("♻️ AUTO DELETE", callback_data="master_auto_delete_menu")],
         [InlineKeyboardButton("♾️ PERMANENT LINK", callback_data="master_permanent_link")],
         [InlineKeyboardButton("🔒 PROTECT CONTENT", callback_data="protect_menu")],
+        [InlineKeyboardButton("⚡ BOT STATUS (ACTIVE / DEACTIVATE)", callback_data="cset_active_deactive")],
         [InlineKeyboardButton("🔙 BACK", callback_data=back_cb)]
     ])
 
@@ -648,6 +649,13 @@ async def callbacks(client, query):
         from settings_modules.protect_content import handle_protect_content_callbacks
         return await handle_protect_content_callbacks(
             client, query, data, user_id, r, save_master, cancel_user_listeners, edit_or_reply
+        )
+
+    # --- BOT STATUS (ACTIVE / DEACTIVATE) --- #
+    if data.startswith(("cset_active_deactive", "cset_tgl_active", "cset_act_", "master_active_deactive", "bot_active_status")):
+        from settings_modules.active_deactive import handle_active_deactive_callbacks
+        return await handle_active_deactive_callbacks(
+            client, query, data, user_id, r, save_master, cancel_user_listeners, edit_or_reply, target_bid=target_bid
         )
 
     await query.answer()

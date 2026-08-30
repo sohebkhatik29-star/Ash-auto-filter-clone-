@@ -74,6 +74,7 @@ def manage_markup(bid=None, back_cb="my_clones"):
         [InlineKeyboardButton("🔘 BUTTON", callback_data=f"custom_button:{bid}" if bid else "custom_button"), InlineKeyboardButton("♻️ AUTO DELETE", callback_data=f"master_auto_delete_menu:{bid}" if bid else "master_auto_delete_menu")],
         [InlineKeyboardButton("♾️ PERMANENT LINK", callback_data=f"master_permanent_link:{bid}" if bid else "master_permanent_link")],
         [InlineKeyboardButton("🔒 PROTECT CONTENT", callback_data=f"protect_menu:{bid}" if bid else "protect_menu")],
+        [InlineKeyboardButton("⚡ BOT STATUS (ACTIVE / DEACTIVATE)", callback_data=f"cset_active_deactive:{bid}" if bid else "cset_active_deactive")],
         [InlineKeyboardButton("🪧 BACK", callback_data=back_cb)]
     ])
 
@@ -191,6 +192,30 @@ async def handle_clone_callbacks(client, query):
         except Exception:
             pass
         return
+
+    if data.startswith(("cset_active_deactive", "cset_tgl_active", "cset_act_", "master_active_deactive", "bot_active_status")):
+        target_bid = None
+        if ":" in data:
+            try:
+                target_bid = int(data.split(":", 1)[1])
+            except Exception:
+                pass
+        if not target_bid:
+            act = m.active_clone_edit.find_one({"user_id": int(user_id)}) if m is not None else None
+            target_bid = act.get("bot_id") if act else None
+        if target_bid and not owns(user_id, target_bid):
+            return await query.answer("❌ Access denied.", show_alert=True)
+        d = get_bot(target_bid) if target_bid else {}
+
+        def _save_active(**kwargs):
+            if target_bid:
+                update_bot(target_bid, **kwargs)
+
+        from settings_modules.active_deactive import handle_active_deactive_callbacks
+        return await handle_active_deactive_callbacks(
+            client, query, data, user_id, d, _save_active,
+            cancel_all_listeners, edit_or_reply, target_bid=target_bid
+        )
 
     if data.startswith("c_buy_prem") or data.startswith("c_prem_upi_view"):
         payload = data.split(":", 1)[1] if ":" in data else ""

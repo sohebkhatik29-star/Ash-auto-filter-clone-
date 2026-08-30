@@ -135,6 +135,7 @@ def settings_menu():
         [InlineKeyboardButton("🔘 BUTTON", callback_data="custom_button"), InlineKeyboardButton("♻️ AUTO DELETE", callback_data="cset_auto_delete_menu")],
         [InlineKeyboardButton("♾️ PERMANENT LINK", callback_data="cset_permanent_link")],
         [InlineKeyboardButton("🔒 PROTECT CONTENT", callback_data="protect_menu")],
+        [InlineKeyboardButton("⚡ BOT STATUS (ACTIVE / DEACTIVATE)", callback_data="cset_active_deactive")],
         [InlineKeyboardButton("🪧 BACK", callback_data="clone_my_clone_info")]
     ])
 
@@ -293,6 +294,11 @@ async def callbacks(client, query):
     # 18. Bot Status
     if data in ("cset_bot_status", "bot_status"):
         return await handle_bot_status_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
+
+    # 18.1 Active / Deactivate Status
+    if data.startswith(("cset_active_deactive", "cset_tgl_active", "cset_act_", "master_active_deactive", "bot_active_status")):
+        from settings_modules.active_deactive import handle_active_deactive_callbacks
+        return await handle_active_deactive_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
 
     # 19. Bot Mode
     if data == "cset_bot_mode":
