@@ -744,7 +744,7 @@ async def start(client, message):
         if message.from_user and (message.from_user.id == owner_id or is_owner(client, message.from_user.id)):
             text = (
                 f"⚠️ <b>Your clone @{me.username} is currently DEACTIVATED.</b>\n\n"
-                f"<i>Your bot was deactivated manually or automatically by our system due to being inactive for the last 8 days.\n\n"
+                f"<i>Your bot was deactivated manually or automatically by our system due to being inactive for the last 5 minutes.\n\n"
                 f"You can reactivate it anytime using Master Bot (@{BOT_USERNAME}) -> Settings -> Manage Clone -> Bot Status and click <b>ENABLE</b>.</i>"
             )
             buttons = [[InlineKeyboardButton("🤖 OPEN MASTER BOT ↗", url=f"https://t.me/{BOT_USERNAME}?start=clone")]]

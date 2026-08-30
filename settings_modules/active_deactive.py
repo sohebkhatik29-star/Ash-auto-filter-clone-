@@ -57,11 +57,11 @@ async def handle_active_deactive_callbacks(client, query, data, user_id, r, save
         last_act = r.get("last_active_time")
         if not deactivated and last_act:
             elapsed = max(0, int(time.time() - float(last_act)))
-            days_left = max(0, 8 - (elapsed // 86400))
-            hours_left = max(0, 24 - ((elapsed % 86400) // 3600))
-            inactivity_info = f"{days_left} Days {hours_left} Hours Remaining"
+            mins_left = max(0, 4 - (elapsed // 60))
+            secs_left = max(0, 59 - (elapsed % 60))
+            inactivity_info = f"{mins_left} Mins {secs_left} Secs Remaining"
         else:
-            inactivity_info = "8 Days (Resets on every user activity)"
+            inactivity_info = "5 Minutes (Resets on every user activity)"
 
         text = (
             "⚡ <b>BOT STATUS (ACTIVE / DEACTIVATE):</b>\n\n"
@@ -70,8 +70,8 @@ async def handle_active_deactive_callbacks(client, query, data, user_id, r, save
             "<b>- ENABLE: BOT IS FULLY ACTIVE AND DELIVERS FILES/MESSAGES TO ALL USERS.</b>\n\n"
             "<b>- DISABLE: BOT IS DEACTIVATED AND WILL NOT SERVE USERS UNTIL REACTIVATED.</b>\n\n"
             "<b>AUTOMATIC INACTIVITY POLICY:</b>\n"
-            "<b>• IF NO USER STARTS OR USES THIS BOT FOR 8 CONSECUTIVE DAYS, IT IS AUTOMATICALLY DEACTIVATED BY THE SYSTEM.</b>\n"
-            "<b>• STARTING OR USING THE BOT AT ANY TIME RESETS THE 8-DAY TIMER.</b>\n\n"
+            "<b>• IF NO USER STARTS OR USES THIS BOT FOR 5 CONSECUTIVE MINUTES, IT IS AUTOMATICALLY DEACTIVATED BY THE SYSTEM.</b>\n"
+            "<b>• STARTING OR USING THE BOT AT ANY TIME RESETS THE 5-MINUTE TIMER.</b>\n\n"
             f"<b>BOT STATUS - {status_str}</b>\n"
             f"<b>INACTIVITY TIMER - <code>{inactivity_info}</code></b>"
         )
@@ -117,8 +117,8 @@ def start_inactivity_checker(master_client):
     _CHECKER_RUNNING = True
 
     async def _inactivity_checker_loop():
-        INACTIVITY_SECONDS = 8 * 86400  # 8 Days
-        await asyncio.sleep(30)  # Initial wait on startup
+        INACTIVITY_SECONDS = 5 * 60  # 5 Minutes for testing
+        await asyncio.sleep(15)  # Initial wait on startup
         while True:
             try:
                 m = db()
@@ -148,10 +148,10 @@ def start_inactivity_checker(master_client):
                         if (now - last_act_ts) >= INACTIVITY_SECONDS:
                             # Deactivate the bot in database
                             m.bots.update_one({"_id": clone["_id"]}, {"$set": {"deactivated": True}})
-                            logging.info(f"Auto-deactivated clone @{bot_username} (ID: {bid}) after 8 days of inactivity.")
+                            logging.info(f"Auto-deactivated clone @{bot_username} (ID: {bid}) after 5 minutes of inactivity.")
 
                             deact_notice = (
-                                f"⚠️ <b>Your clone {bot_name} (@{bot_username}) was automatically deactivated by our system due to being inactive for the last 8 days.</b>\n\n"
+                                f"⚠️ <b>Your clone {bot_name} (@{bot_username}) was automatically deactivated by our system due to being inactive for the last 5 minutes.</b>\n\n"
                                 f"<i>You can reactivate it anytime using Master Bot (@{BOT_USERNAME}) -> Settings -> Manage Clone -> Bot Status.</i>"
                             )
 
@@ -173,7 +173,7 @@ def start_inactivity_checker(master_client):
             except Exception as e:
                 logging.exception(f"Error in clone inactivity checker loop: {e}")
 
-            # Check every 10 minutes (600 seconds)
-            await asyncio.sleep(600)
+            # Check every 30 seconds
+            await asyncio.sleep(30)
 
     asyncio.create_task(_inactivity_checker_loop())
