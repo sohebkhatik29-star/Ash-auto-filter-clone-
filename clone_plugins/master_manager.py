@@ -479,7 +479,9 @@ async def _listen_and_create_clone(client, user_id, sess_token):
                     "moderators": [],
                     "mode": "private",
                     "deactivated": False,
-                    "hide_owner": False
+                    "hide_owner": False,
+                    "owner_name": ans.from_user.first_name if ans and ans.from_user else None,
+                    "owner_username": ans.from_user.username if ans and ans.from_user else None
                 }},
                 upsert=True
             )

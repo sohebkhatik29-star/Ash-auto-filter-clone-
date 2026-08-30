@@ -4,6 +4,7 @@ import datetime
 import math
 import re
 import logging
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
@@ -49,32 +50,35 @@ def is_master_owner(uid) -> bool:
     return False
 
 def get_all_admins():
-    """Retrieve list of all admins from Config and DB."""
-    admin_list = []
+    """Returns list of all admin dicts including primary owners and DB added admins."""
+    admins = []
     seen = set()
     for a in ADMINS:
         if str(a).strip().lstrip("-").isdigit():
             uid = int(a)
-            seen.add(uid)
-            admin_list.append({
-                "user_id": uid,
-                "name": "Master Owner",
-                "username": BOT_USERNAME,
-                "is_primary": True
-            })
+            if uid not in seen:
+                seen.add(uid)
+                admins.append({
+                    "user_id": uid,
+                    "name": "Master Owner",
+                    "username": "",
+                    "is_primary": True,
+                    "added_at": None
+                })
     m = db()
     if m is not None:
         for doc in m.master_admins.find():
-            uid = int(doc.get("user_id", 0))
-            if uid and uid not in seen:
+            uid = int(doc["user_id"])
+            if uid not in seen:
                 seen.add(uid)
-                admin_list.append({
+                admins.append({
                     "user_id": uid,
-                    "name": doc.get("name") or str(uid),
-                    "username": doc.get("username") or "",
-                    "is_primary": False
+                    "name": doc.get("name", "Admin"),
+                    "username": doc.get("username", ""),
+                    "is_primary": False,
+                    "added_at": doc.get("added_at")
                 })
-    return admin_list
+    return admins
 
 def add_master_admin(user_id: int, name: str, username: str, added_by: str):
     m = db()
@@ -84,7 +88,7 @@ def add_master_admin(user_id: int, name: str, username: str, added_by: str):
             {"$set": {
                 "user_id": int(user_id),
                 "name": name,
-                "username": username,
+                "username": username or "",
                 "added_by": added_by,
                 "added_at": time.time()
             }},
@@ -96,54 +100,59 @@ def remove_master_admin(user_id: int):
     if m is not None:
         m.master_admins.delete_one({"user_id": int(user_id)})
 
-def parse_suspend_duration(duration_input: str):
+# ----------------- DURATION PARSER ----------------- #
+
+def parse_suspend_duration(text: str):
     """
-    Parse input string like '10s', '1m', '5m', '1h', '1d', '1w', '1mo', '1y', 'permanent'.
-    Returns (seconds_int_or_None, readable_str)
+    Parses duration string like:
+    10s, 30s
+    1m, 5m
+    1h, 12h
+    1d, 7d
+    1w, 2w
+    1mo, 2month, 1month
+    1y, 1year
+    permanent, forever
+    Returns (seconds_int, duration_str) or (None, None) if invalid.
     """
-    s = (duration_input or "").strip().lower()
-    if s in ("perm", "permanent", "forever", "inf", "infinity", "hamesha", "unlimited"):
+    text = text.strip().lower()
+    if text in ("permanent", "forever", "perm", "inf", "infinity", "hamesha"):
         return None, "Permanent"
 
-    # Match numeric + unit
-    m = re.match(r"^(\d+)\s*([a-z]+)?$", s)
-    if not m:
+    # Match number + unit
+    match = re.match(r"^(\d+)\s*([a-zA-Z]+)$", text)
+    if not match:
         return None, None
-    val = int(m.group(1))
-    unit = (m.group(2) or "m").lower()
+
+    val = int(match.group(1))
+    unit = match.group(2)
 
     if unit in ("s", "sec", "secs", "second", "seconds"):
         return val, f"{val} Second(s)"
     elif unit in ("m", "min", "mins", "minute", "minutes"):
         return val * 60, f"{val} Minute(s)"
-    elif unit in ("h", "hr", "hrs", "hour", "hours", "ghante"):
+    elif unit in ("h", "hr", "hrs", "hour", "hours"):
         return val * 3600, f"{val} Hour(s)"
-    elif unit in ("d", "day", "days", "din"):
+    elif unit in ("d", "day", "days"):
         return val * 86400, f"{val} Day(s)"
-    elif unit in ("w", "wk", "week", "weeks", "hafte"):
+    elif unit in ("w", "wk", "wks", "week", "weeks"):
         return val * 7 * 86400, f"{val} Week(s)"
-    elif unit in ("mo", "mon", "month", "months", "mehena", "mahina"):
+    elif unit in ("mo", "mon", "month", "months"):
         return val * 30 * 86400, f"{val} Month(s)"
-    elif unit in ("y", "yr", "year", "years", "sal", "saal"):
+    elif unit in ("y", "yr", "yrs", "year", "years"):
         return val * 365 * 86400, f"{val} Year(s)"
-    else:
-        # Default to minutes if just number
-        return val * 60, f"{val} Minute(s)"
 
-def is_clone_suspended(client_or_bid):
-    """
-    Check if clone bot is suspended.
-    Returns (is_suspended: bool, suspend_doc: dict)
-    """
+    return None, None
+
+# ----------------- SUSPENSION HELPERS ----------------- #
+
+def is_clone_bot_suspended(bot_id: int):
+    """Checks if a clone bot is currently suspended. Handles automatic expiry."""
+    m = db()
+    if m is None:
+        return False, {}
     try:
-        m = db()
-        if m is None:
-            return False, {}
-        if isinstance(client_or_bid, (int, str)):
-            bid = int(client_or_bid)
-        else:
-            bid = int(client_or_bid.me.id)
-        doc = m.bots.find_one({"bot_id": bid})
+        doc = m.bots.find_one({"bot_id": int(bot_id)})
         if not doc:
             return False, {}
         if doc.get("suspended"):
@@ -161,7 +170,7 @@ def is_clone_suspended(client_or_bid):
 def suspend_clone_bot(bot_id: int, duration_secs, duration_str: str, admin_user, admin_username: str):
     m = db()
     if m is not None:
-        until_ts = (time.time() + duration_secs) if duration_secs is not None else None
+        until_ts = (time.time() + duration_secs) if duration_secs is not None and duration_secs > 0 else None
         m.bots.update_one(
             {"bot_id": int(bot_id)},
             {"$set": {
@@ -184,6 +193,40 @@ def unsuspend_clone_bot(bot_id: int):
                 "unsuspended_at": time.time()
             }}
         )
+
+# Helper to resolve user name/username from Telegram and DB
+async def resolve_user_display(client, uid: int, m_db):
+    name = None
+    username = None
+    try:
+        # Check DB first
+        if m_db is not None and hasattr(m_db, "users"):
+            u_doc = m_db.users.find_one({"id": int(uid)}) or m_db.users.find_one({"_id": int(uid)})
+            if u_doc:
+                name = u_doc.get("name")
+                username = u_doc.get("username")
+    except Exception:
+        pass
+
+    # If name is missing or generic, fetch from telegram
+    if not name or name.lower().startswith("user "):
+        try:
+            u_obj = await client.get_users(int(uid))
+            if u_obj:
+                name = (f"{u_obj.first_name or ''} {u_obj.last_name or ''}").strip() or u_obj.first_name or f"User {uid}"
+                username = u_obj.username or ""
+                # Cache in DB
+                if m_db is not None and hasattr(m_db, "users"):
+                    m_db.users.update_one(
+                        {"id": int(uid)},
+                        {"$set": {"name": name, "username": username}},
+                        upsert=True
+                    )
+        except Exception:
+            if not name:
+                name = f"User {uid}"
+
+    return name or f"User {uid}", username or ""
 
 # ----------------- MARKUPS ----------------- #
 
@@ -258,7 +301,7 @@ def admin_manage_single_clone_markup(bot_doc: dict):
     if is_susp:
         rows.append([InlineKeyboardButton("✅ UN-SUSPEND CLONE BOT", callback_data=f"admin_unsuspend_act:{bid}")])
     else:
-        rows.append([InlineKeyboardButton("⛔ SUSPEND CLONE BOT (TEMPORARY/PERMANENT)", callback_data=f"admin_suspend_prompt:{bid}")])
+        rows.append([InlineKeyboardButton("⛔ SUSPEND CLONE BOT (TEMPORARY/PERMANENT)", callback_data=f"admin_suspend_menu:{bid}")])
 
     rows.append([
         InlineKeyboardButton("⚡ BOT STATUS (ACTIVE / DEACTIVATE)", callback_data=f"cset_active_deactive:{bid}")
@@ -273,6 +316,33 @@ def admin_manage_single_clone_markup(bot_doc: dict):
         InlineKeyboardButton("‹ BACK TO USER'S CLONES", callback_data=f"admin_view_owner:{owner_id}")
     ])
     return InlineKeyboardMarkup(rows)
+
+def admin_suspend_menu_markup(bid: int):
+    """Clean in-place suspension menu with 1-click preset durations and custom time option."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⏱ 10s", callback_data=f"admin_susp_dur:{bid}:10:10 Seconds"),
+            InlineKeyboardButton("⏱ 1m", callback_data=f"admin_susp_dur:{bid}:60:1 Minute"),
+            InlineKeyboardButton("⏱ 5m", callback_data=f"admin_susp_dur:{bid}:300:5 Minutes"),
+        ],
+        [
+            InlineKeyboardButton("⏱ 1h", callback_data=f"admin_susp_dur:{bid}:3600:1 Hour"),
+            InlineKeyboardButton("⏱ 12h", callback_data=f"admin_susp_dur:{bid}:43200:12 Hours"),
+            InlineKeyboardButton("⏱ 1d", callback_data=f"admin_susp_dur:{bid}:86400:1 Day"),
+        ],
+        [
+            InlineKeyboardButton("⏱ 7d", callback_data=f"admin_susp_dur:{bid}:604800:7 Days"),
+            InlineKeyboardButton("⏱ 1mo", callback_data=f"admin_susp_dur:{bid}:2592000:1 Month"),
+            InlineKeyboardButton("⏱ 1y", callback_data=f"admin_susp_dur:{bid}:31536000:1 Year"),
+        ],
+        [
+            InlineKeyboardButton("⛔ PERMANENT", callback_data=f"admin_susp_dur:{bid}:0:Permanent"),
+            InlineKeyboardButton("✍️ CUSTOM TIME", callback_data=f"admin_susp_custom:{bid}"),
+        ],
+        [
+            InlineKeyboardButton("‹ BACK TO BOT", callback_data=f"admin_manage_clone:{bid}")
+        ]
+    ])
 
 # ----------------- CALLBACK HANDLER ----------------- #
 
@@ -332,11 +402,7 @@ async def handle_admin_panel_callbacks(client, query):
             for item in page_items:
                 uid = item["_id"]
                 count = item["bot_count"]
-                # Try fetching user name/username
-                u_doc = m.users.find_one({"id": uid}) if hasattr(m, "users") else None
-                latest = item.get("latest_doc", {})
-                name = (u_doc.get("name") if u_doc else None) or latest.get("owner_name") or f"User {uid}"
-                uname = (u_doc.get("username") if u_doc else None) or latest.get("owner_username") or ""
+                name, uname = await resolve_user_display(client, uid, m)
                 owners.append({
                     "user_id": uid,
                     "name": name,
@@ -359,13 +425,12 @@ async def handle_admin_panel_callbacks(client, query):
         cancel_all_listeners(client, query.message.chat.id, user_id)
         owner_id = int(data.split(":")[1])
         bots = list(m.bots.find({"user_id": owner_id})) if m is not None else []
-        u_doc = m.users.find_one({"id": owner_id}) if m is not None and hasattr(m, "users") else None
-        owner_name = (u_doc.get("name") if u_doc else None) or f"User {owner_id}"
-        owner_uname = f"@{u_doc.get('username')}" if u_doc and u_doc.get("username") else f"ID: {owner_id}"
+        name, uname = await resolve_user_display(client, owner_id, m)
+        owner_uname = f"@{uname}" if uname else f"ID: {owner_id}"
 
         text = (
             f"👤 <b>CLONE OWNER DETAILS:</b>\n\n"
-            f"<b>• Name:</b> {owner_name}\n"
+            f"<b>• Name:</b> {name}\n"
             f"<b>• Username/ID:</b> <code>{owner_uname}</code>\n"
             f"<b>• Total Clones:</b> <code>{len(bots)} Bot(s)</code>\n\n"
             "<i>Select any clone bot below to inspect details, configure its settings, or apply suspension:</i>"
@@ -383,6 +448,9 @@ async def handle_admin_panel_callbacks(client, query):
         bot_name = bot_doc.get("name") or bot_doc.get("username") or str(bid)
         bot_username = bot_doc.get("username") or "None"
         owner_id = bot_doc.get("user_id", 0)
+        owner_name, owner_uname = await resolve_user_display(client, owner_id, m)
+        owner_str = f"{owner_name} (@{owner_uname})" if owner_uname else f"{owner_name} ({owner_id})"
+
         is_susp = bool(bot_doc.get("suspended"))
         is_deact = bool(bot_doc.get("deactivated"))
 
@@ -408,15 +476,107 @@ async def handle_admin_panel_callbacks(client, query):
             f"🤖 <b>CLONE BOT SUPERVISION: @{bot_username}</b>\n\n"
             f"<b>• Bot Name:</b> {bot_name}\n"
             f"<b>• Bot ID:</b> <code>{bid}</code>\n"
-            f"<b>• Owner User ID:</b> <code>{owner_id}</code>\n"
+            f"<b>• Owner:</b> {owner_str}\n"
             f"<b>• Current Status:</b> {status_text}\n"
             f"<b>• Last Active:</b> <code>{last_act_str}</code>\n\n"
             "<i>Use the action buttons below to manage this clone bot:</i>"
         )
         return await query.message.edit_text(text, reply_markup=admin_manage_single_clone_markup(bot_doc))
 
-    # 5. Suspend Clone Prompt
-    if data.startswith("admin_suspend_prompt:"):
+    # 5. Suspend Clone Menu (In-Place Edit with 1-Click Duration Buttons)
+    if data.startswith("admin_suspend_menu:"):
+        bid = int(data.split(":")[1])
+        bot_doc = m.bots.find_one({"bot_id": bid}) if m is not None else None
+        if not bot_doc:
+            return await query.answer("❌ Clone bot not found.", show_alert=True)
+
+        cancel_all_listeners(client, query.message.chat.id, user_id)
+        bot_username = bot_doc.get("username") or str(bid)
+
+        menu_text = (
+            f"⛔ <b>SUSPEND CLONE BOT: @{bot_username}</b>\n\n"
+            "<blockquote>Select a suspension duration below for 1-click instant suspension, or click Custom Time to enter any exact duration.</blockquote>\n\n"
+            "<b>Choose duration:</b>"
+        )
+        return await query.message.edit_text(menu_text, reply_markup=admin_suspend_menu_markup(bid))
+
+    # 5.1 One-Click Preset Duration Action
+    if data.startswith("admin_susp_dur:"):
+        parts = data.split(":")
+        bid = int(parts[1])
+        secs = int(parts[2])
+        dur_str = parts[3]
+
+        bot_doc = m.bots.find_one({"bot_id": bid}) if m is not None else None
+        if not bot_doc:
+            return await query.answer("❌ Bot not found.", show_alert=True)
+
+        admin_uname = query.from_user.username or query.from_user.first_name or "Administrator"
+        suspend_clone_bot(bid, secs if secs > 0 else None, dur_str, query.from_user, admin_uname)
+
+        bot_username = bot_doc.get("username") or str(bid)
+        until_str = datetime.datetime.fromtimestamp(time.time() + secs).strftime("%Y-%m-%d %H:%M:%S UTC") if secs > 0 else "Permanent"
+
+        # Notify Clone Owner
+        owner_id = bot_doc.get("user_id")
+        if owner_id:
+            notice_text = (
+                f"⛔ <b>YOUR CLONE BOT @{bot_username} HAS BEEN SUSPENDED!</b>\n\n"
+                f"<i>Your clone bot has been suspended by Master Bot Administrator (@{admin_uname}).</i>\n\n"
+                f"<b>⏱ Duration:</b> <code>{dur_str}</code>\n"
+                f"<b>⏳ Expiry Time:</b> <code>{until_str}</code>\n"
+                f"<b>👮 Administrator:</b> @{admin_uname}\n\n"
+                f"<i>If you have any questions or would like to appeal, please contact @{admin_uname}.</i>"
+            )
+            try:
+                btn_rows = []
+                if admin_uname and not admin_uname.startswith("User"):
+                    btn_rows.append([InlineKeyboardButton("💬 CONTACT ADMIN", url=f"https://t.me/{admin_uname.lstrip('@')}")])
+                await client.send_message(
+                    chat_id=int(owner_id),
+                    text=notice_text,
+                    reply_markup=InlineKeyboardMarkup(btn_rows) if btn_rows else None
+                )
+            except Exception:
+                pass
+
+        # Notify Log channel
+        log_ch = bot_doc.get("log_channel")
+        if log_ch:
+            try:
+                await client.send_message(int(log_ch), f"⛔ <b>Bot @{bot_username} suspended for {dur_str} by Admin @{admin_uname}.</b>")
+            except Exception:
+                pass
+
+        await query.answer(f"✅ Bot @{bot_username} suspended for {dur_str}!", show_alert=True)
+
+        # Refresh single clone view
+        fresh_doc = m.bots.find_one({"bot_id": bid})
+        owner_name, owner_uname = await resolve_user_display(client, fresh_doc.get("user_id", 0), m)
+        owner_str = f"{owner_name} (@{owner_uname})" if owner_uname else f"{owner_name} ({fresh_doc.get('user_id', 0)})"
+        last_act = fresh_doc.get("last_active_time")
+        last_act_str = datetime.datetime.fromtimestamp(last_act).strftime("%Y-%m-%d %H:%M:%S UTC") if last_act else "Never"
+
+        status_text = "⛔ <b>SUSPENDED</b>"
+        if secs > 0:
+            status_text += f" (Until <code>{until_str}</code> - {dur_str})"
+        else:
+            status_text += " (Permanent)"
+        status_text += f"\n<b>Suspended By:</b> @{admin_uname}"
+
+        text = (
+            f"🤖 <b>CLONE BOT SUPERVISION: @{bot_username}</b>\n\n"
+            f"<b>• Bot Name:</b> {fresh_doc.get('name') or bot_username}\n"
+            f"<b>• Bot ID:</b> <code>{bid}</code>\n"
+            f"<b>• Owner:</b> {owner_str}\n"
+            f"<b>• Current Status:</b> {status_text}\n"
+            f"<b>• Last Active:</b> <code>{last_act_str}</code>\n\n"
+            "<i>Use the action buttons below to manage this clone bot:</i>"
+        )
+        return await query.message.edit_text(text, reply_markup=admin_manage_single_clone_markup(fresh_doc))
+
+    # 5.2 Custom Time Input Prompt
+    if data.startswith("admin_susp_custom:"):
         bid = int(data.split(":")[1])
         bot_doc = m.bots.find_one({"bot_id": bid}) if m is not None else None
         if not bot_doc:
@@ -427,8 +587,8 @@ async def handle_admin_panel_callbacks(client, query):
         bot_username = bot_doc.get("username") or str(bid)
 
         prompt_text = (
-            f"⛔ <b>SUSPEND CLONE BOT: @{bot_username}</b>\n\n"
-            "Please send the suspension duration for this bot:\n\n"
+            f"⛔ <b>ENTER CUSTOM SUSPENSION TIME: @{bot_username}</b>\n\n"
+            "Please send the exact duration you want to suspend this bot:\n\n"
             "<b>Format Examples:</b>\n"
             "• <code>10s</code> = 10 Seconds\n"
             "• <code>1m</code> or <code>5m</code> = 1 or 5 Minutes\n"
@@ -437,15 +597,15 @@ async def handle_admin_panel_callbacks(client, query):
             "• <code>1w</code> or <code>2w</code> = 1 or 2 Weeks\n"
             "• <code>1mo</code> or <code>1month</code> = 1 Month\n"
             "• <code>1y</code> or <code>1year</code> = 1 Year\n"
-            "• <code>permanent</code> or <code>forever</code> = Permanent Suspension\n\n"
-            "<i>Send /cancel to abort suspension.</i>"
+            "• <code>permanent</code> = Permanent Suspension\n\n"
+            "<i>Send /cancel or click Cancel below to abort.</i>"
         )
-        await query.message.reply_text(
+        await query.message.edit_text(
             prompt_text,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ CANCEL", callback_data=f"admin_manage_clone:{bid}")]])
         )
 
-        async def _listen_suspend():
+        async def _listen_custom_suspend():
             try:
                 ans = await client.listen(chat_id=user_id, timeout=120)
             except Exception:
@@ -457,14 +617,15 @@ async def handle_admin_panel_callbacks(client, query):
             txt = (ans.text or "").strip()
             if txt == "/cancel":
                 clear_user_session(user_id)
-                return await client.send_message(user_id, "❌ <b>Suspension cancelled.</b>")
+                return await client.send_message(user_id, "❌ <b>Suspension cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK TO BOT", callback_data=f"admin_manage_clone:{bid}")]]))
 
             secs, dur_str = parse_suspend_duration(txt)
             if dur_str is None:
                 clear_user_session(user_id)
                 return await client.send_message(
                     user_id,
-                    "❌ <b>Invalid duration format!</b> Please use formats like <code>10s</code>, <code>5m</code>, <code>1h</code>, <code>1d</code>, <code>1mo</code>, <code>1y</code>, or <code>permanent</code>."
+                    "❌ <b>Invalid duration format!</b> Please use formats like <code>10s</code>, <code>5m</code>, <code>1h</code>, <code>1d</code>, <code>1mo</code>, <code>1y</code>, or <code>permanent</code>.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔁 TRY AGAIN", callback_data=f"admin_susp_custom:{bid}")]])
                 )
 
             admin_uname = query.from_user.username or query.from_user.first_name or "Administrator"
@@ -485,10 +646,13 @@ async def handle_admin_panel_callbacks(client, query):
                     f"<i>If you have any questions or would like to appeal, please contact @{admin_uname}.</i>"
                 )
                 try:
+                    btn_rows = []
+                    if admin_uname and not admin_uname.startswith("User"):
+                        btn_rows.append([InlineKeyboardButton("💬 CONTACT ADMIN", url=f"https://t.me/{admin_uname.lstrip('@')}")])
                     await client.send_message(
                         chat_id=int(owner_id),
                         text=notice_text,
-                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 CONTACT ADMIN", url=f"https://t.me/{admin_uname.lstrip('@')}") ]]) if admin_uname and not admin_uname.startswith("User") else None
+                        reply_markup=InlineKeyboardMarkup(btn_rows) if btn_rows else None
                     )
                 except Exception:
                     pass
@@ -507,7 +671,7 @@ async def handle_admin_panel_callbacks(client, query):
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔍 VIEW BOT DETAILS", callback_data=f"admin_manage_clone:{bid}")]])
             )
 
-        asyncio.create_task(_listen_suspend())
+        asyncio.create_task(_listen_custom_suspend())
         return
 
     # 6. Unsuspend Clone Bot
@@ -539,10 +703,24 @@ async def handle_admin_panel_callbacks(client, query):
         await query.answer("✅ Bot unsuspended successfully!", show_alert=True)
         # Refresh UI
         fresh_doc = m.bots.find_one({"bot_id": bid})
-        return await query.message.edit_text(
-            query.message.text or "🤖 <b>CLONE BOT SUPERVISION</b>",
-            reply_markup=admin_manage_single_clone_markup(fresh_doc)
+        owner_name, owner_uname = await resolve_user_display(client, fresh_doc.get("user_id", 0), m)
+        owner_str = f"{owner_name} (@{owner_uname})" if owner_uname else f"{owner_name} ({fresh_doc.get('user_id', 0)})"
+        last_act = fresh_doc.get("last_active_time")
+        last_act_str = datetime.datetime.fromtimestamp(last_act).strftime("%Y-%m-%d %H:%M:%S UTC") if last_act else "Never"
+
+        is_deact = bool(fresh_doc.get("deactivated"))
+        status_text = "⏸ <b>DEACTIVATED</b>" if is_deact else "✅ <b>ACTIVE & RUNNING</b>"
+
+        text = (
+            f"🤖 <b>CLONE BOT SUPERVISION: @{bot_username}</b>\n\n"
+            f"<b>• Bot Name:</b> {fresh_doc.get('name') or bot_username}\n"
+            f"<b>• Bot ID:</b> <code>{bid}</code>\n"
+            f"<b>• Owner:</b> {owner_str}\n"
+            f"<b>• Current Status:</b> {status_text}\n"
+            f"<b>• Last Active:</b> <code>{last_act_str}</code>\n\n"
+            "<i>Use the action buttons below to manage this clone bot:</i>"
         )
+        return await query.message.edit_text(text, reply_markup=admin_manage_single_clone_markup(fresh_doc))
 
     # 7. Search Clone Owner
     if data == "admin_search_owner":
@@ -554,7 +732,7 @@ async def handle_admin_panel_callbacks(client, query):
             "Please send the <b>Telegram User ID</b> (e.g. <code>5550505</code>) or <b>@Username</b> of the user you want to find:\n\n"
             "<i>Send /cancel to abort search.</i>"
         )
-        await query.message.reply_text(
+        await query.message.edit_text(
             prompt_text,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ CANCEL", callback_data="admin_panel_main")]])
         )
@@ -571,7 +749,7 @@ async def handle_admin_panel_callbacks(client, query):
             txt = (ans.text or "").strip()
             if txt == "/cancel":
                 clear_user_session(user_id)
-                return await client.send_message(user_id, "❌ <b>Search cancelled.</b>")
+                return await client.send_message(user_id, "❌ <b>Search cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ ADMIN PANEL", callback_data="admin_panel_main")]]))
 
             clear_user_session(user_id)
             target_uid = None
@@ -584,7 +762,6 @@ async def handle_admin_panel_callbacks(client, query):
                 if u_doc:
                     target_uid = int(u_doc["id"])
                 else:
-                    # Also search in bots owner_username
                     b_doc = m.bots.find_one({"owner_username": {"$regex": f"^{re.escape(uname)}$", "$options": "i"}}) if m is not None else None
                     if b_doc:
                         target_uid = int(b_doc["user_id"])
@@ -594,6 +771,12 @@ async def handle_admin_panel_callbacks(client, query):
                             target_uid = resolved.id
                         except Exception:
                             target_uid = None
+            else:
+                try:
+                    resolved = await client.get_users(txt)
+                    target_uid = resolved.id
+                except Exception:
+                    target_uid = None
 
             if not target_uid:
                 return await client.send_message(
@@ -606,19 +789,14 @@ async def handle_admin_panel_callbacks(client, query):
             bots = list(m.bots.find({"user_id": target_uid})) if m is not None else []
             count = len(bots)
 
-            try:
-                target_user = await client.get_users(target_uid)
-                name_str = target_user.mention
-                uname_str = f"@{target_user.username}" if target_user.username else "None"
-            except Exception:
-                name_str = f"User {target_uid}"
-                uname_str = "None"
+            name_str, uname_str = await resolve_user_display(client, target_uid, m)
+            uname_display = f"@{uname_str}" if uname_str else f"ID: {target_uid}"
 
             if count == 0:
                 text = (
                     f"👤 <b>USER SEARCH RESULT:</b>\n\n"
                     f"<b>• User:</b> {name_str}\n"
-                    f"<b>• Username:</b> <code>{uname_str}</code>\n"
+                    f"<b>• Username:</b> <code>{uname_display}</code>\n"
                     f"<b>• User ID:</b> <code>{target_uid}</code>\n\n"
                     f"⚠️ <b>This user has not cloned any bots yet.</b>"
                 )
@@ -630,7 +808,7 @@ async def handle_admin_panel_callbacks(client, query):
                 text = (
                     f"👤 <b>CLONE OWNER FOUND:</b>\n\n"
                     f"<b>• Name:</b> {name_str}\n"
-                    f"<b>• Username:</b> <code>{uname_str}</code>\n"
+                    f"<b>• Username:</b> <code>{uname_display}</code>\n"
                     f"<b>• User ID:</b> <code>{target_uid}</code>\n"
                     f"<b>• Total Clones Created:</b> <code>{count} Bot(s)</code>\n\n"
                     f"<i>Click the button below to view and manage all {count} clone bots:</i>"
@@ -672,7 +850,7 @@ async def handle_admin_panel_callbacks(client, query):
             "Please send the <b>Telegram User ID</b> or <b>@Username</b> of the person you want to promote as Master Bot Admin:\n\n"
             "<i>Send /cancel to abort.</i>"
         )
-        await query.message.reply_text(
+        await query.message.edit_text(
             prompt_text,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ CANCEL", callback_data="admin_manage_admins")]])
         )
@@ -689,7 +867,7 @@ async def handle_admin_panel_callbacks(client, query):
             txt = (ans.text or "").strip()
             if txt == "/cancel":
                 clear_user_session(user_id)
-                return await client.send_message(user_id, "❌ <b>Cancelled.</b>")
+                return await client.send_message(user_id, "❌ <b>Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ ADMINS", callback_data="admin_manage_admins")]]))
 
             clear_user_session(user_id)
             try:
