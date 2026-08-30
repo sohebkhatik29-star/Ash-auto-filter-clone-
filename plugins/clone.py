@@ -48,39 +48,30 @@ except Exception:
 
 
 def clone_commands(include_owner=False):
-    commands = [
-        BotCommand("start", "Check bot / open stored link"),
-        BotCommand("help", "Show all commands"),
-        BotCommand("getlink", "Create a single shareable link"),
-        BotCommand("batch", "Store multiple messages from a channel"),
-        BotCommand("custom_batch", "Create custom batch links"),
-        BotCommand("special_link", "Create a special link"),
-        BotCommand("universal_link", "Create a universal link"),
-        BotCommand("shortener", "View link shortener"),
-        BotCommand("settings", "Customize your clone"),
-        BotCommand("api", "Set or view shortener API"),
-        BotCommand("base_site", "Set or view shortener site"),
+    base_commands = [
+        BotCommand("start", "Check i am alive"),
+        BotCommand("genlink", "To store a single message or file"),
+        BotCommand("batch", "To store mutiple messages from a channel"),
+        BotCommand("custom_batch", "To store multiple random messages"),
+        BotCommand("special_link", "store multiple messages and get an editable link (owner can edit)"),
+        BotCommand("universal_link", "stores multiple messages that can be accessed from any bot"),
+        BotCommand("shortener", "To shorten any shareable links"),
+        BotCommand("settings", "Customize Your settings as your need"),
     ]
     if include_owner:
-        commands += [
-            BotCommand("admin", "Open owner admin panel"),
-            BotCommand("stats", "Show bot statistics"),
-            BotCommand("broadcast", "Broadcast a message"),
-            BotCommand("ban", "Ban a user"), BotCommand("unban", "Unban a user"),
-            BotCommand("force_sub", "Set Force Subscribe"),
-            BotCommand("caption", "Set Custom Caption"), BotCommand("button", "Add Custom Button"),
-            BotCommand("protect", "Protect Content"), BotCommand("auto_delete", "Auto delete delivered files"),
-            BotCommand("no_forward", "Disable forwarding"), BotCommand("moderator", "Manage moderators"),
-            BotCommand("access_token", "Access token settings"), BotCommand("transfer_db", "Transfer users"),
-            BotCommand("deactivate", "Deactivate or activate clone"), BotCommand("mode", "Public/private mode"),
-            BotCommand("restart", "Save and restart"), BotCommand("delete", "Delete clone record"),
-            BotCommand("start_msg", "Set start message"),
+        return base_commands + [
+            BotCommand("broadcast", "Broadcast a messages to users (moderators only)"),
+            BotCommand("ban", "Ban a user (moderators only)"),
+            BotCommand("unban", "Unban a user (moderators only)"),
         ]
-    return commands
+    return base_commands
 
 
 async def set_clone_menu(client, owner_id=None):
-    await client.set_bot_commands(clone_commands())
+    try:
+        await client.set_bot_commands(clone_commands(False))
+    except Exception:
+        pass
     if owner_id:
         try:
             await client.set_bot_commands(clone_commands(True), scope=BotCommandScopeChat(chat_id=int(owner_id)))
