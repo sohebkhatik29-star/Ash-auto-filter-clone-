@@ -406,7 +406,7 @@ async def start(client, message):
 
     # 6. Check database tables directly by token
     try:
-        from clone_plugins.database import mongo_db
+        from plugins.clone import mongo_db
         if mongo_db is not None:
             clean_tok = data.split("_", 1)[1] if "_" in data else data
             if mongo_db.share_links.find_one({"token": data}) or mongo_db.share_links.find_one({"token": clean_tok}):

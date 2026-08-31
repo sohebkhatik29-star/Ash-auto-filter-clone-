@@ -33,7 +33,10 @@ def get_update_channel_url(client=None, bot_id=None) -> str:
     Checks bot record in DB, master DB, env var, and default fallback list.
     """
     try:
-        from clone_plugins.database import mongo_db
+        try:
+            from plugins.clone import mongo_db
+        except Exception:
+            from clone_plugins.database import mongo_db
         b_id = None
         if bot_id:
             b_id = int(bot_id)
@@ -117,7 +120,10 @@ async def send_wait_message(client, user_id_or_message, cancel_callback_data: st
 def set_update_channel_link(bot_id: int, new_link: str) -> bool:
     """Dynamically set/change the update channel join request link for a bot."""
     try:
-        from clone_plugins.database import mongo_db
+        try:
+            from plugins.clone import mongo_db
+        except Exception:
+            from clone_plugins.database import mongo_db
         if mongo_db is None:
             return False
         mongo_db.bots.update_one(

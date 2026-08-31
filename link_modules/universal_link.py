@@ -9,7 +9,13 @@ from pyrogram import StopPropagation, enums, filters
 from pyrogram.handlers import CallbackQueryHandler, MessageHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins import commands as cmd
-from clone_plugins.database import mongo_db
+try:
+    from plugins.clone import mongo_db
+except Exception:
+    try:
+        from clone_plugins.database import mongo_db
+    except Exception:
+        mongo_db = None
 from settings_modules.caption_formatter import format_caption
 
 
