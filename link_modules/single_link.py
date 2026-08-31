@@ -44,7 +44,13 @@ def _decode(payload: str):
     return payload
 
 def _batch_active(client, user_id):
-    """Return True while this user is collecting a custom batch, channel batch, or special link."""
+    """Return True while this user is collecting a custom batch, channel batch, special link, or universal link."""
+    try:
+        from link_modules.universal_link import is_universal_link_active
+        if is_universal_link_active(client.me.id, user_id):
+            return True
+    except Exception:
+        pass
     try:
         from link_modules.special_link import is_special_link_active
         if is_special_link_active(client.me.id, user_id):

@@ -884,6 +884,9 @@ async def start(client, message):
                 message.command[1] = f"special_{clean_tok}"
                 from clone_plugins import special_link
                 return await special_link.open_special(client, message)
+            if mongo_db.universal_links.find_one({"token": data}) or mongo_db.universal_links.find_one({"token": clean_tok}):
+                from link_modules import universal_link
+                return await universal_link.deliver_universal_link(client, message, clean_tok)
         except Exception:
             pass
         
@@ -1006,9 +1009,21 @@ async def genlink(client, message):
     await message.reply(f"🔗 <b>File Link:</b>\n{link}")
 
 
-async def custom_batch(client,message): return await message.reply("Use /custom_batch or /batch.")
-async def special_link(client,message): return await genlink(client,message)
-async def universal_link(client,message): return await genlink(client,message)
+async def batch_handler(client, message):
+    from link_modules import channel_batch
+    return await channel_batch.start_batch(client, message)
+
+async def custom_batch(client, message):
+    from link_modules import custom_batch
+    return await custom_batch.custom_batch_cmd(client, message)
+
+async def special_link(client, message):
+    from link_modules import special_link
+    return await special_link.special_link_cmd(client, message)
+
+async def universal_link(client, message):
+    from link_modules import universal_link
+    return await universal_link.universal_link_cmd(client, message)
 
 
 async def api_handler(client,message):
@@ -1172,7 +1187,10 @@ def register(client):
     client.add_handler(MessageHandler(customize_command,filters.command("customize")&private),group=0)
     client.add_handler(MessageHandler(clone_command,filters.command("clone")&private),group=0)
     client.add_handler(MessageHandler(genlink,filters.command(["link","genlink"])&private),group=1)
-    client.add_handler(MessageHandler(universal_link,filters.command("universal_link")&private),group=1)
+    client.add_handler(MessageHandler(batch_handler,filters.command(["batch"])&private),group=1)
+    client.add_handler(MessageHandler(custom_batch,filters.command(["custom_batch"])&private),group=1)
+    client.add_handler(MessageHandler(special_link,filters.command(["special_link"])&private),group=1)
+    client.add_handler(MessageHandler(universal_link,filters.command(["universal_link"])&private),group=1)
     client.add_handler(MessageHandler(api_handler,filters.command("api")&private),group=1)
     client.add_handler(MessageHandler(base_site_handler,filters.command("base_site")&private),group=1)
     client.add_handler(MessageHandler(shortener,filters.command("shortener")&private),group=1)

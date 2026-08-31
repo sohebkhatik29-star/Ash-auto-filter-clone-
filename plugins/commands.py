@@ -424,6 +424,9 @@ async def start(client, message):
                 message.command[1] = f"special_{clean_tok}"
                 from link_modules import special_link
                 return await special_link.open_special(client, message)
+            if mongo_db.universal_links.find_one({"token": data}) or mongo_db.universal_links.find_one({"token": clean_tok}):
+                from link_modules import universal_link
+                return await universal_link.deliver_universal_link(client, message, clean_tok)
     except Exception:
         pass
     if data.startswith("verify_") or data.startswith("verify-"):
