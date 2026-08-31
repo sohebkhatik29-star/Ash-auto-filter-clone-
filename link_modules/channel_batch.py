@@ -83,8 +83,7 @@ async def start_batch(client, message):
 
     await message.reply(
         "Forward The Batch First Message From your Batch Channel (With Forward Tag)..\n"
-        "or Give Me Batch first message link from your batch channel\n\n"
-        "<i>Send /cancel to cancel.</i>"
+        "or Give Me Batch First message link from your batch channel"
     )
     raise StopPropagation
 
@@ -125,15 +124,10 @@ async def capture_batch_step(client, message):
             chat_obj = await client.get_chat(chat_id)
             chat_id = chat_obj.id
             bot_member = await client.get_chat_member(chat_id, client.me.id)
-            # Must have admin status or channel must be accessible
             if str(bot_member.status).lower().endswith(("left", "banned", "kicked")):
-                raise PermissionError("Not a member")
-        except Exception:
-            await message.reply(
-                "❌ <b>Bot is not an Admin in that channel!</b>\n\n"
-                "Please add me as an <b>Admin</b> in your channel with post/view message rights, then try again.\n"
-                "/cancel - to abort."
-            )
+                raise PermissionError("Bot is not an admin in channel")
+        except Exception as e:
+            await message.reply(f"Error- Telegram says: [{e}]")
             raise StopPropagation
 
         session["first_chat_id"] = chat_id
@@ -141,9 +135,8 @@ async def capture_batch_step(client, message):
         session["step"] = "last"
 
         await message.reply(
-            "Forward The Batch Last Message From Your Batch Channel (With Forward Tag)..\n"
-            "or Give Me Batch last message link from your batch channel\n\n"
-            "<i>Send /cancel to cancel.</i>"
+            "Forward The Batch Last Message From your Batch Channel (With Forward Tag)..\n"
+            "or Give Me Batch last message link from your batch channel"
         )
         raise StopPropagation
 
@@ -163,8 +156,9 @@ async def capture_batch_step(client, message):
         try:
             chat_obj = await client.get_chat(chat_id)
             chat_id = chat_obj.id
-        except Exception:
-            pass
+        except Exception as e:
+            await message.reply(f"Error- Telegram says: [{e}]")
+            raise StopPropagation
 
         if chat_id != first_chat_id:
             await message.reply(
@@ -182,30 +176,6 @@ async def capture_batch_step(client, message):
         total_msgs = (l_id - f_id) + 1
 
         notice_msg = await message.reply("process time depends upon number of messages")
-
-        status_msg = await message.reply(
-            f"Generating Shareable Link...\n\n"
-            f"➤ Total Messages: {total_msgs}\n"
-            f"➤ Completed: 0\n"
-            f"➤ Remaining: {total_msgs}"
-        )
-
-        valid_count = 0
-        last_edit_time = time.time()
-
-        for idx, cur_id in enumerate(range(f_id, l_id + 1), start=1):
-            valid_count += 1
-            if time.time() - last_edit_time > 2.0 or idx == total_msgs:
-                try:
-                    await status_msg.edit_text(
-                        f"Generating Shareable Link...\n\n"
-                        f"➤ Total Messages: {total_msgs}\n"
-                        f"➤ Completed: {idx}\n"
-                        f"➤ Remaining: {total_msgs - idx}"
-                    )
-                    last_edit_time = time.time()
-                except Exception:
-                    pass
 
         # Save to database
         token = secrets.token_urlsafe(18)
@@ -229,16 +199,11 @@ async def capture_batch_step(client, message):
         from settings_modules.link_shortener import get_shortened_link_if_enabled
         shown_link = await get_shortened_link_if_enabled(client, int(message.from_user.id), orig_link)
 
-        try:
-            await notice_msg.delete()
-        except Exception:
-            pass
-
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("📢 SHARE URL", url=f"https://t.me/share/url?url={shown_link}")]
         ])
 
-        await status_msg.edit_text(
+        await message.reply(
             f"Here is your link:\n\n{shown_link}",
             reply_markup=markup,
             disable_web_page_preview=True,
@@ -292,9 +257,19 @@ async def batch_start_deliver(client, message):
     delivery_key = (int(client.me.id), user_id)
     _ACTIVE_DELIVERIES[delivery_key] = True
 
-    cancel_btn = InlineKeyboardMarkup([
+    rec = cmd.bot_record(client)
+    cancel_rows = [
         [InlineKeyboardButton("• cancel", callback_data=f"cbatch_cancel_{token}")]
-    ])
+    ]
+    up_ch = rec.get("update_channel") or rec.get("updates_channel")
+    if up_ch:
+        try:
+            from clone_plugins.commands import tg_link
+            cancel_rows.append([InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(up_ch, "MoviesGroupG3"))])
+        except Exception:
+            pass
+
+    cancel_btn = InlineKeyboardMarkup(cancel_rows)
     wait_msg = await message.reply("Please wait...\n\n• cancel", reply_markup=cancel_btn)
 
     f_id = int(record["first_msg_id"])
