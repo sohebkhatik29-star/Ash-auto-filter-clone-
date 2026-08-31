@@ -17,5 +17,20 @@ async def handle_delete_bot_callbacks(client, query, data, user_id, r, save_fn, 
         m = db_fn()
         if m:
             m.bots.delete_one({"bot_id": me.id})
+            try:
+                m.clone_settings.delete_many({"bot_id": me.id})
+                m.free_usage.delete_many({"bot_id": me.id})
+                m.access_tokens.delete_many({"bot_id": me.id})
+                m.join_requests.delete_many({"bot_id": me.id})
+            except Exception:
+                pass
+        try:
+            import asyncio
+            from plugins.clone import CLONES
+            CLONES.pop(me.id, None)
+            CLONES.pop(str(me.id), None)
+            asyncio.create_task(client.stop())
+        except Exception:
+            pass
         await query.answer("Clone bot deleted!", show_alert=True)
         return await edit_or_reply_fn(query, "🚫 <b>Clone Bot Deleted Successfully.</b>")

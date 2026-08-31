@@ -759,6 +759,7 @@ async def handle_admin_panel_callbacks(client, query):
             "Please send the <b>Telegram User ID</b> (e.g. <code>5550505</code>) or <b>@Username</b> of the user you want to find:\n\n"
             "<i>Send /cancel to abort search.</i>"
         )
+        prompt_msg = query.message
         await query.message.edit_text(
             prompt_text,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ CANCEL", callback_data="admin_panel_main")]])
@@ -768,12 +769,27 @@ async def handle_admin_panel_callbacks(client, query):
             try:
                 ans = await client.listen(chat_id=user_id, timeout=120)
             except Exception:
+                try:
+                    await prompt_msg.delete()
+                except Exception:
+                    pass
                 await client.send_message(user_id, "❌ <b>Search timed out.</b>")
                 clear_user_session(user_id)
                 return
             if not is_user_session_active(user_id, sess_token):
                 return
             txt = (ans.text or "").strip()
+
+            # Delete prompt message and user answer so menu doesn't stay above
+            try:
+                await prompt_msg.delete()
+            except Exception:
+                pass
+            try:
+                await ans.delete()
+            except Exception:
+                pass
+
             if txt == "/cancel":
                 clear_user_session(user_id)
                 return await client.send_message(user_id, "❌ <b>Search cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ ADMIN PANEL", callback_data="admin_panel_main")]]))
@@ -949,9 +965,47 @@ async def handle_admin_panel_callbacks(client, query):
     # 11. Force Delete Clone
     if data.startswith("admin_force_del:"):
         bid = int(data.split(":")[1])
+        owner_id = None
+        bot_username = None
         if m is not None:
+            bot_doc = m.bots.find_one({"bot_id": bid})
+            if bot_doc:
+                owner_id = bot_doc.get("user_id")
+                bot_username = bot_doc.get("username")
             m.bots.delete_one({"bot_id": bid})
+            try:
+                m.clone_settings.delete_many({"bot_id": bid})
+                m.free_usage.delete_many({"bot_id": bid})
+                m.access_tokens.delete_many({"bot_id": bid})
+                m.join_requests.delete_many({"bot_id": bid})
+            except Exception:
+                pass
+
+        try:
+            from plugins.clone import CLONES
+            clone_cli = CLONES.pop(bid, None)
+            if clone_cli:
+                asyncio.create_task(clone_cli.stop())
+            CLONES.pop(str(bid), None)
+        except Exception:
+            pass
+
         await query.answer("🗑️ Clone bot record deleted from database.", show_alert=True)
+
+        if owner_id:
+            try:
+                uname_txt = f" (@{bot_username})" if bot_username else ""
+                await client.send_message(
+                    chat_id=int(owner_id),
+                    text=(
+                        f"⚠️ <b>NOTICE:</b>\n\n"
+                        f"Aapka clone bot <code>{bid}</code>{uname_txt} Master Bot Admin dwara <b>delete</b> kar diya gaya hai.\n\n"
+                        f"Ab yeh bot hamare system se hat chuka hai aur kaam nahi karega."
+                    )
+                )
+            except Exception:
+                pass
+
         return await query.message.edit_text(
             f"🗑️ <b>Clone bot {bid} deleted successfully.</b>",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK TO ALL OWNERS", callback_data="admin_all_owners:0")]])
