@@ -328,6 +328,16 @@ async def _generate(client, query, session):
 
 async def callback(client, query):
     data = query.data or ""
+    if data.startswith("cb_cancel_"):
+        _ACTIVE_CUSTOM_DELIVERIES = getattr(custom_batch_cmd, "_active_deliveries", {})
+        _ACTIVE_CUSTOM_DELIVERIES[(int(client.me.id), int(query.from_user.id))] = False
+        await query.answer("Delivery cancelled.")
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        raise StopPropagation
+
     parts = data.split("_", 2)
     if len(parts) != 3 or parts[0] != "cb":
         return
@@ -513,9 +523,17 @@ async def batch_start(client, message):
         or rec.get("custom_thumbnail")
     )
 
+    from settings_modules.update_channel import send_wait_message
+    delivery_key = (int(client.me.id), int(message.from_user.id))
+    _ACTIVE_CUSTOM_DELIVERIES = getattr(custom_batch_cmd, "_active_deliveries", {})
+    custom_batch_cmd._active_deliveries = _ACTIVE_CUSTOM_DELIVERIES
+    _ACTIVE_CUSTOM_DELIVERIES[delivery_key] = True
+
+    wait_msg = await send_wait_message(client, message, cancel_callback_data=f"cb_cancel_{token}")
     delivered_messages = []
-    await message.reply(f"📦 <b>Sending {len(messages)} messages...</b>")
     for item in messages:
+        if not _ACTIVE_CUSTOM_DELIVERIES.get(delivery_key, False):
+            break
         c_id = int(item["chat_id"])
         m_id = int(item["message_id"])
         caption_to_use = None
@@ -619,6 +637,13 @@ async def batch_start(client, message):
                     
         if delivered:
             delivered_messages.append(delivered)
+
+    _ACTIVE_CUSTOM_DELIVERIES.pop(delivery_key, None)
+    if wait_msg:
+        try:
+            await wait_msg.delete()
+        except Exception:
+            pass
 
     try:
         ad_enabled = bool(rec.get("auto_delete_enabled", False))

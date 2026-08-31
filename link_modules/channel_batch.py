@@ -260,20 +260,8 @@ async def batch_start_deliver(client, message):
     delivery_key = (int(client.me.id), user_id)
     _ACTIVE_DELIVERIES[delivery_key] = True
 
-    rec = cmd.bot_record(client)
-    cancel_rows = [
-        [InlineKeyboardButton("• cancel", callback_data=f"cbatch_cancel_{token}")]
-    ]
-    up_ch = rec.get("update_channel") or rec.get("updates_channel")
-    if up_ch:
-        try:
-            from clone_plugins.commands import tg_link
-            cancel_rows.append([InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(up_ch, "MoviesGroupG3"))])
-        except Exception:
-            pass
-
-    cancel_btn = InlineKeyboardMarkup(cancel_rows)
-    wait_msg = await message.reply("Please wait...\n\n• cancel", reply_markup=cancel_btn)
+    from settings_modules.update_channel import send_wait_message
+    wait_msg = await send_wait_message(client, message, cancel_callback_data=f"cbatch_cancel_{token}")
 
     f_id = int(record["first_msg_id"])
     l_id = int(record["last_msg_id"])

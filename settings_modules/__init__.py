@@ -20,3 +20,4 @@ from settings_modules.bot_status import handle_bot_status_callbacks
 from settings_modules.bot_mode import handle_bot_mode_callbacks
 from settings_modules.restart_bot import handle_restart_bot_callbacks
 from settings_modules.delete_bot import handle_delete_bot_callbacks
+from settings_modules.update_channel import get_update_channel_url, get_wait_markup, send_wait_message

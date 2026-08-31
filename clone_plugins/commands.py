@@ -554,6 +554,13 @@ def settings_menu():
 
 
 async def deliver_file(client, user_id, file_id, protected=False):
+    from settings_modules.update_channel import send_wait_message
+    wait_msg = None
+    try:
+        wait_msg = await send_wait_message(client, user_id, cancel_callback_data="cancel_deliv")
+    except Exception:
+        pass
+
     rec = bot_record(client)
     protected = protected or bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
 
@@ -613,6 +620,13 @@ async def deliver_file(client, user_id, file_id, protected=False):
                 await msg.edit_reply_markup(reply_markup)
             except Exception:
                 pass
+
+    if wait_msg:
+        try:
+            await wait_msg.delete()
+        except Exception:
+            pass
+
     if rec.get("auto_delete_enabled", False):
         ad_sec = int(rec.get("auto_delete_time") or (int(rec.get("auto_delete_minutes", 15)) * 60))
         time_str = format_auto_delete_time(ad_sec)

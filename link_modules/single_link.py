@@ -535,6 +535,13 @@ async def open_single(client, message):
     if await send_fsub_prompt(client, message, payload):
         raise StopPropagation
 
+    from settings_modules.update_channel import send_wait_message
+    wait_msg = None
+    try:
+        wait_msg = await send_wait_message(client, message, cancel_callback_data=f"sl_cancel_{payload}")
+    except Exception:
+        pass
+
     try:
         rec = bot_record(client)
         is_protect = bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
@@ -726,6 +733,12 @@ async def open_single(client, message):
                         break
                 except Exception:
                     continue
+
+        if wait_msg:
+            try:
+                await wait_msg.delete()
+            except Exception:
+                pass
 
         # Schedule auto delete if enabled
         try:

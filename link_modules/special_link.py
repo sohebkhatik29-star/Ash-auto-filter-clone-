@@ -347,6 +347,17 @@ async def special_link_callbacks(client, query):
         return await query.answer("Session expired.", show_alert=True)
 
     elif data.startswith("spl_cancel_"):
+        delivery_key = (int(client.me.id), int(query.from_user.id))
+        _ACTIVE_SPECIAL_DELIVERIES = getattr(special_link_start, "_active_deliveries", {})
+        if delivery_key in _ACTIVE_SPECIAL_DELIVERIES:
+            _ACTIVE_SPECIAL_DELIVERIES[delivery_key] = False
+            await query.answer("Delivery cancelled.")
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            raise StopPropagation
+
         _SPL_SESSIONS.pop(key, None)
         try:
             await query.message.delete()
@@ -704,8 +715,18 @@ async def special_link_start(client, message):
     invert_cap = bool(rec.get("invert_caption", False))
     spoiler_anim = bool(rec.get("spoiler_animation", False))
 
+    from settings_modules.update_channel import send_wait_message
+    delivery_key = (int(client.me.id), int(message.from_user.id))
+    _ACTIVE_SPECIAL_DELIVERIES = getattr(special_link_start, "_active_deliveries", {})
+    special_link_start._active_deliveries = _ACTIVE_SPECIAL_DELIVERIES
+    _ACTIVE_SPECIAL_DELIVERIES[delivery_key] = True
+
+    wait_msg = await send_wait_message(client, message, cancel_callback_data=f"spl_cancel_{payload}")
+
     delivered_messages = []
     for item in messages:
+        if not _ACTIVE_SPECIAL_DELIVERIES.get(delivery_key, False):
+            break
         c_id = int(item["chat_id"])
         m_id = int(item["message_id"])
         caption_to_use = None
@@ -762,6 +783,13 @@ async def special_link_start(client, message):
 
         if delivered:
             delivered_messages.append(delivered)
+
+    _ACTIVE_SPECIAL_DELIVERIES.pop(delivery_key, None)
+    if wait_msg:
+        try:
+            await wait_msg.delete()
+        except Exception:
+            pass
 
     try:
         ad_enabled = bool(rec.get("auto_delete_enabled", False))
