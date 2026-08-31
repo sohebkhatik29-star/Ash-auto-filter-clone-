@@ -156,6 +156,9 @@ async def capture_batch_step(client, message):
         try:
             chat_obj = await client.get_chat(chat_id)
             chat_id = chat_obj.id
+            bot_member = await client.get_chat_member(chat_id, client.me.id)
+            if str(bot_member.status).lower().endswith(("left", "banned", "kicked")):
+                raise PermissionError("Bot is not an admin in channel")
         except Exception as e:
             await message.reply(f"Error- Telegram says: [{e}]")
             raise StopPropagation
