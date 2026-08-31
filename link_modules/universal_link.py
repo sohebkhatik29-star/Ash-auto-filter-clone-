@@ -224,6 +224,11 @@ async def deliver_universal_link(client, message, token: str):
     delivery_key = (int(client.me.id), user_id)
     _ACTIVE_UNIV_DELIVERIES[delivery_key] = True
 
+    try:
+        rec = cmd.bot_record(client) if hasattr(cmd, "bot_record") else {}
+    except Exception:
+        rec = {}
+
     from settings_modules.update_channel import send_wait_message
     wait_msg = await send_wait_message(client, message, cancel_callback_data=f"univ_cancel_{token}")
 
