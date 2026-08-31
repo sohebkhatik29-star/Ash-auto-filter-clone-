@@ -42,21 +42,31 @@ async def check_clone_status_or_block(client, message_or_query) -> bool:
 
     # 1. Check if bot exists in database at all (if deleted, stop client and completely block)
     m = db()
-    if m is not None:
+    if m is not None and getattr(me, "id", None):
         token_val = getattr(client, "bot_token", None) or getattr(client, "_token", None)
-        query_filter = {"$or": [{"bot_id": int(me.id)}]}
+        or_list = [
+            {"bot_id": int(me.id)},
+            {"bot_id": str(me.id)},
+        ]
+        if getattr(me, "username", None):
+            or_list.append({"username": me.username})
+            or_list.append({"username": me.username.lower()})
         if token_val:
-            query_filter["$or"].append({"token": token_val})
-        bot_exists = m.bots.find_one(query_filter)
+            or_list.append({"token": token_val})
+            or_list.append({"bot_token": token_val})
+
+        bot_exists = m.bots.find_one({"$or": or_list})
         if not bot_exists:
-            try:
-                from plugins.clone import CLONES
-                CLONES.pop(int(me.id), None)
-                CLONES.pop(str(me.id), None)
-                asyncio.create_task(client.stop())
-            except Exception:
-                pass
-            return True
+            # Check if this bot was really deleted from bots collection
+            if m.bots.count_documents({}) > 0:
+                try:
+                    from plugins.clone import CLONES
+                    CLONES.pop(int(me.id), None)
+                    CLONES.pop(str(me.id), None)
+                    asyncio.create_task(client.stop())
+                except Exception:
+                    pass
+                return True
 
     is_susp, susp_doc = is_clone_suspended(me.id)
     if is_susp:

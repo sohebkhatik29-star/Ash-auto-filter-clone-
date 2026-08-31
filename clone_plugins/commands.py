@@ -34,10 +34,15 @@ def bot_record(client):
     try:
         b_id = getattr(client, "me", None) and client.me.id
         if b_id:
-            rec = mongo_db.bots.find_one({"bot_id": int(b_id)})
+            rec = mongo_db.bots.find_one({"$or": [{"bot_id": int(b_id)}, {"bot_id": str(b_id)}]})
             if rec: return rec
-            rec = mongo_db.bots.find_one({"token": getattr(client, "_token", "")})
-            if rec: return rec
+            token_val = getattr(client, "bot_token", None) or getattr(client, "_token", "")
+            if token_val:
+                rec = mongo_db.bots.find_one({"$or": [{"token": token_val}, {"bot_token": token_val}]})
+                if rec: return rec
+            if getattr(client.me, "username", None):
+                rec = mongo_db.bots.find_one({"$or": [{"username": client.me.username}, {"username": client.me.username.lower()}]})
+                if rec: return rec
         m_rec = mongo_db.master_settings.find_one({"type": "master_config"}) or mongo_db.master_settings.find_one({})
         return m_rec or {}
     except Exception:

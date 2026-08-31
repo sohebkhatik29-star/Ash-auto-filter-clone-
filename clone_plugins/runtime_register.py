@@ -6,7 +6,7 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins import commands as cmd
 from clone_plugins import advanced as adv
 from clone_plugins import clone_settings_ui as cset
-from link_modules import register_all_link_modules, single_link, universal_link
+from link_modules import register_all_link_modules, single_link, universal_link, channel_batch, custom_batch, special_link
 from clone_plugins import master_manager
 
 
@@ -53,6 +53,9 @@ def register_clone_handlers(client):
         "getlink": single_link.genlink_prompt,
         "link": single_link.genlink_prompt,
         "genlink": single_link.genlink_prompt,
+        "batch": channel_batch.start_batch,
+        "custom_batch": custom_batch.custom_batch_cmd,
+        "special_link": special_link.special_link_cmd,
         "universal_link": universal_link.universal_link_cmd,
         "shortener": cmd.shortener,
         "api": cmd.api_handler,
