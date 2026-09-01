@@ -1,210 +1,253 @@
-"""Universal Link generator & delivery handler.
-Matches exact clone bot specifications.
+"""Universal Link generator handler.
+Main command: /universal_link
 """
-import asyncio
-import re
 import secrets
 import time
-from pyrogram import StopPropagation, enums, filters
-from pyrogram.handlers import CallbackQueryHandler, MessageHandler
+import asyncio
+from pyrogram import StopPropagation, filters, enums
+from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins import commands as cmd
-try:
-    from plugins.clone import mongo_db
-except Exception:
-    try:
-        from clone_plugins.database import mongo_db
-    except Exception:
-        mongo_db = None
-from settings_modules.caption_formatter import format_caption
+from clone_plugins.commands import bot_record, is_owner_or_mod, make_file_link
+from plugins.clone import mongo_db
+from config import ADMINS, PUBLIC_FILE_STORE
+from clone_plugins.users_api import format_caption
 
-
-_UNIV_SESSIONS = {}
 _ACTIVE_UNIV_DELIVERIES = {}
 
-
-def _get_session_key(client, user_id):
-    return (int(client.me.id), int(user_id))
-
-
-def is_universal_link_active(bot_id: int, user_id: int) -> bool:
-    return _UNIV_SESSIONS.get((int(bot_id), int(user_id))) is not None
-
-
-def _parse_message_reference(message):
-    """Extract chat_id and msg_id from a forwarded message or a Telegram link."""
-    # 1. Forwarded message from a channel/chat
-    f_chat = message.forward_from_chat
-    if f_chat and getattr(message, "forward_from_message_id", None):
-        return f_chat.id, int(message.forward_from_message_id)
-
-    # 2. Text message containing a link
-    text = (message.text or message.caption or "").strip()
-    if text:
-        # Match t.me/c/123456789/10
-        m = re.search(r"t\.me/c/(\d+)/(\d+)", text)
-        if m:
-            raw_id = int(m.group(1))
-            c_id = int(f"-100{raw_id}") if not str(raw_id).startswith("-100") else raw_id
-            return c_id, int(m.group(2))
-
-        # Match t.me/username/10
-        m2 = re.search(r"t\.me/([a-zA-Z0-9_]+)/(\d+)", text)
-        if m2 and m2.group(1).lower() not in ("c", "share", "joinchat"):
-            return m2.group(1), int(m2.group(2))
-
-    return None, None
-
+def is_allowed_universal(client, user_id: int) -> bool:
+    if PUBLIC_FILE_STORE:
+        return True
+    try:
+        if int(user_id) in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]:
+            return True
+    except Exception:
+        pass
+    if is_owner_or_mod(client, user_id):
+        return True
+    return bot_record(client).get("mode") == "public"
 
 async def universal_link_cmd(client, message):
-    from settings_modules.active_deactive import check_clone_status_or_block
-    if await check_clone_status_or_block(client, message):
-        return
+    if not is_allowed_universal(client, message.from_user.id):
+        return await message.reply("❌ Link generation is private. Only owner/moderators can use it.")
+    if mongo_db is None:
+        return await message.reply("❌ Database is not configured.")
 
-    user_id = int(message.from_user.id)
-    s_key = _get_session_key(client, user_id)
-    _UNIV_SESSIONS[s_key] = {"step": "first", "first_chat_id": None, "first_msg_id": None}
-
-    help_url = "https://t.me/Ash_Updates1"
+    session_id = secrets.token_urlsafe(10)
     text = (
-        "Send the Inventory channel message link where the bot should start storing messages\n\n"
-        f"Note: This bot and any other clones that need to work with this link must have admin access to the channel at all times. <a href=\"{help_url}\">To know more click here</a>"
+        "<b>Send the Inventory channel message link where the bot should start storing messages</b>\n\n"
+        "<i>Note: This bot and any other clones that need to work with this link must have admin access to the channel at all times.</i>"
     )
-    await message.reply(text, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ Cancel", callback_data=f"ul_cancel_{session_id}")]
+    ])
+    
+    # Pehle message send karo taki uski ID mil sake
+    sent_msg = await message.reply(text, reply_markup=markup, disable_web_page_preview=True)
+
+    doc = {
+        "session_id": session_id,
+        "bot_id": client.me.id,
+        "user_id": int(message.from_user.id),
+        "step": "waiting_start",  # waiting_start -> waiting_stop
+        "start_chat_id": None,
+        "start_msg_id": None,
+        "prompt_msg_id": sent_msg.id, # Puraney message ki ID yaha save ho rahi hai
+        "created_at": int(time.time()),
+    }
+    
+    mongo_db.universal_sessions.update_one(
+        {"bot_id": client.me.id, "user_id": int(message.from_user.id)},
+        {"$set": doc},
+        upsert=True
+    )
     raise StopPropagation
 
+async def capture_universal_flow(client, message):
+    if mongo_db is None or not message.from_user or not message.chat:
+        return
+    if message.chat.type.value != "private":
+        return
+    if message.text and message.text.startswith("/"):
+        return
 
-async def capture_universal_step(client, message):
-    user_id = int(message.from_user.id)
-    s_key = _get_session_key(client, user_id)
-    session = _UNIV_SESSIONS.get(s_key)
+    session = mongo_db.universal_sessions.find_one({"bot_id": client.me.id, "user_id": int(message.from_user.id)})
     if not session:
         return
 
-    text = (message.text or message.caption or "").strip()
-    if text.lower() == "/cancel":
-        _UNIV_SESSIONS.pop(s_key, None)
-        await message.reply("❌ Universal link generation cancelled.")
-        raise StopPropagation
-
     step = session.get("step")
-    chat_id, msg_id = _parse_message_reference(message)
+    prompt_msg_id = session.get("prompt_msg_id")
 
-    if not chat_id or not msg_id:
-        await message.reply(
-            "Please forward a message from your Inventory channel (with forward tag) or send a valid message link.\n\n"
-            "<i>Send /cancel to abort.</i>",
-            parse_mode=enums.ParseMode.HTML
-        )
-        raise StopPropagation
-
-    if step == "first":
+    # Helper function to check if bot is admin in the source chat/channel
+    async def check_bot_admin(chat_id):
         try:
-            chat_obj = await client.get_chat(chat_id)
-            chat_id = chat_obj.id
-            bot_member = await client.get_chat_member(chat_id, client.me.id)
-            if str(bot_member.status).lower().endswith(("left", "banned", "kicked")):
-                raise PermissionError("Not an admin")
+            member = await client.get_chat_member(chat_id, client.me.id)
+            if member.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]:
+                return True
         except Exception:
-            await message.reply("This may be a private channel / group. Make me an admin over there.")
-            raise StopPropagation
+            pass
+        return False
 
-        session["first_chat_id"] = chat_id
-        session["first_msg_id"] = msg_id
-        session["step"] = "last"
+    # Handling Forwarded Message or direct link parsing
+    chat_id = None
+    msg_id = None
 
-        await message.reply("Send the Inventory channel message link where the bot should stop storing messages")
-        raise StopPropagation
-
-    elif step == "last":
+    if message.forward_from_chat:
+        chat_id = message.forward_from_chat.id
+        msg_id = message.forward_from_message_id
+    elif message.text and "t.me/" in message.text:
+        # Basic link parser
         try:
-            chat_obj = await client.get_chat(chat_id)
-            chat_id = chat_obj.id
-            bot_member = await client.get_chat_member(chat_id, client.me.id)
-            if str(bot_member.status).lower().endswith(("left", "banned", "kicked")):
-                raise PermissionError("Not an admin")
-        except Exception:
-            await message.reply("This may be a private channel / group. Make me an admin over there.")
-            raise StopPropagation
-
-        first_chat_id = session.get("first_chat_id")
-        if chat_id != first_chat_id:
-            await message.reply(
-                "❌ <b>Both messages must be from the same channel!</b>\n"
-                "Please forward the last message from the same channel or send /cancel.",
-                parse_mode=enums.ParseMode.HTML
-            )
-            raise StopPropagation
-
-        f_id = int(session["first_msg_id"])
-        l_id = int(msg_id)
-        if f_id > l_id:
-            f_id, l_id = l_id, f_id
-
-        total_msgs = l_id - f_id + 1
-        _UNIV_SESSIONS.pop(s_key, None)
-
-        notice_msg = await message.reply("Please Wait ....")
-
-        token = secrets.token_urlsafe(18)
-        if mongo_db is not None:
-            doc = {
-                "token": token,
-                "user_id": user_id,
-                "channel_id": chat_id,
-                "first_msg_id": f_id,
-                "last_msg_id": l_id,
-                "total_msgs": total_msgs,
-                "created_at": time.time(),
-            }
-            mongo_db.universal_links.insert_one(doc)
-
-        orig_link = f"https://t.me/{client.me.username}?start={token}"
-        from settings_modules.link_shortener import get_shortened_link_if_enabled
-        shown_link = await get_shortened_link_if_enabled(client, user_id, orig_link)
-
-        try:
-            await notice_msg.delete()
+            parts = message.text.strip().split("/")
+            if "c" in parts:
+                c_idx = parts.index("c")
+                chat_id = int("-100" + parts[c_idx + 1])
+                msg_id = int(parts[-1])
+            else:
+                username = parts[-2]
+                msg_id = int(parts[-1])
+                chat = await client.get_chat(username)
+                chat_id = chat.id
         except Exception:
             pass
 
-        help_url = "https://t.me/Ash_Updates1"
-        final_text = (
-            "Here is your universal link:\n\n"
-            f"{shown_link}\n\n"
-            "Note:The same content can be accessed by any of your clones by replacing the bot username in the link. "
-            f"The link creator (you) must be a moderator in those clones. <a href=\"{help_url}\">To know more click here</a>"
-        )
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📢 SHARE URL", url=f"https://t.me/share/url?url={shown_link}")]
-        ])
+    if not chat_id or not msg_id:
+        return await message.reply("❌ Please forward a message from the channel or send a valid channel message link.")
 
-        await message.reply(
-            final_text,
-            reply_markup=markup,
-            parse_mode=enums.ParseMode.HTML,
-            disable_web_page_preview=True,
+    # Check Admin Status
+    is_admin = await check_bot_admin(chat_id)
+    if not is_admin:
+        if prompt_msg_id:
+            try:
+                await client.delete_messages(message.chat.id, prompt_msg_id)
+            except Exception:
+                pass
+        mongo_db.universal_sessions.delete_one({"_id": session["_id"]})
+        return await message.reply("❌ Sorry, your bot is not an admin in this channel. Please promote the bot as admin first.")
+
+    if step == "waiting_start":
+        # Purana 'start' wala message delete kar rahe hai
+        if prompt_msg_id:
+            try:
+                await client.delete_messages(message.chat.id, prompt_msg_id)
+            except Exception:
+                pass
+
+        text = "<b>Send the Inventory channel message link where the bot should stop storing messages</b>"
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ Cancel", callback_data=f"ul_cancel_{session['session_id']}")]
+        ])
+        
+        # Naya message send karke uski ID update karenge
+        sent_msg = await message.reply(text, reply_markup=markup, disable_web_page_preview=True)
+        
+        mongo_db.universal_sessions.update_one(
+            {"_id": session["_id"]},
+            {"$set": {
+                "start_chat_id": chat_id, 
+                "start_msg_id": msg_id, 
+                "step": "waiting_stop", 
+                "prompt_msg_id": sent_msg.id
+            }}
         )
         raise StopPropagation
 
+    elif step == "waiting_stop":
+        # Purana 'stop' wala message delete kar rahe hai
+        if prompt_msg_id:
+            try:
+                await client.delete_messages(message.chat.id, prompt_msg_id)
+            except Exception:
+                pass
+
+        start_chat_id = session.get("start_chat_id")
+        start_msg_id = session.get("start_msg_id")
+        stop_chat_id = chat_id
+        stop_msg_id = msg_id
+
+        if start_chat_id != stop_chat_id:
+            return await message.reply("❌ Start and stop messages must be from the same channel!")
+
+        if start_msg_id > stop_msg_id:
+            return await message.reply("❌ Stop message ID must be greater than or equal to the start message ID!")
+
+        # Processing shuru karte waqt message bhejenge
+        proc_msg = await message.reply("⏳ <b>Processing files, please wait...</b>")
+        messages_list = []
+        
+        rec = bot_record(client)
+        protected = bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
+        username = (await client.get_me()).username
+
+        for m_id in range(start_msg_id, stop_msg_id + 1):
+            try:
+                msg = await client.get_messages(start_chat_id, m_id)
+                if msg and msg.media:
+                    media = getattr(msg, msg.media.value, None)
+                    file_id = getattr(media, "file_id", None)
+                    if file_id:
+                        messages_list.append({"chat_id": start_chat_id, "message_id": m_id})
+            except Exception:
+                continue
+
+        if not messages_list:
+            mongo_db.universal_sessions.delete_one({"_id": session["_id"]})
+            await proc_msg.delete() # Processing wala message delete
+            return await message.reply("❌ No valid media found in the given range.")
+
+        # Save to database links collection
+        token = secrets.token_urlsafe(18)
+        doc_link = {
+            "token": token,
+            "bot_id": client.me.id,
+            "owner_id": int(message.from_user.id),
+            "messages": messages_list,
+            "protected": protected,
+            "created_at": int(time.time()),
+        }
+        mongo_db.custom_batch_links.update_one({"token": token}, {"$set": doc_link}, upsert=True)
+        
+        link = f"https://t.me/{username}?start=batch_{token}"
+        mongo_db.universal_sessions.delete_one({"_id": session["_id"]})
+
+        markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📋 Copy Link 📋", url=f"https://t.me/share/url?url={link}"),
+                InlineKeyboardButton("📢 SHARE URL 📢", url=f"https://t.me/share/url?url={link}")
+            ]
+        ])
+        
+        # Process complete hone ke baad "Processing..." message delete kar denge
+        await proc_msg.delete()
+        await message.reply(f"Here is your universal link:\n\n{link}", reply_markup=markup, disable_web_page_preview=True)
+        raise StopPropagation
+
+async def universal_callback(client, query):
+    data = query.data or ""
+    if data.startswith("ul_cancel_"):
+        try:
+            session_id = data.split("_", 2)[2]
+            mongo_db.universal_sessions.delete_one({"session_id": session_id})
+            await query.message.delete()
+        except Exception:
+            pass
+        await query.answer("Cancelled successfully.")
+    raise StopPropagation
 
 async def deliver_universal_link(client, message, token: str):
     from settings_modules.active_deactive import check_clone_status_or_block
     if await check_clone_status_or_block(client, message):
         return
-
     if mongo_db is None:
         return await message.reply("❌ Database not configured.")
-
     clean_tok = token.split("_", 1)[1] if "_" in token else token
     raw_tok = token.strip()
     record = mongo_db.universal_links.find_one({"$or": [{"token": token}, {"token": raw_tok}, {"token": clean_tok}, {"token": clean_tok.strip()}]})
     if not record:
         return await message.reply("❌ <b>This link is invalid or expired!</b>", parse_mode=enums.ParseMode.HTML)
-
+    
     user_id = int(message.from_user.id)
     payload = token
-
     # Check access/verification
     access_markup, v_text, v_photo, free_notice = None, None, None, None
     from clone_plugins.users_api import check_access_and_get_markup
@@ -224,7 +267,6 @@ async def deliver_universal_link(client, message, token: str):
 
     delivery_key = (int(client.me.id), user_id)
     _ACTIVE_UNIV_DELIVERIES[delivery_key] = True
-
     try:
         rec = cmd.bot_record(client) if hasattr(cmd, "bot_record") else {}
     except Exception:
@@ -232,24 +274,24 @@ async def deliver_universal_link(client, message, token: str):
 
     from settings_modules.update_channel import send_wait_message
     wait_msg = await send_wait_message(client, message, cancel_callback_data=f"univ_cancel_{token}")
-
+    
     f_id = int(record["first_msg_id"])
     l_id = int(record["last_msg_id"])
     ch_id = int(record["channel_id"])
     protected = bool(record.get("protected", False)) or bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
-
+    
     custom_btns = rec.get("custom_buttons", [])
     markup = None
     if custom_btns:
         rows = [[InlineKeyboardButton(b["text"], url=b["url"])] for b in custom_btns if isinstance(b, dict) and b.get("text") and b.get("url")]
         if rows:
             markup = InlineKeyboardMarkup(rows)
-
+            
     custom_cap = rec.get("custom_caption")
     invert_cap = bool(rec.get("invert_caption", False))
     spoiler_anim = bool(rec.get("spoiler_animation", False))
-
     delivered_messages = []
+    
     for m_id in range(f_id, l_id + 1):
         if not _ACTIVE_UNIV_DELIVERIES.get(delivery_key, False):
             break
@@ -260,7 +302,6 @@ async def deliver_universal_link(client, message, token: str):
                 caption_to_use = format_caption(custom_cap, source_msg=src_msg)
             except Exception:
                 caption_to_use = custom_cap
-
         base_kw = {
             "chat_id": user_id,
             "from_chat_id": ch_id,
@@ -271,7 +312,6 @@ async def deliver_universal_link(client, message, token: str):
         }
         if caption_to_use:
             base_kw["parse_mode"] = enums.ParseMode.HTML
-
         attempts = []
         kw1 = dict(base_kw)
         if invert_cap:
@@ -279,7 +319,6 @@ async def deliver_universal_link(client, message, token: str):
         if spoiler_anim:
             kw1["has_spoiler"] = True
         attempts.append(kw1)
-
         if invert_cap or spoiler_anim:
             kw2 = dict(base_kw)
             if invert_cap:
@@ -287,15 +326,12 @@ async def deliver_universal_link(client, message, token: str):
             if spoiler_anim:
                 kw2["has_spoiler"] = True
             attempts.append(kw2)
-
         if spoiler_anim:
             attempts.append({**base_kw, "has_spoiler": True})
-
         attempts.append(base_kw)
         fb_no_pm = dict(base_kw)
         fb_no_pm.pop("parse_mode", None)
         attempts.append(fb_no_pm)
-
         delivered = None
         for attempt_kw in attempts:
             try:
@@ -304,16 +340,14 @@ async def deliver_universal_link(client, message, token: str):
                 break
             except Exception:
                 continue
-
         if delivered:
             delivered_messages.append(delivered)
-
+            
     _ACTIVE_UNIV_DELIVERIES.pop(delivery_key, None)
     try:
         await wait_msg.delete()
     except Exception:
         pass
-
     try:
         ad_enabled = bool(rec.get("auto_delete_enabled", False))
         ad_sec = int(rec.get("auto_delete_time") or (int(rec.get("auto_delete_minutes", 0) or 0) * 60) or 0)
@@ -322,15 +356,12 @@ async def deliver_universal_link(client, message, token: str):
             await schedule_auto_delete(client, user_id, delivered_messages, ad_sec)
     except Exception:
         pass
-
     if free_notice and delivered_messages:
         try:
             await client.send_message(user_id, free_notice)
         except Exception:
             pass
-
     raise StopPropagation
-
 
 async def callback_cancel(client, query):
     data = query.data or ""
@@ -345,10 +376,17 @@ async def callback_cancel(client, query):
         pass
     raise StopPropagation
 
+def is_universal_link_active(bot_id: int, user_id: int) -> bool:
+    session = mongo_db.universal_sessions.find_one({"bot_id": bot_id, "user_id": user_id})
+    if session:
+        return True
+    return False
 
 def register(client, base_group=-104):
     private = filters.private
-    client.add_handler(MessageHandler(capture_universal_step, private), group=base_group - 1)
     client.add_handler(MessageHandler(universal_link_cmd, filters.command(["universal_link"]) & private), group=base_group)
+    client.add_handler(MessageHandler(capture_universal_flow, private), group=base_group + 1)
+    client.add_handler(CallbackQueryHandler(universal_callback, filters.regex(r"^ul_cancel_[A-Za-z0-9_-]+$")), group=base_group)
     client.add_handler(CallbackQueryHandler(callback_cancel, filters.regex(r"^univ_cancel_")), group=base_group)
     return client
+
