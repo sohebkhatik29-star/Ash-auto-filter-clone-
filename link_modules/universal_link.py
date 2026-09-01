@@ -197,7 +197,8 @@ async def deliver_universal_link(client, message, token: str):
         return await message.reply("❌ Database not configured.")
 
     clean_tok = token.split("_", 1)[1] if "_" in token else token
-    record = mongo_db.universal_links.find_one({"$or": [{"token": token}, {"token": clean_tok}]})
+    raw_tok = token.strip()
+    record = mongo_db.universal_links.find_one({"$or": [{"token": token}, {"token": raw_tok}, {"token": clean_tok}, {"token": clean_tok.strip()}]})
     if not record:
         return await message.reply("❌ <b>This link is invalid or expired!</b>", parse_mode=enums.ParseMode.HTML)
 
