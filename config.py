@@ -17,7 +17,7 @@ API_ID = int(environ.get("API_ID", "0"))
 API_HASH = environ.get("API_HASH", "")
 BOT_TOKEN = environ.get("BOT_TOKEN", "")
 
-PICS = (environ.get('PICS', 'https://graph.org/file/ce1723991756e48c35aa1.jpg')).split()
+PICS = (environ.get('PICS', 'https://d.uguu.se/GKqJNpbg.jpg')).split()
 ADMINS = [int(admin) if id_pattern.search(admin) else admin for admin in environ.get('ADMINS', '').split()]
 BOT_USERNAME = environ.get("BOT_USERNAME", "Ash_files_or_clone_mangar_bot")
 PORT = environ.get("PORT", "8080")
