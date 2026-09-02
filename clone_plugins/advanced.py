@@ -55,15 +55,104 @@ async def admin_panel(client,message):
 async def stats(client,message):
     if not owner_only(client,message.from_user.id):return await message.reply("❌ Owner only.")
     await message.reply(f"📊 <b>Users:</b> <code>{await clonedb.total_users_count(client.me.id)}</code>")
-async def broadcast(client,message):
-    if not owner_only(client,message.from_user.id):return await message.reply("❌ Owner only.")
-    if not message.reply_to_message:return await message.reply("Reply to a message and use /broadcast")
-    sent=failed=0
+async def execute_broadcast(client, chat_id, b_msg):
+    sts = await client.send_message(chat_id, "⏳ <b>Broadcasting your message...</b>")
+    sent = 0
+    failed = 0
+    pinned = 0
+    total_users = await clonedb.total_users_count(client.me.id)
+    
     async for u in clonedb.get_all_users(client.me.id):
-        try:await message.reply_to_message.copy(u["user_id"]);sent+=1
-        except:failed+=1
-        await asyncio.sleep(.05)
-    await message.reply(f"📢 Done\nSent: {sent}\nFailed: {failed}")
+        uid = u.get("user_id")
+        if not uid:
+            continue
+        try:
+            m = await b_msg.copy(uid)
+            try:
+                await client.pin_chat_message(chat_id=uid, message_id=m.id, disable_notification=False)
+                pinned += 1
+            except Exception:
+                pass
+            sent += 1
+        except Exception:
+            failed += 1
+        
+        if (sent + failed) % 20 == 0:
+            try:
+                await sts.edit(
+                    f"⏳ <b>Broadcast in progress:</b>\n\n"
+                    f"👥 Total Users: {total_users}\n"
+                    f"🔄 Completed: {sent + failed} / {total_users}\n"
+                    f"✅ Sent: {sent} (📌 Pinned: {pinned})\n"
+                    f"❌ Failed: {failed}"
+                )
+            except Exception:
+                pass
+        await asyncio.sleep(0.05)
+        
+    return await sts.edit(
+        f"📢 <b>Broadcast Complete!</b>\n\n"
+        f"👥 Total Users: {total_users}\n"
+        f"✅ Sent & Pinned: {sent}\n"
+        f"❌ Failed/Blocked: {failed}"
+    )
+
+async def execute_unpin_broadcast(client, chat_id):
+    sts = await client.send_message(chat_id, "⏳ <b>Unpinning broadcast message from all users...</b>")
+    unpinned = 0
+    failed = 0
+    total_users = await clonedb.total_users_count(client.me.id)
+    
+    async for u in clonedb.get_all_users(client.me.id):
+        uid = u.get("user_id")
+        if not uid:
+            continue
+        try:
+            await client.unpin_all_chat_messages(chat_id=uid)
+            unpinned += 1
+        except Exception:
+            failed += 1
+            
+        if (unpinned + failed) % 20 == 0:
+            try:
+                await sts.edit(
+                    f"⏳ <b>Unpinning in progress:</b>\n\n"
+                    f"👥 Total Users: {total_users}\n"
+                    f"🔄 Completed: {unpinned + failed} / {total_users}\n"
+                    f"📌 Unpinned: {unpinned}\n"
+                    f"❌ Inactive/Error: {failed}"
+                )
+            except Exception:
+                pass
+        await asyncio.sleep(0.04)
+        
+    return await sts.edit(
+        f"✅ <b>Unpin Broadcast Complete!</b>\n\n"
+        f"👥 Total Users: {total_users}\n"
+        f"📌 Unpinned from: {unpinned} users\n"
+        f"❌ Failed/Inactive: {failed}"
+    )
+
+async def broadcast(client, message):
+    if not owner_only(client, message.from_user.id):
+        return await message.reply("❌ Owner only.")
+    if message.reply_to_message:
+        return await execute_broadcast(client, message.chat.id, message.reply_to_message)
+    text = (
+        "📢 <b>BROADCAST PANEL:</b>\n\n"
+        "❝ <b>SEND A BROADCAST MESSAGE TO ALL USERS OF YOUR BOT. THE MESSAGE WILL BE AUTOMATICALLY PINNED IN THEIR CHAT SO EVERY USER WHO HAS STARTED THE BOT WILL SEE IT.</b> ❞"
+    )
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📝 SEND BROADCAST", callback_data="bc_send_msg")],
+        [InlineKeyboardButton("📌 AN_BROADCAST (UNPIN)", callback_data="bc_unpin_msg")],
+        [InlineKeyboardButton("‹ BACK", callback_data="admin_panel_back")]
+    ])
+    await message.reply(text, reply_markup=markup)
+
+async def an_broadcast(client, message):
+    if not owner_only(client, message.from_user.id):
+        return await message.reply("❌ Owner only.")
+    return await execute_unpin_broadcast(client, message.chat.id)
 async def ban(client,message):
     if not owner_only(client,message.from_user.id):return await message.reply("❌ Owner only.")
     if len(message.command)!=2 or not message.command[1].isdigit():return await message.reply("Usage: /ban USER_ID")
@@ -142,8 +231,51 @@ async def clone_callback(client,query):
     if query.data=="clone_stats":return await query.message.edit_text(f"📊 <b>Users:</b> <code>{await clonedb.total_users_count(client.me.id)}</code>",reply_markup=back_button())
     if query.data=="clone_delete":return await query.message.edit_text("⚠️ Delete this clone record?",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("YES, DELETE",callback_data="delete_confirm"),InlineKeyboardButton("CANCEL",callback_data="my_clone")]]))
     if query.data=="delete_confirm" and owner_only(client,query.from_user.id) and mongo_db is not None:mongo_db.bots.delete_one({"bot_id":client.me.id});return await query.message.edit_text("🗑️ <b>Clone record deleted.</b>")
+    
+    if query.data=="admin_broadcast":
+        if not owner_only(client, query.from_user.id):
+            return await query.answer("❌ Owner only.", show_alert=True)
+        text = (
+            "📢 <b>BROADCAST PANEL:</b>\n\n"
+            "❝ <b>SEND A BROADCAST MESSAGE TO ALL USERS OF YOUR BOT. THE MESSAGE WILL BE AUTOMATICALLY PINNED IN THEIR CHAT SO EVERY USER WHO HAS STARTED THE BOT WILL SEE IT.</b> ❞"
+        )
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📝 SEND BROADCAST", callback_data="bc_send_msg")],
+            [InlineKeyboardButton("📌 AN_BROADCAST (UNPIN)", callback_data="bc_unpin_msg")],
+            [InlineKeyboardButton("‹ BACK", callback_data="admin_panel_back")]
+        ])
+        return await query.message.edit_text(text, reply_markup=markup)
+
+    if query.data == "admin_panel_back":
+        return await query.message.edit_text(
+            "👑 <b>Owner Panel</b>",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⚙️ Settings", callback_data="settings")],
+                [InlineKeyboardButton("📊 Stats", callback_data="clone_stats"), InlineKeyboardButton("📢 Broadcast", callback_data="admin_broadcast")]
+            ])
+        )
+
+    if query.data == "bc_send_msg":
+        if not owner_only(client, query.from_user.id):
+            return await query.answer("❌ Owner only", show_alert=True)
+        try:
+            b_msg = await client.ask(chat_id=query.from_user.id, text="📝 <b>Now Send Me Your Broadcast Message</b>\n\n(Send /cancel to abort)", timeout=300)
+            if not b_msg.text and not b_msg.media:
+                return await query.message.reply("Invalid message.")
+            if getattr(b_msg, 'text', '') == "/cancel":
+                return await query.message.reply("❌ Broadcast cancelled.")
+        except Exception:
+            return await query.message.reply("❌ Broadcast cancelled or timed out.")
+
+        return await execute_broadcast(client, query.message.chat.id, b_msg)
+
+    if query.data == "bc_unpin_msg":
+        if not owner_only(client, query.from_user.id):
+            return await query.answer("❌ Owner only", show_alert=True)
+        return await execute_unpin_broadcast(client, query.message.chat.id)
+
     await query.answer("Use the command for this setting.",show_alert=True)
 def register(client):
     private=filters.private
-    for fn,cmd in [(settings,"settings"),(force_sub,"force_sub"),(caption,"caption"),(button,"button"),(protect,"protect"),(admin_panel,"admin"),(stats,"stats"),(broadcast,"broadcast"),(ban,"ban"),(unban,"unban"),(auto_delete,"auto_delete"),(no_forward,"no_forward"),(moderators,"moderator"),(access_token,"access_token"),(transfer_db,"transfer_db"),(deactivate,"deactivate"),(mode,"mode"),(restart,"restart"),(delete_clone,"delete"),(startmsg,"start_msg")]:client.add_handler(MessageHandler(fn,filters.command(cmd)&private),group=1)
-    client.add_handler(CallbackQueryHandler(clone_callback,filters.regex(r"^(my_clone|clone_stats|clone_delete|delete_confirm)$")),group=1);return client
+    for fn,cmd in [(settings,"settings"),(force_sub,"force_sub"),(caption,"caption"),(button,"button"),(protect,"protect"),(admin_panel,"admin"),(stats,"stats"),(broadcast,"broadcast"),(an_broadcast,"an_broadcast"),(an_broadcast,"un_broadcast"),(an_broadcast,"anbroadcast"),(an_broadcast,"unbroadcast"),(ban,"ban"),(unban,"unban"),(auto_delete,"auto_delete"),(no_forward,"no_forward"),(moderators,"moderator"),(access_token,"access_token"),(transfer_db,"transfer_db"),(deactivate,"deactivate"),(mode,"mode"),(restart,"restart"),(delete_clone,"delete"),(startmsg,"start_msg")]:client.add_handler(MessageHandler(fn,filters.command(cmd)&private),group=1)
+    client.add_handler(CallbackQueryHandler(clone_callback,filters.regex(r"^(my_clone|clone_stats|clone_delete|delete_confirm|admin_broadcast|bc_send_msg|bc_unpin_msg|admin_panel_back)$")),group=1);return client

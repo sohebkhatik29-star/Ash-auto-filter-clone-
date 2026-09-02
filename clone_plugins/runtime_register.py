@@ -27,7 +27,7 @@ async def clean_help(client, message):
         "• /base_site SITE — Set or view shortener site\n"
         "• /clone — Create your own clone\n\n"
         "👑 <b>Owner / Moderator</b>\n"
-        "• /admin • /stats • /broadcast\n"
+        "• /admin • /stats • /broadcast • /an_broadcast\n"
         "• /ban • /unban • /force_sub\n"
         "• /caption • /button • /protect\n"
         "• /auto_delete • /no_forward • /moderator\n"
@@ -63,7 +63,7 @@ def register_clone_handlers(client):
     }
 
     advanced_commands = {
-        "admin": "admin_panel", "stats": "stats", "broadcast": "broadcast",
+        "admin": "admin_panel", "stats": "stats", "broadcast": "broadcast", "an_broadcast": "an_broadcast", "un_broadcast": "an_broadcast", "anbroadcast": "an_broadcast", "unbroadcast": "an_broadcast",
         "ban": "ban", "unban": "unban", "force_sub": "force_sub",
         "caption": "caption", "button": "button", "protect": "protect",
         "auto_delete": "auto_delete", "no_forward": "no_forward",

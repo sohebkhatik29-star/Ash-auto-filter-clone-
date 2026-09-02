@@ -61,6 +61,7 @@ def clone_commands(include_owner=False):
     if include_owner:
         return base_commands + [
             BotCommand("broadcast", "Broadcast a messages to users (moderators only)"),
+            BotCommand("an_broadcast", "Unpin broadcast messages from users"),
             BotCommand("ban", "Ban a user (moderators only)"),
             BotCommand("unban", "Unban a user (moderators only)"),
         ]
