@@ -57,15 +57,13 @@ async def stats(client,message):
     await message.reply(f"📊 <b>Users:</b> <code>{await clonedb.total_users_count(client.me.id)}</code>")
 async def broadcast(client,message):
     if not owner_only(client,message.from_user.id):return await message.reply("❌ Owner only.")
-    text = (
-        "📢 <b>BROADCAST PANEL:</b>\n\n"
-        "❝ <b>SEND A BROADCAST MESSAGE TO ALL USERS OF YOUR BOT. THE MESSAGE WILL BE AUTOMATICALLY PINNED IN THEIR CHAT SO EVERY USER WHO HAS STARTED THE BOT WILL SEE IT.</b> ❞"
-    )
-    markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📝 SEND BROADCAST", callback_data="bc_send_msg")],
-        [InlineKeyboardButton("‹ BACK", callback_data="admin_panel_back")]
-    ])
-    await message.reply(text, reply_markup=markup)
+    if not message.reply_to_message:return await message.reply("Reply to a message and use /broadcast")
+    sent=failed=0
+    async for u in clonedb.get_all_users(client.me.id):
+        try:await message.reply_to_message.copy(u["user_id"]);sent+=1
+        except:failed+=1
+        await asyncio.sleep(.05)
+    await message.reply(f"📢 Done\nSent: {sent}\nFailed: {failed}")
 async def ban(client,message):
     if not owner_only(client,message.from_user.id):return await message.reply("❌ Owner only.")
     if len(message.command)!=2 or not message.command[1].isdigit():return await message.reply("Usage: /ban USER_ID")
@@ -144,60 +142,8 @@ async def clone_callback(client,query):
     if query.data=="clone_stats":return await query.message.edit_text(f"📊 <b>Users:</b> <code>{await clonedb.total_users_count(client.me.id)}</code>",reply_markup=back_button())
     if query.data=="clone_delete":return await query.message.edit_text("⚠️ Delete this clone record?",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("YES, DELETE",callback_data="delete_confirm"),InlineKeyboardButton("CANCEL",callback_data="my_clone")]]))
     if query.data=="delete_confirm" and owner_only(client,query.from_user.id) and mongo_db is not None:mongo_db.bots.delete_one({"bot_id":client.me.id});return await query.message.edit_text("🗑️ <b>Clone record deleted.</b>")
-    
-    if query.data=="admin_broadcast":
-        if not owner_only(client,query.from_user.id):return await query.answer("❌ Owner only.", show_alert=True)
-        text = (
-            "📢 <b>BROADCAST PANEL:</b>\n\n"
-            "❝ <b>SEND A BROADCAST MESSAGE TO ALL USERS OF YOUR BOT. THE MESSAGE WILL BE AUTOMATICALLY PINNED IN THEIR CHAT SO EVERY USER WHO HAS STARTED THE BOT WILL SEE IT.</b> ❞"
-        )
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📝 SEND BROADCAST", callback_data="bc_send_msg")],
-            [InlineKeyboardButton("‹ BACK", callback_data="admin_panel_back")]
-        ])
-        return await query.message.edit_text(text, reply_markup=markup)
-
-    if query.data == "admin_panel_back":
-        return await query.message.edit_text("👑 <b>Owner Panel</b>",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⚙️ Settings",callback_data="settings")],[InlineKeyboardButton("📊 Stats",callback_data="clone_stats"),InlineKeyboardButton("📢 Broadcast",callback_data="admin_broadcast")]]))
-
-    if query.data == "bc_send_msg":
-        if not owner_only(client, query.from_user.id):
-            return await query.answer("❌ Owner only", show_alert=True)
-        try:
-            b_msg = await client.ask(chat_id=query.from_user.id, text="📝 <b>Now Send Me Your Broadcast Message</b>\n\n(Send /cancel to abort)", timeout=300)
-            if not b_msg.text and not b_msg.media:
-                return await query.message.reply("Invalid message.")
-            if getattr(b_msg, 'text', '') == "/cancel":
-                return await query.message.reply("❌ Broadcast cancelled.")
-        except Exception as e:
-            return await query.message.reply("❌ Broadcast cancelled or timed out.")
-
-        sts = await query.message.reply("⏳ <b>Broadcasting your message...</b>")
-        sent = failed = 0
-        total_users = await clonedb.total_users_count(client.me.id)
-        
-        async for u in clonedb.get_all_users(client.me.id):
-            try:
-                m = await b_msg.copy(u["user_id"])
-                try:
-                    await client.pin_chat_message(chat_id=u["user_id"], message_id=m.id, disable_notification=False)
-                except Exception:
-                    pass
-                sent += 1
-            except Exception:
-                failed += 1
-            
-            if (sent + failed) % 20 == 0:
-                try:
-                    await sts.edit(f"⏳ <b>Broadcast in progress:</b>\n\nCompleted: {sent+failed} / {total_users}\nSuccess: {sent}\nFailed: {failed}")
-                except Exception:
-                    pass
-            await asyncio.sleep(.05)
-            
-        return await sts.edit(f"📢 <b>Broadcast Complete!</b>\n\nTotal Users: {total_users}\nSuccess: {sent}\nFailed: {failed}")
-
     await query.answer("Use the command for this setting.",show_alert=True)
 def register(client):
     private=filters.private
     for fn,cmd in [(settings,"settings"),(force_sub,"force_sub"),(caption,"caption"),(button,"button"),(protect,"protect"),(admin_panel,"admin"),(stats,"stats"),(broadcast,"broadcast"),(ban,"ban"),(unban,"unban"),(auto_delete,"auto_delete"),(no_forward,"no_forward"),(moderators,"moderator"),(access_token,"access_token"),(transfer_db,"transfer_db"),(deactivate,"deactivate"),(mode,"mode"),(restart,"restart"),(delete_clone,"delete"),(startmsg,"start_msg")]:client.add_handler(MessageHandler(fn,filters.command(cmd)&private),group=1)
-    client.add_handler(CallbackQueryHandler(clone_callback,filters.regex(r"^(my_clone|clone_stats|clone_delete|delete_confirm|admin_broadcast|bc_send_msg|admin_panel_back)$")),group=1);return client
+    client.add_handler(CallbackQueryHandler(clone_callback,filters.regex(r"^(my_clone|clone_stats|clone_delete|delete_confirm)$")),group=1);return client

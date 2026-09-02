@@ -16,11 +16,7 @@ import time
 
 async def broadcast_messages(user_id, message):
     try:
-        m = await message.copy(chat_id=user_id)
-        try:
-            await m._client.pin_chat_message(chat_id=user_id, message_id=m.id, disable_notification=False)
-        except Exception:
-            pass
+        await message.copy(chat_id=user_id)
         return True, "Success"
     except FloodWait as e:
         await asyncio.sleep(e.value)
