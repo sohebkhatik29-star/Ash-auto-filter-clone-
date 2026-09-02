@@ -138,6 +138,10 @@ async def broadcast(client, message):
         return await message.reply("❌ Owner only.")
     if message.reply_to_message:
         return await execute_broadcast(client, message.chat.id, message.reply_to_message)
+    if len(message.command) > 1:
+        raw_text = message.text.split(None, 1)[1]
+        temp_msg = await client.send_message(message.chat.id, raw_text)
+        return await execute_broadcast(client, message.chat.id, temp_msg)
     text = (
         "📢 <b>BROADCAST PANEL:</b>\n\n"
         "❝ <b>SEND A BROADCAST MESSAGE TO ALL USERS OF YOUR BOT. THE MESSAGE WILL BE AUTOMATICALLY PINNED IN THEIR CHAT SO EVERY USER WHO HAS STARTED THE BOT WILL SEE IT.</b> ❞"
@@ -279,3 +283,5 @@ def register(client):
     private=filters.private
     for fn,cmd in [(settings,"settings"),(force_sub,"force_sub"),(caption,"caption"),(button,"button"),(protect,"protect"),(admin_panel,"admin"),(stats,"stats"),(broadcast,"broadcast"),(an_broadcast,"an_broadcast"),(an_broadcast,"un_broadcast"),(an_broadcast,"anbroadcast"),(an_broadcast,"unbroadcast"),(ban,"ban"),(unban,"unban"),(auto_delete,"auto_delete"),(no_forward,"no_forward"),(moderators,"moderator"),(access_token,"access_token"),(transfer_db,"transfer_db"),(deactivate,"deactivate"),(mode,"mode"),(restart,"restart"),(delete_clone,"delete"),(startmsg,"start_msg")]:client.add_handler(MessageHandler(fn,filters.command(cmd)&private),group=1)
     client.add_handler(CallbackQueryHandler(clone_callback,filters.regex(r"^(my_clone|clone_stats|clone_delete|delete_confirm|admin_broadcast|bc_send_msg|bc_unpin_msg|admin_panel_back)$")),group=1);return client
+
+callbacks = clone_callback

@@ -30,7 +30,13 @@ def _lock(client, user_id):
 def _session(client, user_id):
     if mongo_db is None:
         return None
-    return mongo_db.custom_batch_sessions.find_one({"bot_id": client.me.id, "user_id": int(user_id), "active": True})
+    sess = mongo_db.custom_batch_sessions.find_one({"bot_id": client.me.id, "user_id": int(user_id), "active": True})
+    if sess:
+        updated = sess.get("updated_at") or sess.get("created_at") or 0
+        if time.time() - updated > 1800:
+            mongo_db.custom_batch_sessions.delete_one({"_id": sess["_id"]})
+            return None
+    return sess
 
 
 def _controls_initial(session_id):
@@ -195,6 +201,16 @@ async def capture_message(client, message):
     if message.chat.type.value != "private":
         return
     if message.text and message.text.startswith("/"):
+        cmd_name = message.text.split()[0].lower()
+        if cmd_name == "/cancel":
+            key = (int(client.me.id), int(message.from_user.id))
+            task = _INDEX_TASKS.pop(key, None)
+            if task and not task.done():
+                task.cancel()
+            _LAST_MSG_TIME.pop(key, None)
+            mongo_db.custom_batch_sessions.delete_many({"bot_id": client.me.id, "user_id": int(message.from_user.id)})
+            await message.reply("❌ <b>Custom batch process cancelled.</b>")
+            raise StopPropagation
         return
 
     key = (int(client.me.id), int(message.from_user.id))
@@ -328,7 +344,7 @@ async def _generate(client, query, session):
 
 async def callback(client, query):
     data = query.data or ""
-    if data.startswith("cb_cancel_"):
+    if data.startswith("cb_deliv_cancel_"):
         _ACTIVE_CUSTOM_DELIVERIES = getattr(custom_batch_cmd, "_active_deliveries", {})
         _ACTIVE_CUSTOM_DELIVERIES[(int(client.me.id), int(query.from_user.id))] = False
         await query.answer("Delivery cancelled.")
@@ -348,6 +364,13 @@ async def callback(client, query):
     async with _lock(client, query.from_user.id):
         session = mongo_db.custom_batch_sessions.find_one({"session_id": session_id})
         if not session or int(session.get("user_id", 0)) != int(query.from_user.id):
+            if action == "cancel":
+                mongo_db.custom_batch_sessions.delete_many({"bot_id": client.me.id, "user_id": int(query.from_user.id)})
+                try:
+                    await query.message.delete()
+                except Exception:
+                    pass
+                return await query.answer("Cancelled.")
             return await query.answer("This batch session is not yours or has expired.", show_alert=True)
 
         if action == "generate":
@@ -529,7 +552,7 @@ async def batch_start(client, message):
     custom_batch_cmd._active_deliveries = _ACTIVE_CUSTOM_DELIVERIES
     _ACTIVE_CUSTOM_DELIVERIES[delivery_key] = True
 
-    wait_msg = await send_wait_message(client, message, cancel_callback_data=f"cb_cancel_{token}")
+    wait_msg = await send_wait_message(client, message, cancel_callback_data=f"cb_deliv_cancel_{token}")
     delivered_messages = []
     for item in messages:
         if not _ACTIVE_CUSTOM_DELIVERIES.get(delivery_key, False):
