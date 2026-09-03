@@ -87,6 +87,6 @@ def register_clone_handlers(client):
 
     advanced_callback = getattr(adv, "callbacks", None)
     if callable(advanced_callback) and advanced_callback is not callback:
-        client.add_handler(CallbackQueryHandler(advanced_callback), group=2)
+        client.add_handler(CallbackQueryHandler(advanced_callback, filters.regex(r"^(my_clone|clone_stats|clone_delete|delete_confirm|admin_broadcast|bc_send_msg|bc_unpin_msg|admin_panel_back|bc_cancel)$")), group=1)
 
     return client

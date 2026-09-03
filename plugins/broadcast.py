@@ -49,14 +49,20 @@ async def verupikkals(bot, message):
     
     b_msg = message.reply_to_message
     if not b_msg:
-        try:
-            b_msg = await bot.ask(chat_id=message.from_user.id, text="📝 <b>Now Send Me Your Broadcast Message</b>\n\n(Send /cancel to abort)", timeout=300)
-            if not b_msg.text and not b_msg.media:
-                return await message.reply("Invalid message.")
-            if getattr(b_msg, 'text', '') == "/cancel":
-                return await message.reply("❌ Broadcast cancelled.")
-        except Exception:
-            return await message.reply("❌ Broadcast cancelled or timed out.")
+        if len(message.command) > 1:
+            raw_text = message.text.split(None, 1)[1]
+            b_msg = await bot.send_message(message.chat.id, raw_text)
+        else:
+            try:
+                await bot.send_message(chat_id=message.from_user.id, text="📝 <b>Now Send Me Your Broadcast Message</b>\n\n(Send /cancel to abort)")
+                if hasattr(bot, "listen"):
+                    b_msg = await bot.listen(chat_id=message.from_user.id, timeout=300)
+                else:
+                    b_msg = await bot.ask(chat_id=message.from_user.id, text="", timeout=300)
+                if not b_msg or getattr(b_msg, "text", "") == "/cancel":
+                    return await message.reply("❌ Broadcast cancelled.")
+            except Exception:
+                return await message.reply("❌ Broadcast cancelled or timed out.")
 
     users = await db.get_all_users()
     sts = await message.reply_text(text='⏳ <b>Broadcasting your messages...</b>')

@@ -167,6 +167,11 @@ async def settings(client, message):
 async def callbacks(client, query):
     data = query.data
     user_id = query.from_user.id
+
+    # Broadcast callbacks
+    if data in ("admin_broadcast", "bc_send_msg", "bc_unpin_msg", "admin_panel_back", "bc_cancel"):
+        from clone_plugins.advanced import clone_callback
+        return await clone_callback(client, query)
     try:
         cancel_user_listeners(client, user_id)
     except Exception:
