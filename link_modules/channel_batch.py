@@ -97,13 +97,14 @@ async def capture_batch_step(client, message):
         return
 
     # Check for cancel
-    if message.text and message.text.strip().lower() == "/cancel":
+    text_content = (message.text or message.caption or "").strip().lower()
+    if text_content in ["/cancel", "cancel"]:
         _CHANNEL_BATCH_SESSIONS.pop(key, None)
         await message.reply("❌ Batch creation cancelled.")
         raise StopPropagation
 
     if message.text and message.text.startswith("/") and not message.text.startswith("http"):
-        # Another command sent
+        # Another command sent - clear batch session and allow other command handlers to execute
         _CHANNEL_BATCH_SESSIONS.pop(key, None)
         return
 
@@ -379,8 +380,9 @@ async def callback_cancel(client, query):
 
 def register(client, base_group=-102):
     private = filters.private
+    # Priority fix: group ko base_group - 1 rakha hai taaki state capture pehle ho sake
+    client.add_handler(MessageHandler(capture_batch_step, private), group=base_group - 1)
     client.add_handler(MessageHandler(batch_start_deliver, filters.command("start") & private), group=base_group)
     client.add_handler(MessageHandler(start_batch, filters.command("batch") & private), group=base_group)
-    client.add_handler(MessageHandler(capture_batch_step, private), group=base_group + 1)
     client.add_handler(CallbackQueryHandler(callback_cancel, filters.regex(r"^cbatch_cancel_")), group=base_group)
     return client
