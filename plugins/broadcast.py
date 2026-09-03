@@ -14,13 +14,45 @@ import time
 # Subscribe YouTube Channel For Amazing Bot https://www.youtube.com/@tech_as_0
 # Ask Doubt on telegram @movies_1780
 
+async def pin_chat_message_both_sides(bot, chat_id, message_id):
+    try:
+        await bot.pin_chat_message(chat_id=chat_id, message_id=message_id, disable_notification=False, both_sides=True)
+        return True
+    except (TypeError, Exception):
+        pass
+    try:
+        from pyrogram.raw.functions.messages import UpdatePinnedMessage
+        peer = await bot.resolve_peer(chat_id)
+        await bot.invoke(UpdatePinnedMessage(peer=peer, id=message_id, silent=False, unpin=False, pm_oneside=False))
+        return True
+    except Exception:
+        pass
+    try:
+        await bot.pin_chat_message(chat_id=chat_id, message_id=message_id, disable_notification=False)
+        return True
+    except Exception:
+        pass
+    return False
+
+async def unpin_all_both_sides(bot, chat_id):
+    try:
+        await bot.unpin_all_chat_messages(chat_id=chat_id)
+        return True
+    except Exception:
+        pass
+    try:
+        from pyrogram.raw.functions.messages import UnpinAllMessages
+        peer = await bot.resolve_peer(chat_id)
+        await bot.invoke(UnpinAllMessages(peer=peer))
+        return True
+    except Exception:
+        pass
+    return False
+
 async def broadcast_messages(bot, user_id, message):
     try:
         m = await message.copy(chat_id=user_id)
-        try:
-            await bot.pin_chat_message(chat_id=user_id, message_id=m.id, disable_notification=False)
-        except Exception:
-            pass
+        await pin_chat_message_both_sides(bot, user_id, m.id)
         return True, "Success"
     except FloodWait as e:
         await asyncio.sleep(e.value)
@@ -122,8 +154,10 @@ async def an_broadcast_cmd(bot, message):
     async for user in users:
         if 'id' in user:
             try:
-                await bot.unpin_all_chat_messages(chat_id=int(user['id']))
-                unpinned += 1
+                if await unpin_all_both_sides(bot, int(user['id'])):
+                    unpinned += 1
+                else:
+                    failed += 1
             except Exception:
                 failed += 1
             done += 1

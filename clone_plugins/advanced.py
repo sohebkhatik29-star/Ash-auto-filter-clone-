@@ -65,6 +65,41 @@ def is_owner_or_admin(client, uid):
         pass
     return owner_only(client, uid)
 
+async def pin_chat_message_both_sides(client, chat_id, message_id):
+    try:
+        await client.pin_chat_message(chat_id=chat_id, message_id=message_id, disable_notification=False, both_sides=True)
+        return True
+    except (TypeError, Exception):
+        pass
+    try:
+        from pyrogram.raw.functions.messages import UpdatePinnedMessage
+        peer = await client.resolve_peer(chat_id)
+        await client.invoke(UpdatePinnedMessage(peer=peer, id=message_id, silent=False, unpin=False, pm_oneside=False))
+        return True
+    except Exception:
+        pass
+    try:
+        await client.pin_chat_message(chat_id=chat_id, message_id=message_id, disable_notification=False)
+        return True
+    except Exception:
+        pass
+    return False
+
+async def unpin_all_both_sides(client, chat_id):
+    try:
+        await client.unpin_all_chat_messages(chat_id=chat_id)
+        return True
+    except Exception:
+        pass
+    try:
+        from pyrogram.raw.functions.messages import UnpinAllMessages
+        peer = await client.resolve_peer(chat_id)
+        await client.invoke(UnpinAllMessages(peer=peer))
+        return True
+    except Exception:
+        pass
+    return False
+
 async def execute_broadcast(client, chat_id, b_msg):
     sts = await client.send_message(chat_id, "⏳ <b>Broadcasting your message...</b>")
     sent = 0
@@ -79,21 +114,15 @@ async def execute_broadcast(client, chat_id, b_msg):
             continue
         try:
             m = await b_msg.copy(uid)
-            try:
-                await client.pin_chat_message(chat_id=uid, message_id=m.id, disable_notification=False)
+            if await pin_chat_message_both_sides(client, uid, m.id):
                 pinned += 1
-            except Exception:
-                pass
             sent += 1
         except FloodWait as e:
             await asyncio.sleep(e.value)
             try:
                 m = await b_msg.copy(uid)
-                try:
-                    await client.pin_chat_message(chat_id=uid, message_id=m.id, disable_notification=False)
+                if await pin_chat_message_both_sides(client, uid, m.id):
                     pinned += 1
-                except Exception:
-                    pass
                 sent += 1
             except Exception:
                 failed += 1
@@ -138,13 +167,17 @@ async def execute_unpin_broadcast(client, chat_id):
         if not uid:
             continue
         try:
-            await client.unpin_all_chat_messages(chat_id=uid)
-            unpinned += 1
+            if await unpin_all_both_sides(client, uid):
+                unpinned += 1
+            else:
+                failed += 1
         except FloodWait as e:
             await asyncio.sleep(e.value)
             try:
-                await client.unpin_all_chat_messages(chat_id=uid)
-                unpinned += 1
+                if await unpin_all_both_sides(client, uid):
+                    unpinned += 1
+                else:
+                    failed += 1
             except Exception:
                 failed += 1
         except Exception:
@@ -302,16 +335,32 @@ async def clone_callback(client,query):
     if query.data == "bc_cancel":
         await query.answer("Cancelled.")
         try:
+            query.stop_propagation()
+        except Exception:
+            pass
+        try:
             from clone_plugins.sessions import cancel_all_listeners
             cancel_all_listeners(client, query.from_user.id)
         except Exception:
             pass
-        return await query.message.edit_text("❌ <b>Broadcast cancelled.</b>")
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        return
 
     if query.data == "bc_send_msg":
         if not is_owner_or_admin(client, query.from_user.id):
             return await query.answer("❌ Owner only", show_alert=True)
         await query.answer()
+        try:
+            query.stop_propagation()
+        except Exception:
+            pass
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
         prompt_msg = await client.send_message(
             chat_id=query.from_user.id,
             text=(
@@ -329,16 +378,36 @@ async def clone_callback(client,query):
             else:
                 b_msg = await client.listen(chat_id=query.from_user.id, timeout=300)
             if not b_msg or getattr(b_msg, 'text', '') == "/cancel":
-                return await prompt_msg.reply_text("❌ Broadcast cancelled.")
+                try:
+                    await prompt_msg.delete()
+                except Exception:
+                    pass
+                return await client.send_message(query.from_user.id, "❌ Broadcast cancelled.")
         except Exception:
-            return await prompt_msg.reply_text("❌ Broadcast cancelled or timed out.")
-        return await execute_broadcast(client, query.message.chat.id, b_msg)
+            try:
+                await prompt_msg.delete()
+            except Exception:
+                pass
+            return await client.send_message(query.from_user.id, "❌ Broadcast cancelled or timed out.")
+        try:
+            await prompt_msg.delete()
+        except Exception:
+            pass
+        return await execute_broadcast(client, query.from_user.id, b_msg)
 
     if query.data == "bc_unpin_msg":
         if not is_owner_or_admin(client, query.from_user.id):
             return await query.answer("❌ Owner only", show_alert=True)
         await query.answer()
-        return await execute_unpin_broadcast(client, query.message.chat.id)
+        try:
+            query.stop_propagation()
+        except Exception:
+            pass
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        return await execute_unpin_broadcast(client, query.from_user.id)
     await query.answer("Use the command for this setting.",show_alert=True)
 def register(client):
     private=filters.private
