@@ -24,7 +24,7 @@ PORT = environ.get("PORT", "8080")
 
 # Clone Info
 CLONE_MODE = is_enabled(environ.get('CLONE_MODE', 'False'), False)
-CLONE_DB_URI = environ.get("CLONE_DB_URI", "")
+CLONE_DB_URI = environ.get("CLONE_DB_URI") or environ.get("DB_URI", "")
 CDB_NAME = environ.get("CDB_NAME", "ash_clone_db")
 
 # Database Information

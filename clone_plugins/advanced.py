@@ -115,6 +115,8 @@ async def unpin_all_both_sides(client, chat_id):
         pass
     return False
 
+BROADCAST_CACHE = {}
+
 async def execute_broadcast(client, chat_id, b_msg):
     sts = await client.send_message(chat_id, "⏳ <b>Broadcasting your message...</b>")
     sent = 0
@@ -133,9 +135,9 @@ async def execute_broadcast(client, chat_id, b_msg):
             m = await b_msg.copy(uid)
             if await pin_chat_message_both_sides(client, uid, m.id):
                 pinned += 1
-            user_pins[str(uid)] = m.id
+            user_pins[str(uid)] = int(m.id)
             if int(uid) == int(chat_id):
-                owner_copy_id = m.id
+                owner_copy_id = int(m.id)
             sent += 1
         except FloodWait as e:
             await asyncio.sleep(e.value)
@@ -143,9 +145,9 @@ async def execute_broadcast(client, chat_id, b_msg):
                 m = await b_msg.copy(uid)
                 if await pin_chat_message_both_sides(client, uid, m.id):
                     pinned += 1
-                user_pins[str(uid)] = m.id
+                user_pins[str(uid)] = int(m.id)
                 if int(uid) == int(chat_id):
-                    owner_copy_id = m.id
+                    owner_copy_id = int(m.id)
                 sent += 1
             except Exception:
                 failed += 1
@@ -172,19 +174,64 @@ async def execute_broadcast(client, chat_id, b_msg):
         await asyncio.sleep(0.04)
 
     try:
-        source_id = getattr(b_msg, 'id', None) or getattr(b_msg, 'message_id', None)
-        text_content = (getattr(b_msg, 'text', '') or getattr(b_msg, 'caption', '') or '').strip()
-        await clonedb.db[f"broadcast_pins_{client.me.id}"].insert_one({
-            "bot_id": client.me.id,
-            "source_chat_id": chat_id,
-            "source_msg_id": source_id,
-            "owner_copy_id": owner_copy_id,
+        source_id = int(getattr(b_msg, 'id', None) or getattr(b_msg, 'message_id', None) or 0)
+        raw_text = getattr(b_msg, 'text', None) or getattr(b_msg, 'caption', None) or ''
+        text_content = str(raw_text).strip() if raw_text else ''
+        
+        clean_user_pins = {}
+        pins_list = []
+        all_ids = []
+        if source_id:
+            all_ids.append(int(source_id))
+        if owner_copy_id:
+            all_ids.append(int(owner_copy_id))
+            
+        for u_k, u_v in user_pins.items():
+            try:
+                u_int = int(u_k)
+                m_int = int(u_v)
+                clean_user_pins[str(u_int)] = m_int
+                pins_list.append({"uid": u_int, "mid": m_int})
+                all_ids.append(m_int)
+            except Exception:
+                pass
+                
+        all_ids = list(set(all_ids))
+        bot_id = int(client.me.id)
+
+        record_doc = {
+            "bot_id": bot_id,
+            "source_chat_id": int(chat_id),
+            "source_msg_id": source_id if source_id else None,
+            "owner_copy_id": int(owner_copy_id) if owner_copy_id else None,
             "text": text_content,
-            "created_at": time.time(),
-            "user_messages": user_pins
-        })
+            "all_msg_ids": all_ids,
+            "user_messages": clean_user_pins,
+            "user_pins_list": pins_list,
+            "created_at": float(time.time()),
+            "status": "pinned"
+        }
+
+        # 1. In-memory cache
+        BROADCAST_CACHE.setdefault(bot_id, []).append(dict(record_doc))
+        if len(BROADCAST_CACHE[bot_id]) > 50:
+            BROADCAST_CACHE[bot_id].pop(0)
+
+        # 2. Async MongoDB (clonedb)
+        try:
+            await clonedb.db[f"broadcast_pins_{bot_id}"].insert_one(dict(record_doc))
+        except Exception as e:
+            print(f"Error saving to clonedb broadcast_pins: {e}")
+
+        # 3. Synchronous mongo_db if available
+        try:
+            from plugins.clone import mongo_db
+            if mongo_db is not None:
+                mongo_db[f"broadcast_pins_{bot_id}"].insert_one(dict(record_doc))
+        except Exception:
+            pass
     except Exception as e:
-        print(f"Error saving broadcast pins: {e}")
+        print(f"Error creating broadcast pin doc: {e}")
             
     return await sts.edit(
         f"📢 <b>Broadcast Complete!</b>\n\n"
@@ -193,79 +240,103 @@ async def execute_broadcast(client, chat_id, b_msg):
         f"❌ Failed/Blocked: {failed}"
     )
 
-async def execute_unpin_broadcast(client, chat_id):
-    sts = await client.send_message(chat_id, "⏳ <b>Unpinning broadcast message from all users...</b>")
-    unpinned = 0
-    failed = 0
-    total_users = await clonedb.total_users_count(client.me.id)
-    
-    users = await clonedb.get_all_users(client.me.id)
-    async for u in users:
-        uid = u.get("user_id")
-        if not uid:
-            continue
-        try:
-            if await unpin_all_both_sides(client, uid):
-                unpinned += 1
-            else:
-                failed += 1
-        except FloodWait as e:
-            await asyncio.sleep(e.value)
-            try:
-                if await unpin_all_both_sides(client, uid):
-                    unpinned += 1
-                else:
-                    failed += 1
-            except Exception:
-                failed += 1
-        except Exception:
-            failed += 1
-            
-        if (unpinned + failed) % 20 == 0:
-            try:
-                await sts.edit(
-                    f"⏳ <b>Unpinning in progress:</b>\n\n"
-                    f"👥 Total Users: {total_users}\n"
-                    f"🔄 Completed: {unpinned + failed} / {total_users}\n"
-                    f"📌 Unpinned: {unpinned}\n"
-                    f"❌ Failed/Inactive: {failed}"
-                )
-            except Exception:
-                pass
-        await asyncio.sleep(0.04)
-            
-    return await sts.edit(
-        f"✅ <b>Unpin Complete!</b>\n\n"
-        f"👥 Total Users: {total_users}\n"
-        f"📌 Unpinned from: {unpinned} users\n"
-        f"❌ Failed/Inactive: {failed}"
-    )
-
 async def execute_unpin_single_broadcast(client, chat_id, reply_msg):
-    reply_id = reply_msg.id
-    reply_text = (getattr(reply_msg, 'text', '') or getattr(reply_msg, 'caption', '') or '').strip()
+    reply_id = int(reply_msg.id)
+    raw_reply_text = getattr(reply_msg, 'text', None) or getattr(reply_msg, 'caption', None) or ''
+    reply_text = str(raw_reply_text).strip() if raw_reply_text else ''
+    bot_id = int(client.me.id)
 
-    col = clonedb.db[f"broadcast_pins_{client.me.id}"]
-    query_filter = {
-        "$or": [
-            {"source_msg_id": reply_id},
-            {"owner_copy_id": reply_id},
-            {f"user_messages.{chat_id}": reply_id}
-        ]
-    }
-    record = await col.find_one(query_filter, sort=[("created_at", -1)])
+    record = None
+    
+    # 1. In-memory cache search
+    cached_list = BROADCAST_CACHE.get(bot_id, [])
+    for rec in reversed(cached_list):
+        if reply_id in rec.get("all_msg_ids", []):
+            record = rec
+            break
+        if rec.get("source_msg_id") == reply_id or rec.get("owner_copy_id") == reply_id:
+            record = rec
+            break
+        if rec.get("user_messages", {}).get(str(chat_id)) == reply_id:
+            record = rec
+            break
+        if reply_text and rec.get("text") and (reply_text == rec.get("text") or reply_text in rec.get("text") or rec.get("text") in reply_text):
+            record = rec
+            break
+
+    # 2. Async MongoDB (clonedb)
+    col = clonedb.db[f"broadcast_pins_{bot_id}"]
+    if not record:
+        query_filter = {
+            "$or": [
+                {"all_msg_ids": reply_id},
+                {"source_msg_id": reply_id},
+                {"owner_copy_id": reply_id},
+                {"user_pins_list.mid": reply_id},
+                {f"user_messages.{chat_id}": reply_id}
+            ]
+        }
+        try:
+            record = await col.find_one(query_filter, sort=[("created_at", -1)])
+        except Exception:
+            pass
 
     if not record and reply_text:
-        record = await col.find_one({"text": reply_text}, sort=[("created_at", -1)])
+        try:
+            record = await col.find_one({"text": reply_text}, sort=[("created_at", -1)])
+        except Exception:
+            pass
+            
+    if not record and reply_text and len(reply_text) >= 5:
+        try:
+            import re
+            prefix = re.escape(reply_text[:40])
+            record = await col.find_one({"text": {"$regex": f"^{prefix}", "$options": "i"}}, sort=[("created_at", -1)])
+        except Exception:
+            pass
 
+    # 3. Synchronous mongo_db
     if not record:
+        try:
+            from plugins.clone import mongo_db
+            if mongo_db is not None:
+                record = mongo_db[f"broadcast_pins_{bot_id}"].find_one(query_filter, sort=[("created_at", -1)])
+                if not record and reply_text:
+                    record = mongo_db[f"broadcast_pins_{bot_id}"].find_one({"text": reply_text}, sort=[("created_at", -1)])
+        except Exception:
+            pass
+
+    # 4. Check if there is any recent broadcast in DB
+    if not record:
+        try:
+            latest = await col.find_one({}, sort=[("created_at", -1)])
+            if latest:
+                latest_text = latest.get("text", "")
+                if (reply_text and latest_text and (reply_text in latest_text or latest_text in reply_text)) or (time.time() - latest.get("created_at", 0) < 7200):
+                    record = latest
+        except Exception:
+            pass
+
+    # 5. Fallback to latest in cache
+    if not record and cached_list:
+        record = cached_list[-1]
+
+    # If still not found at all
+    if not record:
+        try:
+            await unpin_chat_message_both_sides(client, chat_id, reply_id)
+        except Exception:
+            pass
         return await client.send_message(
             chat_id,
-            "❌ <b>No broadcast record found for this message!</b>\n\n"
-            "<i>Kripya usi message ka reply dein jo is bot se broadcast kiya gaya ho.</i>"
+            "⚠️ <b>Broadcast record not found in database!</b>\n\n"
+            "<i>Yeh message aapke chat se unpin kar diya gaya hai. Aage se jab aap broadcast karenge, toh /an_broadcast ka use karke aap har user ke chat se specific message unpin kar sakte hain.</i>"
         )
 
     user_messages = record.get("user_messages", {})
+    if not user_messages and record.get("user_pins_list"):
+        user_messages = {str(item["uid"]): item["mid"] for item in record["user_pins_list"]}
+        
     total_users = len(user_messages)
 
     sts = await client.send_message(chat_id, "⏳ <b>Unpinning this broadcast message from all users...</b>")
@@ -279,6 +350,11 @@ async def execute_unpin_single_broadcast(client, chat_id, reply_msg):
     if record.get("owner_copy_id") and record.get("owner_copy_id") != reply_id:
         try:
             await unpin_chat_message_both_sides(client, chat_id, record["owner_copy_id"])
+        except Exception:
+            pass
+    if record.get("source_msg_id") and record.get("source_msg_id") != reply_id:
+        try:
+            await unpin_chat_message_both_sides(client, chat_id, record["source_msg_id"])
         except Exception:
             pass
 
@@ -317,8 +393,20 @@ async def execute_unpin_single_broadcast(client, chat_id, reply_msg):
                 pass
         await asyncio.sleep(0.04)
 
+    if record in cached_list:
+        try:
+            cached_list.remove(record)
+        except Exception:
+            pass
     try:
-        await col.delete_one({"_id": record["_id"]})
+        if "_id" in record:
+            await col.delete_one({"_id": record["_id"]})
+    except Exception:
+        pass
+    try:
+        from plugins.clone import mongo_db
+        if mongo_db is not None and "_id" in record:
+            mongo_db[f"broadcast_pins_{bot_id}"].delete_one({"_id": record["_id"]})
     except Exception:
         pass
 

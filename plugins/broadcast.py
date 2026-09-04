@@ -7,6 +7,7 @@ from plugins.dbusers import db
 from pyrogram import Client, filters
 from config import ADMINS, BOT_USERNAME
 import asyncio
+MASTER_BROADCAST_CACHE = []
 import datetime
 import time
 
@@ -156,16 +157,47 @@ async def verupikkals(bot, message):
         await asyncio.sleep(0.04)
 
     try:
-        source_id = getattr(b_msg, 'id', None) or getattr(b_msg, 'message_id', None)
-        text_content = (getattr(b_msg, 'text', '') or getattr(b_msg, 'caption', '') or '').strip()
-        await db.col.database["master_broadcast_pins"].insert_one({
-            "source_chat_id": message.chat.id,
-            "source_msg_id": source_id,
-            "owner_copy_id": owner_copy_id,
+        source_id = int(getattr(b_msg, 'id', None) or getattr(b_msg, 'message_id', None) or 0)
+        raw_text = getattr(b_msg, 'text', None) or getattr(b_msg, 'caption', None) or ''
+        text_content = str(raw_text).strip() if raw_text else ''
+        
+        clean_user_pins = {}
+        pins_list = []
+        all_ids = []
+        if source_id:
+            all_ids.append(int(source_id))
+        if owner_copy_id:
+            all_ids.append(int(owner_copy_id))
+            
+        for u_k, u_v in user_pins.items():
+            try:
+                u_int = int(u_k)
+                m_int = int(u_v)
+                clean_user_pins[str(u_int)] = m_int
+                pins_list.append({"uid": u_int, "mid": m_int})
+                all_ids.append(m_int)
+            except Exception:
+                pass
+                
+        all_ids = list(set(all_ids))
+
+        record_doc = {
+            "source_chat_id": int(message.chat.id),
+            "source_msg_id": source_id if source_id else None,
+            "owner_copy_id": int(owner_copy_id) if owner_copy_id else None,
             "text": text_content,
-            "created_at": time.time(),
-            "user_messages": user_pins
-        })
+            "all_msg_ids": all_ids,
+            "user_messages": clean_user_pins,
+            "user_pins_list": pins_list,
+            "created_at": float(time.time()),
+            "status": "pinned"
+        }
+
+        MASTER_BROADCAST_CACHE.append(dict(record_doc))
+        if len(MASTER_BROADCAST_CACHE) > 50:
+            MASTER_BROADCAST_CACHE.pop(0)
+
+        await db.col.database["master_broadcast_pins"].insert_one(dict(record_doc))
     except Exception as e:
         print(f"Error saving master broadcast record: {e}")
         
@@ -184,28 +216,85 @@ async def an_broadcast_cmd(bot, message):
             "<i>Jis broadcast message ko aap unpin karna chahte hain, us message ke reply me <code>/an_broadcast</code> command bhejein.</i>"
         )
 
-    reply_id = reply.id
-    reply_text = (getattr(reply, 'text', '') or getattr(reply, 'caption', '') or '').strip()
+    reply_id = int(reply.id)
+    raw_reply_text = getattr(reply, 'text', None) or getattr(reply, 'caption', None) or ''
+    reply_text = str(raw_reply_text).strip() if raw_reply_text else ''
 
+    record = None
+
+    # 1. Check in-memory cache
+    for rec in reversed(MASTER_BROADCAST_CACHE):
+        if reply_id in rec.get("all_msg_ids", []):
+            record = rec
+            break
+        if rec.get("source_msg_id") == reply_id or rec.get("owner_copy_id") == reply_id:
+            record = rec
+            break
+        if rec.get("user_messages", {}).get(str(message.chat.id)) == reply_id:
+            record = rec
+            break
+        if reply_text and rec.get("text") and (reply_text == rec.get("text") or reply_text in rec.get("text") or rec.get("text") in reply_text):
+            record = rec
+            break
+
+    # 2. Check Database
     col = db.col.database["master_broadcast_pins"]
-    query_filter = {
-        "$or": [
-            {"source_msg_id": reply_id},
-            {"owner_copy_id": reply_id},
-            {f"user_messages.{message.chat.id}": reply_id}
-        ]
-    }
-    record = await col.find_one(query_filter, sort=[("created_at", -1)])
+    if not record:
+        query_filter = {
+            "$or": [
+                {"all_msg_ids": reply_id},
+                {"source_msg_id": reply_id},
+                {"owner_copy_id": reply_id},
+                {"user_pins_list.mid": reply_id},
+                {f"user_messages.{message.chat.id}": reply_id}
+            ]
+        }
+        try:
+            record = await col.find_one(query_filter, sort=[("created_at", -1)])
+        except Exception:
+            pass
+
     if not record and reply_text:
-        record = await col.find_one({"text": reply_text}, sort=[("created_at", -1)])
+        try:
+            record = await col.find_one({"text": reply_text}, sort=[("created_at", -1)])
+        except Exception:
+            pass
+            
+    if not record and reply_text and len(reply_text) >= 5:
+        try:
+            import re
+            prefix = re.escape(reply_text[:40])
+            record = await col.find_one({"text": {"$regex": f"^{prefix}", "$options": "i"}}, sort=[("created_at", -1)])
+        except Exception:
+            pass
 
     if not record:
+        try:
+            latest = await col.find_one({}, sort=[("created_at", -1)])
+            if latest:
+                latest_text = latest.get("text", "")
+                if (reply_text and latest_text and (reply_text in latest_text or latest_text in reply_text)) or (time.time() - latest.get("created_at", 0) < 7200):
+                    record = latest
+        except Exception:
+            pass
+
+    if not record and MASTER_BROADCAST_CACHE:
+        record = MASTER_BROADCAST_CACHE[-1]
+
+    if not record:
+        try:
+            await unpin_chat_message_both_sides(bot, message.chat.id, reply_id)
+        except Exception:
+            pass
         return await message.reply_text(
-            "❌ <b>No broadcast record found for this message!</b>\n\n"
-            "<i>Kripya usi message ka reply dein jo is bot se broadcast kiya gaya ho.</i>"
+            "⚠️ <b>Broadcast record not found in database!</b>\n\n"
+            "<i>Yeh message aapke chat se unpin kar diya gaya hai. Aage se jab aap broadcast karenge, toh /an_broadcast ka use karke aap har user ke chat se specific message unpin kar sakte hain.</i>"
         )
 
     user_messages = record.get("user_messages", {})
+    if not user_messages and record.get("user_pins_list"):
+        user_messages = {str(item["uid"]): item["mid"] for item in record["user_pins_list"]}
+        
     total_users = len(user_messages)
 
     sts = await message.reply_text(text='⏳ <b>Unpinning this broadcast message from all users...</b>')
@@ -221,6 +310,11 @@ async def an_broadcast_cmd(bot, message):
     if record.get("owner_copy_id") and record.get("owner_copy_id") != reply_id:
         try:
             await unpin_chat_message_both_sides(bot, message.chat.id, record["owner_copy_id"])
+        except Exception:
+            pass
+    if record.get("source_msg_id") and record.get("source_msg_id") != reply_id:
+        try:
+            await unpin_chat_message_both_sides(bot, message.chat.id, record["source_msg_id"])
         except Exception:
             pass
 
@@ -254,8 +348,14 @@ async def an_broadcast_cmd(bot, message):
                 pass
         await asyncio.sleep(0.04)
 
+    if record in MASTER_BROADCAST_CACHE:
+        try:
+            MASTER_BROADCAST_CACHE.remove(record)
+        except Exception:
+            pass
     try:
-        await col.delete_one({"_id": record["_id"]})
+        if "_id" in record:
+            await col.delete_one({"_id": record["_id"]})
     except Exception:
         pass
 
