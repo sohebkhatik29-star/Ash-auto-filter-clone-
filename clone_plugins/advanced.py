@@ -85,6 +85,21 @@ async def pin_chat_message_both_sides(client, chat_id, message_id):
         pass
     return False
 
+async def unpin_chat_message_both_sides(client, chat_id, message_id):
+    try:
+        from pyrogram.raw.functions.messages import UpdatePinnedMessage
+        peer = await client.resolve_peer(chat_id)
+        await client.invoke(UpdatePinnedMessage(peer=peer, id=message_id, silent=False, unpin=True, pm_oneside=False))
+        return True
+    except (TypeError, Exception):
+        pass
+    try:
+        await client.unpin_chat_message(chat_id=chat_id, message_id=message_id)
+        return True
+    except Exception:
+        pass
+    return False
+
 async def unpin_all_both_sides(client, chat_id):
     try:
         await client.unpin_all_chat_messages(chat_id=chat_id)
@@ -106,6 +121,8 @@ async def execute_broadcast(client, chat_id, b_msg):
     failed = 0
     pinned = 0
     total_users = await clonedb.total_users_count(client.me.id)
+    user_pins = {}
+    owner_copy_id = None
     
     users = await clonedb.get_all_users(client.me.id)
     async for u in users:
@@ -116,6 +133,9 @@ async def execute_broadcast(client, chat_id, b_msg):
             m = await b_msg.copy(uid)
             if await pin_chat_message_both_sides(client, uid, m.id):
                 pinned += 1
+            user_pins[str(uid)] = m.id
+            if int(uid) == int(chat_id):
+                owner_copy_id = m.id
             sent += 1
         except FloodWait as e:
             await asyncio.sleep(e.value)
@@ -123,6 +143,9 @@ async def execute_broadcast(client, chat_id, b_msg):
                 m = await b_msg.copy(uid)
                 if await pin_chat_message_both_sides(client, uid, m.id):
                     pinned += 1
+                user_pins[str(uid)] = m.id
+                if int(uid) == int(chat_id):
+                    owner_copy_id = m.id
                 sent += 1
             except Exception:
                 failed += 1
@@ -147,7 +170,22 @@ async def execute_broadcast(client, chat_id, b_msg):
             except Exception:
                 pass
         await asyncio.sleep(0.04)
-        
+
+    try:
+        source_id = getattr(b_msg, 'id', None) or getattr(b_msg, 'message_id', None)
+        text_content = (getattr(b_msg, 'text', '') or getattr(b_msg, 'caption', '') or '').strip()
+        await clonedb.db[f"broadcast_pins_{client.me.id}"].insert_one({
+            "bot_id": client.me.id,
+            "source_chat_id": chat_id,
+            "source_msg_id": source_id,
+            "owner_copy_id": owner_copy_id,
+            "text": text_content,
+            "created_at": time.time(),
+            "user_messages": user_pins
+        })
+    except Exception as e:
+        print(f"Error saving broadcast pins: {e}")
+            
     return await sts.edit(
         f"📢 <b>Broadcast Complete!</b>\n\n"
         f"👥 Total Users: {total_users}\n"
@@ -182,7 +220,7 @@ async def execute_unpin_broadcast(client, chat_id):
                 failed += 1
         except Exception:
             failed += 1
-                
+            
         if (unpinned + failed) % 20 == 0:
             try:
                 await sts.edit(
@@ -190,17 +228,105 @@ async def execute_unpin_broadcast(client, chat_id):
                     f"👥 Total Users: {total_users}\n"
                     f"🔄 Completed: {unpinned + failed} / {total_users}\n"
                     f"📌 Unpinned: {unpinned}\n"
+                    f"❌ Failed/Inactive: {failed}"
+                )
+            except Exception:
+                pass
+        await asyncio.sleep(0.04)
+            
+    return await sts.edit(
+        f"✅ <b>Unpin Complete!</b>\n\n"
+        f"👥 Total Users: {total_users}\n"
+        f"📌 Unpinned from: {unpinned} users\n"
+        f"❌ Failed/Inactive: {failed}"
+    )
+
+async def execute_unpin_single_broadcast(client, chat_id, reply_msg):
+    reply_id = reply_msg.id
+    reply_text = (getattr(reply_msg, 'text', '') or getattr(reply_msg, 'caption', '') or '').strip()
+
+    col = clonedb.db[f"broadcast_pins_{client.me.id}"]
+    query_filter = {
+        "$or": [
+            {"source_msg_id": reply_id},
+            {"owner_copy_id": reply_id},
+            {f"user_messages.{chat_id}": reply_id}
+        ]
+    }
+    record = await col.find_one(query_filter, sort=[("created_at", -1)])
+
+    if not record and reply_text:
+        record = await col.find_one({"text": reply_text}, sort=[("created_at", -1)])
+
+    if not record:
+        return await client.send_message(
+            chat_id,
+            "❌ <b>No broadcast record found for this message!</b>\n\n"
+            "<i>Kripya usi message ka reply dein jo is bot se broadcast kiya gaya ho.</i>"
+        )
+
+    user_messages = record.get("user_messages", {})
+    total_users = len(user_messages)
+
+    sts = await client.send_message(chat_id, "⏳ <b>Unpinning this broadcast message from all users...</b>")
+    unpinned = 0
+    failed = 0
+
+    try:
+        await unpin_chat_message_both_sides(client, chat_id, reply_id)
+    except Exception:
+        pass
+    if record.get("owner_copy_id") and record.get("owner_copy_id") != reply_id:
+        try:
+            await unpin_chat_message_both_sides(client, chat_id, record["owner_copy_id"])
+        except Exception:
+            pass
+
+    for uid_str, msg_id in user_messages.items():
+        uid = int(uid_str)
+        if uid == int(chat_id):
+            unpinned += 1
+            continue
+        try:
+            if await unpin_chat_message_both_sides(client, uid, msg_id):
+                unpinned += 1
+            else:
+                failed += 1
+        except FloodWait as e:
+            await asyncio.sleep(e.value)
+            try:
+                if await unpin_chat_message_both_sides(client, uid, msg_id):
+                    unpinned += 1
+                else:
+                    failed += 1
+            except Exception:
+                failed += 1
+        except Exception:
+            failed += 1
+
+        if (unpinned + failed) % 20 == 0:
+            try:
+                await sts.edit(
+                    f"⏳ <b>Unpinning in progress:</b>\n\n"
+                    f"👥 Total Target: {total_users}\n"
+                    f"🔄 Completed: {unpinned + failed} / {total_users}\n"
+                    f"📌 Unpinned: {unpinned}\n"
                     f"❌ Inactive/Error: {failed}"
                 )
             except Exception:
                 pass
         await asyncio.sleep(0.04)
-        
+
+    try:
+        await col.delete_one({"_id": record["_id"]})
+    except Exception:
+        pass
+
     return await sts.edit(
-        f"✅ <b>Unpin Broadcast Complete!</b>\n\n"
-        f"👥 Total Users: {total_users}\n"
+        f"✅ <b>Unpin Complete!</b>\n\n"
+        f"👥 Total Target: {total_users}\n"
         f"📌 Unpinned from: {unpinned} users\n"
-        f"❌ Failed/Inactive: {failed}"
+        f"❌ Inactive/Failed: {failed}"
     )
 
 async def broadcast(client, message):
@@ -218,7 +344,6 @@ async def broadcast(client, message):
     )
     markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("📝 SEND BROADCAST", callback_data="bc_send_msg")],
-        [InlineKeyboardButton("📌 AN_BROADCAST (UNPIN)", callback_data="bc_unpin_msg")],
         [InlineKeyboardButton("‹ BACK", callback_data="admin_panel_back")]
     ])
     await message.reply(text, reply_markup=markup)
@@ -226,7 +351,13 @@ async def broadcast(client, message):
 async def an_broadcast(client, message):
     if not is_owner_or_admin(client, message.from_user.id):
         return await message.reply("❌ Owner or authorized admin only.")
-    return await execute_unpin_broadcast(client, message.chat.id)
+    reply = message.reply_to_message
+    if not reply:
+        return await message.reply_text(
+            "⚠️ <b>Please reply to the message you want to unpin!</b>\n\n"
+            "<i>Jis broadcast message ko aap unpin karna chahte hain, us message ke reply me <code>/an_broadcast</code> command bhejein.</i>"
+        )
+    return await execute_unpin_single_broadcast(client, message.chat.id, reply)
 
 async def ban(client,message):
     if not owner_only(client,message.from_user.id):return await message.reply("❌ Owner only.")
@@ -317,7 +448,6 @@ async def clone_callback(client,query):
         )
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("📝 SEND BROADCAST", callback_data="bc_send_msg")],
-            [InlineKeyboardButton("📌 AN_BROADCAST (UNPIN)", callback_data="bc_unpin_msg")],
             [InlineKeyboardButton("‹ BACK", callback_data="admin_panel_back")]
         ])
         return await query.message.edit_text(text, reply_markup=markup)
@@ -396,18 +526,12 @@ async def clone_callback(client,query):
         return await execute_broadcast(client, query.from_user.id, b_msg)
 
     if query.data == "bc_unpin_msg":
-        if not is_owner_or_admin(client, query.from_user.id):
-            return await query.answer("❌ Owner only", show_alert=True)
-        await query.answer()
+        await query.answer("⚠️ Reply to the broadcast message with /an_broadcast to unpin that specific message.", show_alert=True)
         try:
             query.stop_propagation()
         except Exception:
             pass
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
-        return await execute_unpin_broadcast(client, query.from_user.id)
+        return
     await query.answer("Use the command for this setting.",show_alert=True)
 def register(client):
     private=filters.private
