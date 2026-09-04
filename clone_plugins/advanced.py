@@ -1,4 +1,4 @@
-import asyncio
+import asyncio, time
 from pyrogram import filters
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -87,6 +87,11 @@ async def pin_chat_message_both_sides(client, chat_id, message_id):
 
 async def unpin_chat_message_both_sides(client, chat_id, message_id):
     try:
+        await client.unpin_chat_message(chat_id=chat_id, message_id=message_id, both_sides=True)
+        return True
+    except (TypeError, Exception):
+        pass
+    try:
         from pyrogram.raw.functions.messages import UpdatePinnedMessage
         peer = await client.resolve_peer(chat_id)
         await client.invoke(UpdatePinnedMessage(peer=peer, id=message_id, silent=False, unpin=True, pm_oneside=False))
@@ -116,6 +121,173 @@ async def unpin_all_both_sides(client, chat_id):
     return False
 
 BROADCAST_CACHE = {}
+
+def sync_save_broadcast_record(client, record_doc):
+    bot_id = int(client.me.id)
+    for k in (bot_id, str(bot_id)):
+        BROADCAST_CACHE.setdefault(k, []).append(dict(record_doc))
+        if len(BROADCAST_CACHE[k]) > 50:
+            BROADCAST_CACHE[k].pop(0)
+
+    if not hasattr(client, "_broadcast_pins"):
+        client._broadcast_pins = []
+    client._broadcast_pins.append(dict(record_doc))
+    if len(client._broadcast_pins) > 50:
+        client._broadcast_pins.pop(0)
+
+    try:
+        from plugins.clone import mongo_db
+        if mongo_db is not None:
+            mongo_db[f"broadcast_pins_{bot_id}"].insert_one(dict(record_doc))
+            mongo_db["broadcast_pins"].insert_one(dict(record_doc))
+    except Exception as e:
+        print(f"Error saving to mongo_db broadcast_pins: {e}")
+
+async def async_save_broadcast_record(client, record_doc):
+    sync_save_broadcast_record(client, record_doc)
+    bot_id = int(client.me.id)
+    try:
+        await clonedb.db[f"broadcast_pins_{bot_id}"].insert_one(dict(record_doc))
+    except Exception as e:
+        print(f"Error saving to clonedb broadcast_pins_{bot_id}: {e}")
+    try:
+        await clonedb.db["broadcast_pins"].insert_one(dict(record_doc))
+    except Exception as e:
+        print(f"Error saving to clonedb broadcast_pins: {e}")
+
+async def find_broadcast_record(client, chat_id, reply_msg):
+    reply_id = int(reply_msg.id)
+    raw_reply_text = getattr(reply_msg, 'text', None) or getattr(reply_msg, 'caption', None) or ''
+    reply_text = str(raw_reply_text).strip() if raw_reply_text else ''
+    bot_id = int(client.me.id)
+
+    # 1. Check client instance cache first
+    client_cache = getattr(client, "_broadcast_pins", [])
+    for rec in reversed(client_cache):
+        if reply_id in rec.get("all_msg_ids", []):
+            return rec
+        if rec.get("source_msg_id") == reply_id or rec.get("owner_copy_id") == reply_id:
+            return rec
+        if rec.get("user_messages", {}).get(str(chat_id)) == reply_id:
+            return rec
+        if reply_text and rec.get("text") and (reply_text == rec.get("text") or reply_text in rec.get("text") or rec.get("text") in reply_text):
+            return rec
+
+    # 2. Check global in-memory cache
+    for k in (bot_id, str(bot_id)):
+        for rec in reversed(BROADCAST_CACHE.get(k, [])):
+            if reply_id in rec.get("all_msg_ids", []):
+                return rec
+            if rec.get("source_msg_id") == reply_id or rec.get("owner_copy_id") == reply_id:
+                return rec
+            if rec.get("user_messages", {}).get(str(chat_id)) == reply_id:
+                return rec
+            if reply_text and rec.get("text") and (reply_text == rec.get("text") or reply_text in rec.get("text") or rec.get("text") in reply_text):
+                return rec
+
+    query_filter = {
+        "$or": [
+            {"all_msg_ids": reply_id},
+            {"source_msg_id": reply_id},
+            {"owner_copy_id": reply_id},
+            {"user_pins_list.mid": reply_id},
+            {f"user_messages.{chat_id}": reply_id}
+        ]
+    }
+
+    # 3. Synchronous mongo_db
+    try:
+        from plugins.clone import mongo_db
+        if mongo_db is not None:
+            for col_name in (f"broadcast_pins_{bot_id}", "broadcast_pins"):
+                col = mongo_db[col_name]
+                q = dict(query_filter)
+                if col_name == "broadcast_pins":
+                    q["bot_id"] = bot_id
+                rec = col.find_one(q, sort=[("created_at", -1)])
+                if rec:
+                    return rec
+                if reply_text:
+                    t_q = {"text": reply_text}
+                    if col_name == "broadcast_pins":
+                        t_q["bot_id"] = bot_id
+                    rec = col.find_one(t_q, sort=[("created_at", -1)])
+                    if rec:
+                        return rec
+                l_q = {"bot_id": bot_id} if col_name == "broadcast_pins" else {}
+                latest = col.find_one(l_q, sort=[("created_at", -1)])
+                if latest:
+                    l_text = latest.get("text", "")
+                    if (reply_text and l_text and (reply_text in l_text or l_text in reply_text)) or (time.time() - latest.get("created_at", 0) < 86400):
+                        return latest
+    except Exception as e:
+        print(f"Error checking mongo_db: {e}")
+
+    # 4. Async clonedb
+    try:
+        for col_name in (f"broadcast_pins_{bot_id}", "broadcast_pins"):
+            col = clonedb.db[col_name]
+            q = dict(query_filter)
+            if col_name == "broadcast_pins":
+                q["bot_id"] = bot_id
+            rec = await col.find_one(q, sort=[("created_at", -1)])
+            if rec:
+                return rec
+            if reply_text:
+                t_q = {"text": reply_text}
+                if col_name == "broadcast_pins":
+                    t_q["bot_id"] = bot_id
+                rec = await col.find_one(t_q, sort=[("created_at", -1)])
+                if rec:
+                    return rec
+            l_q = {"bot_id": bot_id} if col_name == "broadcast_pins" else {}
+            latest = await col.find_one(l_q, sort=[("created_at", -1)])
+            if latest:
+                l_text = latest.get("text", "")
+                if (reply_text and l_text and (reply_text in l_text or l_text in reply_text)) or (time.time() - latest.get("created_at", 0) < 86400):
+                    return latest
+    except Exception as e:
+        print(f"Error checking clonedb: {e}")
+
+    # 5. Last resort fallback to most recent cached broadcast
+    if client_cache:
+        return client_cache[-1]
+    for k in (bot_id, str(bot_id)):
+        c_list = BROADCAST_CACHE.get(k, [])
+        if c_list:
+            return c_list[-1]
+
+    return None
+
+async def remove_broadcast_record(client, record):
+    bot_id = int(client.me.id)
+    client_cache = getattr(client, "_broadcast_pins", [])
+    if record in client_cache:
+        try:
+            client_cache.remove(record)
+        except Exception:
+            pass
+    for k in (bot_id, str(bot_id)):
+        c_list = BROADCAST_CACHE.get(k, [])
+        if record in c_list:
+            try:
+                c_list.remove(record)
+            except Exception:
+                pass
+    rec_id = record.get("_id")
+    if rec_id:
+        try:
+            from plugins.clone import mongo_db
+            if mongo_db is not None:
+                mongo_db[f"broadcast_pins_{bot_id}"].delete_one({"_id": rec_id})
+                mongo_db["broadcast_pins"].delete_one({"_id": rec_id})
+        except Exception:
+            pass
+        try:
+            await clonedb.db[f"broadcast_pins_{bot_id}"].delete_one({"_id": rec_id})
+            await clonedb.db["broadcast_pins"].delete_one({"_id": rec_id})
+        except Exception:
+            pass
 
 async def execute_broadcast(client, chat_id, b_msg):
     sts = await client.send_message(chat_id, "⏳ <b>Broadcasting your message...</b>")
@@ -212,24 +384,7 @@ async def execute_broadcast(client, chat_id, b_msg):
             "status": "pinned"
         }
 
-        # 1. In-memory cache
-        BROADCAST_CACHE.setdefault(bot_id, []).append(dict(record_doc))
-        if len(BROADCAST_CACHE[bot_id]) > 50:
-            BROADCAST_CACHE[bot_id].pop(0)
-
-        # 2. Async MongoDB (clonedb)
-        try:
-            await clonedb.db[f"broadcast_pins_{bot_id}"].insert_one(dict(record_doc))
-        except Exception as e:
-            print(f"Error saving to clonedb broadcast_pins: {e}")
-
-        # 3. Synchronous mongo_db if available
-        try:
-            from plugins.clone import mongo_db
-            if mongo_db is not None:
-                mongo_db[f"broadcast_pins_{bot_id}"].insert_one(dict(record_doc))
-        except Exception:
-            pass
+        await async_save_broadcast_record(client, record_doc)
     except Exception as e:
         print(f"Error creating broadcast pin doc: {e}")
             
@@ -242,86 +397,10 @@ async def execute_broadcast(client, chat_id, b_msg):
 
 async def execute_unpin_single_broadcast(client, chat_id, reply_msg):
     reply_id = int(reply_msg.id)
-    raw_reply_text = getattr(reply_msg, 'text', None) or getattr(reply_msg, 'caption', None) or ''
-    reply_text = str(raw_reply_text).strip() if raw_reply_text else ''
     bot_id = int(client.me.id)
 
-    record = None
-    
-    # 1. In-memory cache search
-    cached_list = BROADCAST_CACHE.get(bot_id, [])
-    for rec in reversed(cached_list):
-        if reply_id in rec.get("all_msg_ids", []):
-            record = rec
-            break
-        if rec.get("source_msg_id") == reply_id or rec.get("owner_copy_id") == reply_id:
-            record = rec
-            break
-        if rec.get("user_messages", {}).get(str(chat_id)) == reply_id:
-            record = rec
-            break
-        if reply_text and rec.get("text") and (reply_text == rec.get("text") or reply_text in rec.get("text") or rec.get("text") in reply_text):
-            record = rec
-            break
+    record = await find_broadcast_record(client, chat_id, reply_msg)
 
-    # 2. Async MongoDB (clonedb)
-    col = clonedb.db[f"broadcast_pins_{bot_id}"]
-    if not record:
-        query_filter = {
-            "$or": [
-                {"all_msg_ids": reply_id},
-                {"source_msg_id": reply_id},
-                {"owner_copy_id": reply_id},
-                {"user_pins_list.mid": reply_id},
-                {f"user_messages.{chat_id}": reply_id}
-            ]
-        }
-        try:
-            record = await col.find_one(query_filter, sort=[("created_at", -1)])
-        except Exception:
-            pass
-
-    if not record and reply_text:
-        try:
-            record = await col.find_one({"text": reply_text}, sort=[("created_at", -1)])
-        except Exception:
-            pass
-            
-    if not record and reply_text and len(reply_text) >= 5:
-        try:
-            import re
-            prefix = re.escape(reply_text[:40])
-            record = await col.find_one({"text": {"$regex": f"^{prefix}", "$options": "i"}}, sort=[("created_at", -1)])
-        except Exception:
-            pass
-
-    # 3. Synchronous mongo_db
-    if not record:
-        try:
-            from plugins.clone import mongo_db
-            if mongo_db is not None:
-                record = mongo_db[f"broadcast_pins_{bot_id}"].find_one(query_filter, sort=[("created_at", -1)])
-                if not record and reply_text:
-                    record = mongo_db[f"broadcast_pins_{bot_id}"].find_one({"text": reply_text}, sort=[("created_at", -1)])
-        except Exception:
-            pass
-
-    # 4. Check if there is any recent broadcast in DB
-    if not record:
-        try:
-            latest = await col.find_one({}, sort=[("created_at", -1)])
-            if latest:
-                latest_text = latest.get("text", "")
-                if (reply_text and latest_text and (reply_text in latest_text or latest_text in reply_text)) or (time.time() - latest.get("created_at", 0) < 7200):
-                    record = latest
-        except Exception:
-            pass
-
-    # 5. Fallback to latest in cache
-    if not record and cached_list:
-        record = cached_list[-1]
-
-    # If still not found at all
     if not record:
         try:
             await unpin_chat_message_both_sides(client, chat_id, reply_id)
@@ -338,7 +417,6 @@ async def execute_unpin_single_broadcast(client, chat_id, reply_msg):
         user_messages = {str(item["uid"]): item["mid"] for item in record["user_pins_list"]}
         
     total_users = len(user_messages)
-
     sts = await client.send_message(chat_id, "⏳ <b>Unpinning this broadcast message from all users...</b>")
     unpinned = 0
     failed = 0
@@ -393,22 +471,7 @@ async def execute_unpin_single_broadcast(client, chat_id, reply_msg):
                 pass
         await asyncio.sleep(0.04)
 
-    if record in cached_list:
-        try:
-            cached_list.remove(record)
-        except Exception:
-            pass
-    try:
-        if "_id" in record:
-            await col.delete_one({"_id": record["_id"]})
-    except Exception:
-        pass
-    try:
-        from plugins.clone import mongo_db
-        if mongo_db is not None and "_id" in record:
-            mongo_db[f"broadcast_pins_{bot_id}"].delete_one({"_id": record["_id"]})
-    except Exception:
-        pass
+    await remove_broadcast_record(client, record)
 
     return await sts.edit(
         f"✅ <b>Unpin Complete!</b>\n\n"

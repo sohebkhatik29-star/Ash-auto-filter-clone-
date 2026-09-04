@@ -31,6 +31,11 @@ async def pin_chat_message_both_sides(client, chat_id, message_id):
 
 async def unpin_chat_message_both_sides(client, chat_id, message_id):
     try:
+        await client.unpin_chat_message(chat_id=chat_id, message_id=message_id, both_sides=True)
+        return True
+    except (TypeError, Exception):
+        pass
+    try:
         from pyrogram.raw.functions.messages import UpdatePinnedMessage
         peer = await client.resolve_peer(chat_id)
         await client.invoke(UpdatePinnedMessage(peer=peer, id=message_id, silent=False, unpin=True, pm_oneside=False))

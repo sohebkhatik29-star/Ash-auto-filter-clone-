@@ -37,6 +37,11 @@ async def pin_chat_message_both_sides(bot, chat_id, message_id):
 
 async def unpin_chat_message_both_sides(bot, chat_id, message_id):
     try:
+        await bot.unpin_chat_message(chat_id=chat_id, message_id=message_id, both_sides=True)
+        return True
+    except (TypeError, Exception):
+        pass
+    try:
         from pyrogram.raw.functions.messages import UpdatePinnedMessage
         peer = await bot.resolve_peer(chat_id)
         await bot.invoke(UpdatePinnedMessage(peer=peer, id=message_id, silent=False, unpin=True, pm_oneside=False))
@@ -238,7 +243,7 @@ async def an_broadcast_cmd(bot, message):
             break
 
     # 2. Check Database
-    col = db.col.database["master_broadcast_pins"]
+    col = getattr(db, "db", db.col.database)["master_broadcast_pins"]
     if not record:
         query_filter = {
             "$or": [
