@@ -1,6 +1,6 @@
 """Register handlers on dynamically-created Pyrogram clone clients."""
 
-from pyrogram import filters
+from pyrogram import filters, ContinuePropagation, StopPropagation
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins import commands as cmd
@@ -10,7 +10,34 @@ from link_modules import register_all_link_modules, single_link, universal_link,
 from clone_plugins import master_manager
 
 
+
+async def _clone_ban_guard_msg(client, message):
+    try:
+        from clone_plugins.ban_manager import check_user_banned_or_block
+        if await check_user_banned_or_block(client, message):
+            raise StopPropagation
+    except Exception as e:
+        if "StopPropagation" in type(e).__name__:
+            raise
+    raise ContinuePropagation
+
+async def _clone_ban_guard_cb(client, query):
+    try:
+        from clone_plugins.ban_manager import check_user_banned_or_block
+        if await check_user_banned_or_block(client, query):
+            raise StopPropagation
+    except Exception as e:
+        if "StopPropagation" in type(e).__name__:
+            raise
+    raise ContinuePropagation
+
 async def clean_help(client, message):
+    try:
+        from clone_plugins.ban_manager import check_user_banned_or_block
+        if await check_user_banned_or_block(client, message):
+            return
+    except Exception:
+        pass
     text = (
         "📚 <b>ASH FILE STORE — HELP</b>\n\n"
         "👤 <b>User Commands</b>\n"
@@ -41,6 +68,8 @@ async def clean_help(client, message):
 
 
 def register_clone_handlers(client):
+    client.add_handler(MessageHandler(_clone_ban_guard_msg, filters.private), group=-1000)
+    client.add_handler(CallbackQueryHandler(_clone_ban_guard_cb), group=-1000)
     cset.register(client)
     master_manager.register(client)
     register_all_link_modules(client, is_master=False)

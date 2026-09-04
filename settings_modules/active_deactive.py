@@ -40,6 +40,14 @@ async def check_clone_status_or_block(client, message_or_query) -> bool:
     if me and me.username and BOT_USERNAME and me.username.lower() == BOT_USERNAME.lower():
         return False
 
+    # 0. Check if user is banned from this clone bot
+    try:
+        from clone_plugins.ban_manager import check_user_banned_or_block
+        if await check_user_banned_or_block(client, message_or_query):
+            return True
+    except Exception:
+        pass
+
     # 1. Check if bot exists in database at all (if deleted, stop client and completely block)
     m = db()
     if m is not None and getattr(me, "id", None):

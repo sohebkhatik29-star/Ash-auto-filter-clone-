@@ -240,11 +240,12 @@ async def clone_owner_commands(client, message):
         return await message.reply_text(f"Use /{command} <user_id>")
     uid = int(message.command[1])
     if command == "ban":
-        mongo_db.clone_bans.update_one({"bot_id": me.id, "user_id": uid}, {"$set": {"bot_id": me.id, "user_id": uid}}, upsert=True)
-        return await message.reply_text("✅ User banned.")
-    mongo_db.clone_bans.delete_one({"bot_id": me.id, "user_id": uid})
+        from clone_plugins.ban_manager import ban_user
+        await ban_user(client, uid)
+        return await message.reply_text("🚫 User banned.")
+    from clone_plugins.ban_manager import unban_user
+    await unban_user(client, uid)
     return await message.reply_text("✅ User unbanned.")
-
 
 @Client.on_callback_query(filters.regex(r"^c(hep|settings|stats|info|broadcast)$"))
 async def clone_callbacks(client, query):

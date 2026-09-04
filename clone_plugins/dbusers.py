@@ -2,7 +2,6 @@
 # Subscribe YouTube Channel For Amazing Bot @tech_as_0
 # Ask Doubt on telegram @movies_1780
 
-
 import motor.motor_asyncio
 from config import CDB_NAME, CLONE_DB_URI
 
@@ -14,7 +13,11 @@ class Database:
 
     async def add_user(self, bot_id, user_id):
         user = {'user_id': int(user_id)}
-        await self.db[str(bot_id)].insert_one(user)
+        await self.db[str(bot_id)].update_one(
+            {'user_id': int(user_id)},
+            {'$setOnInsert': user},
+            upsert=True
+        )
     
     async def is_user_exist(self, bot_id, id):
         user = await self.db[str(bot_id)].find_one({'user_id': int(id)})
@@ -30,5 +33,18 @@ class Database:
     async def delete_user(self, bot_id, user_id):
         await self.db[str(bot_id)].delete_many({'user_id': int(user_id)})
 
+    async def is_user_banned(self, bot_id, user_id):
+        user = await self.db[str(bot_id)].find_one({'user_id': int(user_id)})
+        return bool(user and user.get("banned") is True)
+
+    async def set_user_ban_status(self, bot_id, user_id, banned: bool):
+        await self.db[str(bot_id)].update_one(
+            {'user_id': int(user_id)},
+            {'$set': {'banned': bool(banned)}},
+            upsert=True
+        )
+
+    async def get_banned_users_count(self, bot_id):
+        return await self.db[str(bot_id)].count_documents({'banned': True})
 
 clonedb = Database(CLONE_DB_URI, CDB_NAME)

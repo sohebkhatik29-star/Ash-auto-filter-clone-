@@ -227,6 +227,14 @@ async def capture_batch_step(client, message):
 async def batch_start_deliver(client, message):
     if len(message.command) != 2 or not message.command[1].startswith("cbatch_"):
         return
+    try:
+        from clone_plugins.ban_manager import check_user_banned_or_block
+        if await check_user_banned_or_block(client, message):
+            from pyrogram import StopPropagation
+            raise StopPropagation
+    except Exception as e:
+        if "StopPropagation" in type(e).__name__:
+            raise
     if mongo_db is None:
         await message.reply("❌ Database is not configured.")
         raise StopPropagation

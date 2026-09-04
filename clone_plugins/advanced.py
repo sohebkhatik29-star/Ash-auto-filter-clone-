@@ -301,7 +301,7 @@ async def execute_broadcast(client, chat_id, b_msg):
     users = await clonedb.get_all_users(client.me.id)
     async for u in users:
         uid = u.get("user_id")
-        if not uid:
+        if not uid or u.get("banned") is True:
             continue
         try:
             m = await b_msg.copy(uid)
@@ -511,13 +511,51 @@ async def an_broadcast(client, message):
     return await execute_unpin_single_broadcast(client, message.chat.id, reply)
 
 async def ban(client,message):
-    if not owner_only(client,message.from_user.id):return await message.reply("❌ Owner only.")
-    if len(message.command)!=2 or not message.command[1].isdigit():return await message.reply("Usage: /ban USER_ID")
-    await clonedb.db[str(client.me.id)].update_one({"user_id":int(message.command[1])},{"$set":{"banned":True}},upsert=True);await message.reply("🚫 User banned.")
+    if not is_owner_or_admin(client, message.from_user.id):
+        return await message.reply("❌ Owner or Moderator only.")
+    target_id = None
+    if len(message.command) >= 2:
+        arg = message.command[1].strip()
+        if arg.startswith("@"):
+            try:
+                u_obj = await client.get_users(arg)
+                target_id = u_obj.id
+            except Exception:
+                pass
+        elif arg.lstrip("-").isdigit():
+            target_id = int(arg)
+    elif message.reply_to_message and message.reply_to_message.from_user:
+        target_id = message.reply_to_message.from_user.id
+    if not target_id:
+        return await message.reply("Usage: /ban USER_ID")
+    me_id = client.me.id if getattr(client, "me", None) else (await client.get_me()).id
+    if target_id == me_id or owner_only(client, target_id):
+        return await message.reply("❌ You cannot ban the bot owner.")
+    from clone_plugins.ban_manager import ban_user
+    await ban_user(client, target_id)
+    await message.reply("🚫 User banned.")
+
 async def unban(client,message):
-    if not owner_only(client,message.from_user.id):return await message.reply("❌ Owner only.")
-    if len(message.command)!=2 or not message.command[1].isdigit():return await message.reply("Usage: /unban USER_ID")
-    await clonedb.db[str(client.me.id)].update_one({"user_id":int(message.command[1])},{"$set":{"banned":False}},upsert=True);await message.reply("✅ User unbanned.")
+    if not is_owner_or_admin(client, message.from_user.id):
+        return await message.reply("❌ Owner or Moderator only.")
+    target_id = None
+    if len(message.command) >= 2:
+        arg = message.command[1].strip()
+        if arg.startswith("@"):
+            try:
+                u_obj = await client.get_users(arg)
+                target_id = u_obj.id
+            except Exception:
+                pass
+        elif arg.lstrip("-").isdigit():
+            target_id = int(arg)
+    elif message.reply_to_message and message.reply_to_message.from_user:
+        target_id = message.reply_to_message.from_user.id
+    if not target_id:
+        return await message.reply("Usage: /unban USER_ID")
+    from clone_plugins.ban_manager import unban_user
+    await unban_user(client, target_id)
+    await message.reply("✅ User unbanned.")
 async def auto_delete(client,message):
     if not owner_only(client,message.from_user.id):return await message.reply("❌ Owner only.")
     args=message.command[1:]

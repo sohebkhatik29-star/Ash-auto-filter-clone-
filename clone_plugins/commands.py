@@ -747,6 +747,12 @@ async def deliver_file(client, user_id, file_id, protected=False):
 
 
 async def start(client, message):
+    try:
+        from clone_plugins.ban_manager import check_user_banned_or_block
+        if await check_user_banned_or_block(client, message):
+            return
+    except Exception:
+        pass
     me = await client.get_me()
     is_new_user = False
     try:
@@ -988,6 +994,12 @@ async def start(client, message):
 
 
 async def help_command(client, message):
+    try:
+        from clone_plugins.ban_manager import check_user_banned_or_block
+        if await check_user_banned_or_block(client, message):
+            return
+    except Exception:
+        pass
     text = (
         "📚 <b>ASH FILE STORE — HELP</b>\n\n"
         "👤 <b>User Commands</b>\n"
@@ -1114,6 +1126,12 @@ async def settings_command(client, message):
 
 
 async def callbacks(client, query):
+    try:
+        from clone_plugins.ban_manager import check_user_banned_or_block
+        if await check_user_banned_or_block(client, query):
+            return
+    except Exception:
+        pass
     data = query.data
     if data == "close_data":
         return await query.message.delete()
@@ -1284,6 +1302,12 @@ def set_user_verified(user_id, bot_id=0, duration_minutes=1440, slot=1, _log_use
 _orig_start = start
 
 async def start(client, message):
+    try:
+        from clone_plugins.ban_manager import check_user_banned_or_block
+        if await check_user_banned_or_block(client, message):
+            return
+    except Exception:
+        pass
     # Intercept verify_* success path for detailed log
     if len(getattr(message, "command", []) or []) == 2:
         data = message.command[1]

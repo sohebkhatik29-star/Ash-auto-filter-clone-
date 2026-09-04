@@ -653,6 +653,14 @@ async def special_link_start(client, message):
     payload = message.command[1]
     if not (payload.startswith("special_") or payload.startswith("spl_")):
         return
+    try:
+        from clone_plugins.ban_manager import check_user_banned_or_block
+        if await check_user_banned_or_block(client, message):
+            from pyrogram import StopPropagation
+            raise StopPropagation
+    except Exception as e:
+        if "StopPropagation" in type(e).__name__:
+            raise
 
     if mongo_db is None:
         await message.reply("❌ Database is not configured.")
