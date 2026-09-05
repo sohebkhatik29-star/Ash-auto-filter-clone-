@@ -200,11 +200,29 @@ async def capture_special_message(client, message):
 
             async with _lock(client, message.from_user.id):
                 messages = list(record.get("messages", []))
+                from config import LOG_CHANNEL
+                rec = cmd.bot_record(client)
+                db_ch = rec.get("database_channel") or rec.get("db_channel") or LOG_CHANNEL
                 item = {"chat_id": int(message.chat.id), "message_id": int(message.id)}
+                if db_ch:
+                    try:
+                        copied = await client.copy_message(
+                            chat_id=int(db_ch),
+                            from_chat_id=int(message.chat.id),
+                            message_id=int(message.id)
+                        )
+                        item = {"chat_id": int(db_ch), "message_id": int(copied.id)}
+                    except Exception:
+                        pass
                 messages.append(item)
                 mongo_db.special_links.update_one({"_id": record["_id"]}, {"$set": {"messages": messages}})
                 added_count = wait_state.get("added_count", 0) + 1
                 wait_state["added_count"] = added_count
+
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
 
                 last_reply = wait_state.get("last_reply_id")
                 if last_reply:
@@ -236,6 +254,19 @@ async def capture_special_message(client, message):
 
     if message.text and message.text.startswith("/"):
         if message.text.strip().lower() == "/cancel":
+            input_ids = session.get("input_msg_ids", [])
+            if input_ids:
+                try:
+                    for k in range(0, len(input_ids), 100):
+                        await client.delete_messages(int(message.from_user.id), input_ids[k:k + 100])
+                except Exception:
+                    pass
+            ctrl_id = session.get("control_msg_id")
+            if ctrl_id:
+                try:
+                    await client.delete_messages(int(message.from_user.id), ctrl_id)
+                except Exception:
+                    pass
             _SPL_SESSIONS.pop(key, None)
             await message.reply("❌ Special link creation cancelled.")
             raise StopPropagation
@@ -246,13 +277,17 @@ async def capture_special_message(client, message):
         raise StopPropagation
 
     async with _lock(client, message.from_user.id):
-        messages = session.get("messages", [])
+        messages = list(session.get("messages", []))
+        input_msg_ids = list(session.get("input_msg_ids", []))
         if len(messages) >= MAX_FILES:
             raise StopPropagation
 
         item = {"chat_id": int(message.chat.id), "message_id": int(message.id)}
         messages.append(item)
+        if int(message.id) not in input_msg_ids:
+            input_msg_ids.append(int(message.id))
         session["messages"] = messages
+        session["input_msg_ids"] = input_msg_ids
         count = len(messages)
 
         if key in _SPL_UPDATE_TASKS:
@@ -280,6 +315,7 @@ async def special_link_callbacks(client, query):
         _SPL_SESSIONS[key] = {
             "session_id": session_id,
             "messages": [],
+            "input_msg_ids": [],
             "paused": False,
             "control_msg_id": None,
             "last_panel_time": time.time(),
@@ -358,12 +394,26 @@ async def special_link_callbacks(client, query):
                 pass
             raise StopPropagation
 
-        _SPL_SESSIONS.pop(key, None)
+        session = _SPL_SESSIONS.pop(key, None)
+        if session:
+            input_ids = session.get("input_msg_ids", [])
+            if input_ids:
+                try:
+                    for k in range(0, len(input_ids), 100):
+                        await client.delete_messages(int(query.from_user.id), input_ids[k:k + 100])
+                except Exception:
+                    pass
+            ctrl_id = session.get("control_msg_id")
+            if ctrl_id and ctrl_id != query.message.id:
+                try:
+                    await client.delete_messages(int(query.from_user.id), ctrl_id)
+                except Exception:
+                    pass
         try:
             await query.message.delete()
         except Exception:
             pass
-        await query.message.reply("❌ Special link creation cancelled.")
+        await client.send_message(int(query.from_user.id), "❌ Special link creation cancelled.")
         return await query.answer("Cancelled.")
 
     elif data.startswith("spl_gen_"):
@@ -371,15 +421,38 @@ async def special_link_callbacks(client, query):
         if not session or not session.get("messages"):
             return await query.answer("Please send or forward at least one message first.", show_alert=True)
 
-        token = secrets.token_urlsafe(18)
+        raw_messages = list(session.get("messages", []))[:MAX_FILES]
+
+        # 1. Copy messages to DB / Log Channel only now upon link generation
+        from config import LOG_CHANNEL
         rec = cmd.bot_record(client)
+        db_ch = rec.get("database_channel") or rec.get("db_channel") or LOG_CHANNEL
+
+        saved_messages = []
+        for item in raw_messages:
+            c_id = int(item["chat_id"])
+            m_id = int(item["message_id"])
+            if db_ch:
+                try:
+                    copied = await client.copy_message(
+                        chat_id=int(db_ch),
+                        from_chat_id=c_id,
+                        message_id=m_id
+                    )
+                    saved_messages.append({"chat_id": int(db_ch), "message_id": int(copied.id)})
+                except Exception:
+                    saved_messages.append({"chat_id": c_id, "message_id": m_id})
+            else:
+                saved_messages.append({"chat_id": c_id, "message_id": m_id})
+
+        token = secrets.token_urlsafe(18)
         protected = bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
 
         doc = {
             "token": token,
             "bot_id": client.me.id,
             "owner_id": int(query.from_user.id),
-            "messages": session["messages"],
+            "messages": saved_messages,
             "protected": protected,
             "whitelisters_enabled": False,
             "whitelisters": [],
@@ -393,7 +466,25 @@ async def special_link_callbacks(client, query):
         from settings_modules.link_shortener import get_shortened_link_if_enabled
         shown_link = await get_shortened_link_if_enabled(client, int(query.from_user.id), orig_link)
 
+        # 2. Delete all forwarded user input messages from the private chat
+        input_ids = session.get("input_msg_ids", [])
+        if input_ids:
+            try:
+                for k in range(0, len(input_ids), 100):
+                    await client.delete_messages(int(query.from_user.id), input_ids[k:k + 100])
+            except Exception:
+                pass
+
+        # 3. Clean up extra control message if exists
+        ctrl_id = session.get("control_msg_id")
+        if ctrl_id and ctrl_id != query.message.id:
+            try:
+                await client.delete_messages(int(query.from_user.id), ctrl_id)
+            except Exception:
+                pass
+
         text = f"Here is your special link:\n\n{shown_link}"
+
         await query.message.edit_text(
             text,
             reply_markup=_link_done_markup(token, shown_link),
