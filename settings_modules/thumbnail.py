@@ -621,6 +621,10 @@ async def handle_direct_photo_thumbnail(client, message):
         return
     user_id = message.from_user.id
 
+    from clone_plugins.auth import is_clone_authorized
+    if not is_clone_authorized(client, user_id):
+        return
+
     # 1. Do NOT capture if user has an active prompt session (e.g. caption, QR, token verify, fsub, etc.)
     try:
         from clone_plugins.sessions import _USER_SESSIONS
@@ -681,6 +685,10 @@ async def thumb_commands_handler(client, message):
     if not message.from_user:
         return
     user_id = message.from_user.id
+
+    from clone_plugins.auth import is_clone_authorized, UNAUTHORIZED_MESSAGE_TEXT, unauthorized_markup
+    if not is_clone_authorized(client, user_id):
+        return await message.reply(UNAUTHORIZED_MESSAGE_TEXT, reply_markup=unauthorized_markup(client), disable_web_page_preview=True)
     cmd = (message.command[0] if message.command else "").lower()
 
     if cmd in ("setthumb", "set_thumb", "thumb"):

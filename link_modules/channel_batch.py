@@ -24,16 +24,8 @@ def is_channel_batch_active(bot_id: int, user_id: int) -> bool:
 
 
 def is_allowed_batch(client, user_id: int) -> bool:
-    if PUBLIC_FILE_STORE:
-        return True
-    try:
-        if int(user_id) in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]:
-            return True
-    except Exception:
-        pass
-    if cmd.is_owner_or_mod(client, user_id):
-        return True
-    return cmd.bot_record(client).get("mode") == "public"
+    from clone_plugins.auth import is_clone_authorized
+    return is_clone_authorized(client, user_id)
 
 
 def _extract_chat_and_msg_id(message):
@@ -81,7 +73,8 @@ async def start_batch(client, message):
         return
 
     if not is_allowed_batch(client, message.from_user.id):
-        return await message.reply("❌ Batch generation is private. Only owner/moderators can use it.")
+        from clone_plugins.auth import UNAUTHORIZED_MESSAGE_TEXT, unauthorized_markup
+        return await message.reply(UNAUTHORIZED_MESSAGE_TEXT, reply_markup=unauthorized_markup(client), disable_web_page_preview=True)
     if mongo_db is None:
         return await message.reply("❌ Database is not configured.")
 

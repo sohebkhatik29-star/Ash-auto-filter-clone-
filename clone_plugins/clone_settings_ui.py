@@ -157,6 +157,9 @@ def clone_manage_hub_markup(bot_username, bot_id=None):
 # ----------------- MAIN SETTINGS COMMAND & CALLBACKS ----------------- #
 
 async def settings(client, message):
+    from clone_plugins.auth import is_clone_authorized, UNAUTHORIZED_MESSAGE_TEXT, unauthorized_markup
+    if not is_clone_authorized(client, message.from_user.id):
+        return await message.reply(UNAUTHORIZED_MESSAGE_TEXT, reply_markup=unauthorized_markup(client), disable_web_page_preview=True)
     me = client.me or (await client.get_me())
     text = (
         f"🤖 <b>YOUR CLONE BOT - @{me.username}</b>\n\n"
@@ -200,6 +203,15 @@ async def callbacks(client, query):
         from clone_plugins import commands as cmd
         if callable(getattr(cmd, "callbacks", None)):
             return await cmd.callbacks(client, query)
+
+    # Authorization check for clone management & administrative settings
+    from clone_plugins.auth import is_clone_authorized
+    if not is_clone_authorized(client, user_id):
+        try:
+            await query.answer("⚠️ You are not my Master / Admin!", show_alert=True)
+        except Exception:
+            pass
+        return
 
     if data in ("settings", "settings_back", "cset:home", "clone_my_clone_info", "start_back", "cset:hub"):
         text = (

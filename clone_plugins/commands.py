@@ -53,24 +53,8 @@ def owner_id(client): return int(bot_record(client).get("user_id", 0))
 
 
 def is_owner_or_mod(client, user_id):
-    uid = int(user_id)
-    try:
-        if uid in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]:
-            return True
-    except Exception:
-        pass
-    rec = bot_record(client)
-    if not rec:
-        from config import PUBLIC_FILE_STORE
-        return bool(PUBLIC_FILE_STORE)
-    if int(rec.get("user_id", 0)) == uid:
-        return True
-    if uid in [int(x) for x in rec.get("moderators", [])]:
-        return True
-    if rec.get("mode") == "public":
-        return True
-    from config import PUBLIC_FILE_STORE
-    return bool(PUBLIC_FILE_STORE)
+    from clone_plugins.auth import is_clone_authorized
+    return is_clone_authorized(client, user_id)
 
 
 def make_file_link(bot_username, file_id, protected=False):
@@ -1155,12 +1139,18 @@ async def universal_link(client, message):
 
 
 async def api_handler(client,message):
+    from clone_plugins.auth import is_clone_authorized, UNAUTHORIZED_MESSAGE_TEXT, unauthorized_markup
+    if not is_clone_authorized(client, message.from_user.id):
+        return await message.reply(UNAUTHORIZED_MESSAGE_TEXT, reply_markup=unauthorized_markup(client), disable_web_page_preview=True)
     uid=owner_id(client) or message.from_user.id; user=await get_user(uid)
     if len(message.command)==1: return await message.reply(f"<b>Shortener API:</b> <code>{user.get('shortener_api') or 'Not set'}</code>\n<b>Base Site:</b> <code>{user.get('base_site') or 'Not set'}</code>")
     await update_user_info(uid,{"shortener_api":message.command[1].strip()}); await message.reply("✅ Shortener API updated successfully.")
 
 
 async def base_site_handler(client,message):
+    from clone_plugins.auth import is_clone_authorized, UNAUTHORIZED_MESSAGE_TEXT, unauthorized_markup
+    if not is_clone_authorized(client, message.from_user.id):
+        return await message.reply(UNAUTHORIZED_MESSAGE_TEXT, reply_markup=unauthorized_markup(client), disable_web_page_preview=True)
     uid=owner_id(client) or message.from_user.id
     if len(message.command)==1:
         user=await get_user(uid); return await message.reply(f"<b>Current base site:</b> <code>{user.get('base_site') or 'Not set'}</code>")
@@ -1171,6 +1161,9 @@ async def base_site_handler(client,message):
 
 
 async def shortener(client, message):
+    from clone_plugins.auth import is_clone_authorized, UNAUTHORIZED_MESSAGE_TEXT, unauthorized_markup
+    if not is_clone_authorized(client, message.from_user.id):
+        return await message.reply(UNAUTHORIZED_MESSAGE_TEXT, reply_markup=unauthorized_markup(client), disable_web_page_preview=True)
     user_id = message.from_user.id
     rec = bot_record(client)
     # Check clone owner settings first, fallback to user record

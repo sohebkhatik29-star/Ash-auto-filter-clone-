@@ -37,16 +37,8 @@ def is_special_link_active(bot_id: int, user_id: int) -> bool:
 
 
 def is_allowed_special(client, user_id: int) -> bool:
-    if PUBLIC_FILE_STORE:
-        return True
-    try:
-        if int(user_id) in [int(x) for x in ADMINS if str(x).strip().lstrip("-").isdigit()]:
-            return True
-    except Exception:
-        pass
-    if cmd.is_owner_or_mod(client, user_id):
-        return True
-    return cmd.bot_record(client).get("mode") == "public"
+    from clone_plugins.auth import is_clone_authorized
+    return is_clone_authorized(client, user_id)
 
 
 def _main_menu_markup():
@@ -101,7 +93,8 @@ async def special_link_cmd(client, message):
         return
 
     if not is_allowed_special(client, message.from_user.id):
-        return await message.reply("❌ Special link generation is private. Only owner/moderators can use it.")
+        from clone_plugins.auth import UNAUTHORIZED_MESSAGE_TEXT, unauthorized_markup
+        return await message.reply(UNAUTHORIZED_MESSAGE_TEXT, reply_markup=unauthorized_markup(client), disable_web_page_preview=True)
     if mongo_db is None:
         return await message.reply("❌ Database is not configured.")
 
@@ -303,6 +296,17 @@ async def capture_special_message(client, message):
 async def special_link_callbacks(client, query):
     data = query.data or ""
     if not data.startswith("spl_"):
+        return
+
+    if data.startswith("spl_deliv_cancel_"):
+        pass
+
+    from clone_plugins.auth import is_clone_authorized
+    if not is_clone_authorized(client, query.from_user.id):
+        try:
+            await query.answer("⚠️ You are not my Master / Admin!", show_alert=True)
+        except Exception:
+            pass
         return
 
     if mongo_db is None:

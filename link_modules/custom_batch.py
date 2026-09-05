@@ -157,8 +157,9 @@ async def custom_batch_cmd(client, message):
     if await check_clone_status_or_block(client, message):
         return
 
-    if not cmd.is_owner_or_mod(client, message.from_user.id) and cmd.bot_record(client).get("mode", "private") == "private":
-        return await message.reply("❌ Batch generation is private. Only owner/moderators can use it.")
+    from clone_plugins.auth import is_clone_authorized, UNAUTHORIZED_MESSAGE_TEXT, unauthorized_markup
+    if not is_clone_authorized(client, message.from_user.id):
+        return await message.reply(UNAUTHORIZED_MESSAGE_TEXT, reply_markup=unauthorized_markup(client), disable_web_page_preview=True)
     if mongo_db is None:
         return await message.reply("❌ Database is not configured.")
 
@@ -408,6 +409,14 @@ async def callback(client, query):
         except Exception:
             pass
         raise StopPropagation
+
+    from clone_plugins.auth import is_clone_authorized
+    if not is_clone_authorized(client, query.from_user.id):
+        try:
+            await query.answer("⚠️ You are not my Master / Admin!", show_alert=True)
+        except Exception:
+            pass
+        return
 
     parts = data.split("_", 2)
     if len(parts) != 3 or parts[0] != "cb":

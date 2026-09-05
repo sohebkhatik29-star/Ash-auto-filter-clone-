@@ -97,6 +97,11 @@ async def genlink_prompt(client, message):
     if await check_clone_status_or_block(client, message):
         return
 
+    from clone_plugins.auth import is_clone_authorized, UNAUTHORIZED_MESSAGE_TEXT, unauthorized_markup
+    if not is_clone_authorized(client, user_id):
+        await message.reply(UNAUTHORIZED_MESSAGE_TEXT, reply_markup=unauthorized_markup(client), disable_web_page_preview=True)
+        raise StopPropagation
+
     key = (client.me.id, user_id)
     old = _PENDING.get(key)
     if isinstance(old, dict) and old.get("prompt_id"):
@@ -127,6 +132,14 @@ async def single_link_callback(client, query):
     if not query.from_user:
         return
     user_id = query.from_user.id
+
+    from clone_plugins.auth import is_clone_authorized
+    if not is_clone_authorized(client, user_id):
+        try:
+            await query.answer("⚠️ You are not my Master / Admin!", show_alert=True)
+        except Exception:
+            pass
+        return
     data = query.data or ""
     key = (client.me.id, user_id)
     state = _PENDING.get(key) or {}
