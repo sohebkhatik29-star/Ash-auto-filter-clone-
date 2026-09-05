@@ -903,6 +903,11 @@ async def start(client, message):
         from clone_plugins import clone_settings_ui as cset
         return await cset.settings(client, message)
 
+    # Force Sub check must ALWAYS come before verification or premium prompts
+    if not data.startswith("verify_"):
+        if await send_fsub_prompt(client, message, data):
+            return
+
     # 1. Custom batch routing (plain or decoded)
     if data.startswith("batch_"):
         from clone_plugins import custom_batch
@@ -1031,6 +1036,9 @@ async def start(client, message):
     if prefix not in ("file", "filep") or not file_id:
         return await message.reply("❌ Invalid or expired file link.")
 
+    if await send_fsub_prompt(client, message, data):
+        return
+
     access_res = await access_verification(client, message.from_user.id, data)
     v_text = access_res[0] if access_res else None
     access_markup = access_res[1] if access_res and len(access_res) > 1 else None
@@ -1038,9 +1046,6 @@ async def start(client, message):
     free_notice = access_res[3] if access_res and len(access_res) > 3 else None
     if access_markup:
         return await send_verify_prompt(client, message, v_text, access_markup, v_photo)
-
-    if await send_fsub_prompt(client, message, data):
-        return
 
     try:
         await deliver_file(client, message.from_user.id, file_id, protected=prefix == "filep")

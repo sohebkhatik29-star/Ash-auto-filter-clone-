@@ -399,6 +399,59 @@ async def handle_user_back_from_premium(client, query, payload: str = ""):
 
 # ----------------- ADMIN SETTINGS HANDLER ----------------- #
 
+def parse_duration_string(s: str) -> tuple:
+    raw = str(s).strip().lower()
+    raw = raw.replace("mhont", "month").replace("yaar", "year").replace("yer", "year")
+    if "life" in raw:
+        return 100 * 365 * 86400, "Lifetime"
+    
+    m = re.match(r"^(\d+)\s*([a-zA-Z]*)$", raw)
+    if m:
+        num = int(m.group(1))
+        unit = m.group(2).strip()
+    else:
+        parts = raw.split(maxsplit=1)
+        if len(parts) >= 2 and parts[0].isdigit():
+            num = int(parts[0])
+            unit = parts[1].strip()
+        elif len(parts) == 1 and parts[0].isdigit():
+            num = int(parts[0])
+            unit = "d"
+        else:
+            return 30 * 86400, "30 day(s)"
+
+    if not unit or unit in ("d", "day", "days"):
+        return num * 86400, f"{num} day(s)"
+    elif unit in ("s", "sec", "second", "seconds"):
+        return max(1, num), f"{num} second(s)"
+    elif unit in ("m", "min", "minute", "minutes"):
+        return num * 60, f"{num} minute(s)"
+    elif unit in ("h", "hr", "hour", "hours"):
+        return num * 3600, f"{num} hour(s)"
+    elif unit in ("mo", "month", "months"):
+        return num * 30 * 86400, f"{num} month(s)"
+    elif unit in ("y", "yr", "year", "years"):
+        return num * 365 * 86400, f"{num} year(s)"
+    else:
+        return num * 86400, f"{num} day(s)"
+
+def format_time_remaining(seconds: int) -> str:
+    if seconds <= 0:
+        return "Expired"
+    if seconds < 60:
+        return f"{seconds}s Left"
+    if seconds < 3600:
+        mins = seconds // 60
+        secs = seconds % 60
+        return f"{mins}m {secs}s Left" if secs else f"{mins}m Left"
+    if seconds < 86400:
+        hrs = seconds // 3600
+        mins = (seconds % 3600) // 60
+        return f"{hrs}h {mins}m Left" if mins else f"{hrs}h Left"
+    days = seconds // 86400
+    hrs = (seconds % 86400) // 3600
+    return f"{days}d {hrs}h Left" if hrs else f"{days} Day(s) Left"
+
 async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=None):
     data_str = str(data or "")
     if not target_bid and ":" in data_str:
@@ -956,9 +1009,14 @@ async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, can
 
         prompt_markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ CANCEL", callback_data=cb("master_premium_plan"))]])
         prompt_msg = await clean_show(
-            "➕ <b>ADD PREMIUM USER:</b>\n\n"
-            "<b>SEND USER ID AND DURATION IN DAYS (e.g. <code>123456789 30</code>):</b>\n\n"
-            "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>",
+            """➕ <b>ADD PREMIUM USER:</b>
+
+<b>SEND USER ID TO ADD PREMIUM:</b>
+(e.g. <code>8378171861</code> or <code>8378171861 1d</code>)
+
+<i>Format: Send User ID first, then send duration (1s, 1m, 1h, 1d, 1 month, 1 year), or send both together!</i>
+
+<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>""",
             prompt_markup
         )
 
@@ -985,47 +1043,139 @@ async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, can
                 clear_user_session(user_id)
                 return await handle_premium_callbacks(client, query, cb("master_premium_plan"), user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid)
 
-            parts = t.split()
+            parts = t.split(maxsplit=1)
+            target_uid = None
+            duration_str = None
+
             if len(parts) >= 1 and parts[0].isdigit():
                 target_uid = int(parts[0])
-                days = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 30
-                now = int(time.time())
-                exp_ts = now + (days * 86400)
+                if len(parts) >= 2 and parts[1].strip():
+                    duration_str = parts[1].strip()
 
-                users_list = list(r.get("premium_users", []))
-                users_list = [u for u in users_list if int(u.get("user_id", 0)) != target_uid]
-                users_list.append({"user_id": target_uid, "expires_at": exp_ts, "added_at": now})
-
-                save_fn(premium_users=users_list, premium_is_on=True, premium_enabled=True)
-                r["premium_users"] = users_list
-                r["premium_is_on"] = True
-                r["premium_enabled"] = True
+            if not target_uid:
+                try:
+                    await ans.reply("⚠️ <b>Please send a valid numeric User ID!</b>")
+                except Exception:
+                    pass
                 clear_user_session(user_id)
+                return await handle_premium_callbacks(client, query, cb("master_premium_plan"), user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid)
 
+            # If only User ID was sent, prompt for duration
+            if not duration_str:
+                try:
+                    await ans.delete()
+                except Exception:
+                    pass
                 if prompt_msg:
                     try:
                         await prompt_msg.delete()
                     except Exception:
                         pass
+
+                step2_token = start_user_session(user_id, f"prem_dur_{target_uid}_{target_bid or 'master'}")
+                step2_markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ CANCEL", callback_data=cb("master_premium_plan"))]])
+                step2_msg = await clean_show(
+                    f"""➕ <b>ADD PREMIUM USER:</b> <code>{target_uid}</code>
+
+<b>NOW SEND PREMIUM DURATION:</b>
+
+• <code>1s</code> : 1 Second
+• <code>1m</code> : 1 Minute
+• <code>1h</code> : 1 Hour
+• <code>1d</code> : 1 Day
+• <code>1 month</code> : 1 Month (or <code>1 mhont</code>)
+• <code>1 year</code> : 1 Year (or <code>1 yaar</code>)
+• <code>30</code> : 30 Days
+
+<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>""",
+                    step2_markup
+                )
+
                 try:
-                    await ans.delete()
+                    dur_ans = await client.listen(chat_id=user_id, timeout=300)
+                except Exception:
+                    clear_user_session(user_id)
+                    return
+                if not is_user_session_active(user_id, step2_token):
+                    return
+
+                dur_t = (dur_ans.text or dur_ans.caption or "").strip()
+                if dur_t.lower() == "/cancel":
+                    try:
+                        await dur_ans.delete()
+                    except Exception:
+                        pass
+                    if step2_msg:
+                        try:
+                            await step2_msg.delete()
+                        except Exception:
+                            pass
+                    clear_user_session(user_id)
+                    return await handle_premium_callbacks(client, query, cb("master_premium_plan"), user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid)
+
+                duration_str = dur_t
+                ans_to_delete = dur_ans
+                msg_to_delete = step2_msg
+            else:
+                ans_to_delete = ans
+                msg_to_delete = prompt_msg
+
+            duration_secs, duration_display = parse_duration_string(duration_str)
+            now = int(time.time())
+            exp_ts = now + duration_secs
+
+            users_list = list(r.get("premium_users", []))
+            users_list = [u for u in users_list if int(u.get("user_id", 0)) != target_uid]
+            users_list.append({
+                "user_id": target_uid,
+                "expires_at": exp_ts,
+                "added_at": now,
+                "duration": duration_display
+            })
+
+            save_fn(premium_users=users_list, premium_is_on=True, premium_enabled=True)
+            r["premium_users"] = users_list
+            r["premium_is_on"] = True
+            r["premium_enabled"] = True
+            clear_user_session(user_id)
+
+            if msg_to_delete:
+                try:
+                    await msg_to_delete.delete()
+                except Exception:
+                    pass
+            if ans_to_delete:
+                try:
+                    await ans_to_delete.delete()
                 except Exception:
                     pass
 
-                back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=cb("master_premium_plan"))]])
-                return await client.send_message(
-                    chat_id=user_id,
-                    text=f"✅ <b>User <code>{target_uid}</code> has been added to Premium for {days} days!</b>",
-                    reply_markup=back_markup,
-                    parse_mode=enums.ParseMode.HTML
+            # Notify target user via bot
+            notified = False
+            try:
+                bot_info = client.me or (await client.get_me())
+                bot_name = bot_info.first_name if bot_info else "Bot"
+                bot_user = f"@{bot_info.username}" if (bot_info and bot_info.username) else ""
+                notify_text = (
+                    f"🎉 <b>CONGRATULATIONS! PREMIUM ACTIVATED</b>\n\n"
+                    f"👑 <b>You have been granted Premium Access!</b>\n"
+                    f"⏳ <b>Duration:</b> <b>{duration_display}</b>\n"
+                    f"🤖 <b>Bot:</b> {bot_name} {bot_user}\n\n"
+                    f"⚡ <i>Now you can access all files without ads or verification!</i>"
                 )
-            else:
-                try:
-                    await ans.reply("⚠️ <b>Please send a valid format: <code>USER_ID DAYS</code></b>")
-                except Exception:
-                    pass
-                clear_user_session(user_id)
-                return await handle_premium_callbacks(client, query, cb("master_premium_plan"), user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid)
+                await client.send_message(chat_id=target_uid, text=notify_text, parse_mode=enums.ParseMode.HTML)
+                notified = True
+            except Exception:
+                notified = False
+
+            notify_status = "\n📩 <i>Notification sent to user via bot!</i>" if notified else "\n⚠️ <i>(Note: User hasn't started the bot in PM, so private notification could not be delivered)</i>"
+            back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=cb("master_premium_plan"))]])
+            return await client.send_message(
+                chat_id=user_id,
+                text=f"✅ <b>User <code>{target_uid}</code> has been added to Premium for {duration_display}!</b>{notify_status}",
+                reply_markup=back_markup,
+                parse_mode=enums.ParseMode.HTML
+            )
 
         asyncio.create_task(_add_u_worker())
         return
@@ -1124,8 +1274,8 @@ async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, can
             for idx, u in enumerate(active_users, 1):
                 uid = u.get("user_id")
                 exp = int(u.get("expires_at", 0))
-                days_left = max(0, (exp - now) // 86400)
-                lines.append(f"{idx}. <code>{uid}</code> — <b>{days_left} Days Left</b>")
+                time_left_str = format_time_remaining(exp - now)
+                lines.append(f"{idx}. <code>{uid}</code> — <b>{time_left_str}</b>")
             text = "\n".join(lines)
 
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=cb("master_premium_plan"))]])

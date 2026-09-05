@@ -103,16 +103,40 @@ def format_time_minutes(mins: int) -> str:
         return f"{h}h {m}m"
 
 
-def is_user_premium(user_id: int, source_doc: dict) -> bool:
-    if not source_doc or not source_doc.get("premium_is_on", False):
+def is_user_premium(user_id: int, source_doc: dict = None) -> bool:
+    try:
+        user_id = int(user_id)
+    except Exception:
         return False
-    user_id = int(user_id)
-    prem_users = source_doc.get("premium_users", [])
     now = int(time.time())
-    for pu in prem_users:
-        if int(pu.get("user_id", 0)) == user_id:
-            if int(pu.get("expires_at", 0)) > now:
-                return True
+
+    # 1. Check in source_doc (clone or current bot)
+    if isinstance(source_doc, dict):
+        prem_users = source_doc.get("premium_users", []) or []
+        for pu in prem_users:
+            try:
+                if int(pu.get("user_id", 0)) == user_id:
+                    if int(pu.get("expires_at", 0)) > now:
+                        return True
+            except Exception:
+                pass
+
+    # 2. Also check master_settings (platform-wide premium users added via Master bot)
+    try:
+        from plugins.clone import mongo_db
+        if mongo_db is not None:
+            m_rec = mongo_db.master_settings.find_one({"type": "master_config"}) or mongo_db.master_settings.find_one({}) or {}
+            m_prem = m_rec.get("premium_users", []) or []
+            for pu in m_prem:
+                try:
+                    if int(pu.get("user_id", 0)) == user_id:
+                        if int(pu.get("expires_at", 0)) > now:
+                            return True
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     return False
 
 

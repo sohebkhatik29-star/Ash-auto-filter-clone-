@@ -517,6 +517,9 @@ async def open_single(client, message):
         return
 
     payload = message.command[1]
+    if await send_fsub_prompt(client, message, payload):
+        raise StopPropagation
+
     access_res = await access_verification(client, message.from_user.id, payload)
     v_text = None
     access_markup = None
@@ -531,8 +534,6 @@ async def open_single(client, message):
         v_text, access_markup = "<b>🔐 Please verify first to access this file.</b>", access_res
     if access_markup:
         await send_verify_prompt(client, message, v_text, access_markup, v_photo)
-        raise StopPropagation
-    if await send_fsub_prompt(client, message, payload):
         raise StopPropagation
 
     from settings_modules.update_channel import send_wait_message

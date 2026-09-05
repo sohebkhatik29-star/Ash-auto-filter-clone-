@@ -571,6 +571,9 @@ async def batch_start(client, message):
             await message.reply("❌ This custom batch link is invalid or expired.")
             raise StopPropagation
 
+    if await cmd.send_fsub_prompt(client, message, payload):
+        raise StopPropagation
+
     access_res = await cmd.access_verification(client, message.from_user.id, payload)
     v_text = None
     access_markup = None
@@ -585,8 +588,6 @@ async def batch_start(client, message):
         v_text, access_markup = "<b>🔐 Please verify first to access this batch.</b>", access_res
     if access_markup:
         await cmd.send_verify_prompt(client, message, v_text, access_markup, v_photo)
-        raise StopPropagation
-    if await cmd.send_fsub_prompt(client, message, payload):
         raise StopPropagation
 
     messages = list(record.get("messages", []))
