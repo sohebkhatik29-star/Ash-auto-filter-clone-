@@ -92,6 +92,20 @@ async def global_cancel_command(client, message):
             if task and not task.done():
                 task.cancel()
             _LAST_MSG_TIME.pop(key, None)
+            old_chat = cb_sess.get("control_chat_id")
+            old_msg = cb_sess.get("control_message_id")
+            if old_chat and old_msg:
+                try:
+                    await client.delete_messages(int(old_chat), int(old_msg))
+                except Exception:
+                    pass
+            input_ids = cb_sess.get("input_msg_ids", [])
+            if input_ids:
+                try:
+                    for i in range(0, len(input_ids), 100):
+                        await client.delete_messages(int(user_id), input_ids[i:i + 100])
+                except Exception:
+                    pass
             from plugins.clone import mongo_db
             if mongo_db is not None:
                 mongo_db.custom_batch_sessions.delete_many({"bot_id": client.me.id, "user_id": int(user_id)})

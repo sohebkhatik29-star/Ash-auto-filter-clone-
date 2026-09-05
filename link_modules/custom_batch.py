@@ -176,6 +176,16 @@ async def custom_batch_cmd(client, message):
         except Exception:
             pass
 
+        old_sess = mongo_db.custom_batch_sessions.find_one({"bot_id": client.me.id, "user_id": int(message.from_user.id), "active": True})
+        if old_sess:
+            old_chat = old_sess.get("control_chat_id")
+            old_msg = old_sess.get("control_message_id")
+            if old_chat and old_msg:
+                try:
+                    await client.delete_messages(int(old_chat), int(old_msg))
+                except Exception:
+                    pass
+
         mongo_db.custom_batch_sessions.delete_many({"bot_id": client.me.id, "user_id": int(message.from_user.id)})
         session_id = secrets.token_urlsafe(10)
         doc = {
@@ -183,6 +193,7 @@ async def custom_batch_cmd(client, message):
             "bot_id": client.me.id,
             "user_id": int(message.from_user.id),
             "messages": [],
+            "input_msg_ids": [],
             "status": "ready",
             "active": True,
             "session_thumbnail": None,
@@ -201,61 +212,73 @@ async def capture_message(client, message):
     if message.chat.type.value != "private":
         return
 
-    # Only handle messages if user actually has an active custom_batch session
-    session = _session(client, message.from_user.id)
-    if not session or not session.get("active"):
-        return
-
-    if message.text and message.text.startswith("/"):
-        cmd_name = message.text.split()[0].lower().split("@")[0]
-        if cmd_name in ("/cancel", "cancel"):
-            key = (int(client.me.id), int(message.from_user.id))
-            task = _INDEX_TASKS.pop(key, None)
-            if task and not task.done():
-                task.cancel()
-            _LAST_MSG_TIME.pop(key, None)
-            mongo_db.custom_batch_sessions.delete_many({"bot_id": client.me.id, "user_id": int(message.from_user.id)})
-            await message.reply("❌ <b>Custom batch process cancelled.</b>")
-            raise StopPropagation
-        return
-
     key = (int(client.me.id), int(message.from_user.id))
-    _LAST_MSG_TIME[key] = time.time()
 
     async with _lock(client, message.from_user.id):
+        session = _session(client, message.from_user.id)
+        if not session or not session.get("active"):
+            return
+
+        if message.text and message.text.startswith("/"):
+            cmd_name = message.text.split()[0].lower().split("@")[0]
+            if cmd_name in ("/cancel", "cancel"):
+                task = _INDEX_TASKS.pop(key, None)
+                if task and not task.done():
+                    task.cancel()
+                _LAST_MSG_TIME.pop(key, None)
+
+                old_chat = session.get("control_chat_id")
+                old_msg = session.get("control_message_id")
+                if old_chat and old_msg:
+                    try:
+                        await client.delete_messages(int(old_chat), int(old_msg))
+                    except Exception:
+                        pass
+
+                input_ids = session.get("input_msg_ids", [])
+                if input_ids:
+                    try:
+                        for i in range(0, len(input_ids), 100):
+                            await client.delete_messages(int(message.from_user.id), input_ids[i:i + 100])
+                    except Exception:
+                        pass
+
+                mongo_db.custom_batch_sessions.delete_many({"bot_id": client.me.id, "user_id": int(message.from_user.id)})
+                await message.reply("❌ <b>Custom batch process cancelled. All stored messages cleared.</b>")
+                raise StopPropagation
+            return
+
+        _LAST_MSG_TIME[key] = time.time()
 
         messages = list(session.get("messages", []))
+        input_msg_ids = list(session.get("input_msg_ids", []))
+
         if len(messages) >= MAX_FILES:
             raise StopPropagation
 
         item = {"chat_id": int(message.chat.id), "message_id": int(message.id)}
-        try:
-            from config import LOG_CHANNEL
-            rec_db = cmd.bot_record(client)
-            db_ch = rec_db.get("database_channel") or rec_db.get("db_channel") or LOG_CHANNEL
-            if db_ch:
-                copied = await message.copy(chat_id=int(db_ch))
-                item = {"chat_id": int(db_ch), "message_id": int(copied.id)}
-        except Exception:
-            pass
         if any(x.get("chat_id") == item["chat_id"] and x.get("message_id") == item["message_id"] for x in messages):
             raise StopPropagation
 
         messages.append(item)
+        if int(message.id) not in input_msg_ids:
+            input_msg_ids.append(int(message.id))
+
         session["messages"] = messages
+        session["input_msg_ids"] = input_msg_ids
 
         is_indexing = (session.get("status") == "indexing")
         if not is_indexing:
             mongo_db.custom_batch_sessions.update_one(
                 {"_id": session["_id"], "active": True},
-                {"$set": {"messages": messages, "status": "indexing", "updated_at": int(time.time())}}
+                {"$set": {"messages": messages, "input_msg_ids": input_msg_ids, "status": "indexing", "updated_at": int(time.time())}}
             )
             session["status"] = "indexing"
             await _replace_panel(client, session, _text_indexing(), _controls_indexing(session["session_id"]))
         else:
             mongo_db.custom_batch_sessions.update_one(
                 {"_id": session["_id"], "active": True},
-                {"$set": {"messages": messages, "updated_at": int(time.time())}}
+                {"$set": {"messages": messages, "input_msg_ids": input_msg_ids, "updated_at": int(time.time())}}
             )
 
         curr_task = _INDEX_TASKS.get(key)
@@ -268,13 +291,34 @@ async def capture_message(client, message):
 
 
 async def _generate(client, query, session):
-    messages = list(session.get("messages", []))[:MAX_FILES]
-    if not messages:
+    raw_messages = list(session.get("messages", []))[:MAX_FILES]
+    if not raw_messages:
         return await query.answer("Forward or send at least one message first.", show_alert=True)
+
+    # 1. Copy messages to DB / Log Channel only now upon link generation
+    from config import LOG_CHANNEL
+    rec = cmd.bot_record(client)
+    db_ch = rec.get("database_channel") or rec.get("db_channel") or LOG_CHANNEL
+
+    saved_messages = []
+    for item in raw_messages:
+        c_id = int(item["chat_id"])
+        m_id = int(item["message_id"])
+        if db_ch:
+            try:
+                copied = await client.copy_message(
+                    chat_id=int(db_ch),
+                    from_chat_id=c_id,
+                    message_id=m_id
+                )
+                saved_messages.append({"chat_id": int(db_ch), "message_id": int(copied.id)})
+            except Exception:
+                saved_messages.append({"chat_id": c_id, "message_id": m_id})
+        else:
+            saved_messages.append({"chat_id": c_id, "message_id": m_id})
 
     links = mongo_db.custom_batch_links
     token = secrets.token_urlsafe(18)
-    rec = cmd.bot_record(client)
     protected = bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
     session_thumb = session.get("session_thumbnail")
     session_thumb_path = session.get("session_thumbnail_path")
@@ -283,7 +327,7 @@ async def _generate(client, query, session):
         "alt_tokens": [token, f"batch_{token}"],
         "bot_id": client.me.id,
         "owner_id": int(session["user_id"]),
-        "messages": messages,
+        "messages": saved_messages,
         "protected": protected,
         "custom_thumbnail": session_thumb,
         "custom_thumb_path": session_thumb_path,
@@ -299,6 +343,7 @@ async def _generate(client, query, session):
     from settings_modules.link_shortener import get_shortened_link_if_enabled
     shown = await get_shortened_link_if_enabled(client, int(session["user_id"]), url)
 
+    # 2. Delete the prompt / control panel
     try:
         await query.message.delete()
     except Exception:
@@ -312,11 +357,20 @@ async def _generate(client, query, session):
         except Exception:
             pass
 
+    # 3. Delete all forwarded user input messages from the private chat
+    input_ids = session.get("input_msg_ids", [])
+    if input_ids:
+        try:
+            for i in range(0, len(input_ids), 100):
+                await client.delete_messages(int(session["user_id"]), input_ids[i:i + 100])
+        except Exception:
+            pass
+
     mongo_db.custom_batch_sessions.delete_one({"_id": session["_id"]})
 
     text = (
         "✅ <b>CUSTOM BATCH LINK GENERATED</b>\n\n"
-        f"📦 <b>Messages:</b> {len(messages)}\n\n"
+        f"📦 <b>Messages:</b> {len(saved_messages)}\n\n"
         f"🔗 <b>Link:</b>\n{shown}"
     )
     markup = InlineKeyboardMarkup([
@@ -331,7 +385,7 @@ async def _generate(client, query, session):
         try:
             await client.send_message(
                 chat_id=int(log_ch),
-                text=f"📦 <b>NEW CUSTOM BATCH LINK GENERATED:</b>\n\n👤 <b>By:</b> <code>{session['user_id']}</code>\n📊 <b>Total Messages:</b> {len(messages)}\n🔗 {shown}",
+                text=f"📦 <b>NEW CUSTOM BATCH LINK GENERATED:</b>\n\n👤 <b>By:</b> <code>{session['user_id']}</code>\n📊 <b>Total Messages:</b> {len(saved_messages)}\n🔗 {shown}",
                 disable_web_page_preview=True
             )
         except Exception:
@@ -471,11 +525,19 @@ async def callback(client, query):
                     await client.delete_messages(int(old_chat), int(old_msg))
                 except Exception:
                     pass
+
+            input_ids = session.get("input_msg_ids", [])
+            if input_ids:
+                try:
+                    for i in range(0, len(input_ids), 100):
+                        await client.delete_messages(int(query.from_user.id), input_ids[i:i + 100])
+                except Exception:
+                    pass
+
             mongo_db.custom_batch_sessions.delete_one({"_id": session["_id"]})
             await client.send_message(int(query.from_user.id), "❌ <b>Batch session cancelled. All temporary stored files cleared.</b>")
             await query.answer("Cancelled.")
     raise StopPropagation
-
 
 async def batch_start(client, message):
     if len(message.command) != 2:
