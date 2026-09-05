@@ -62,7 +62,20 @@ def _extract_chat_and_msg_id(message):
     return None, None
 
 
+async def _delete_previous_prompts(client, chat_id, session):
+    if not session:
+        return
+    prompt_id = session.get("prompt_msg_id")
+    if prompt_id:
+        try:
+            await client.delete_messages(chat_id, prompt_id)
+        except Exception:
+            pass
+
+
 async def start_batch(client, message):
+    if not message.from_user or not message.chat or message.chat.type.value != "private":
+        return
     from settings_modules.active_deactive import check_clone_status_or_block
     if await check_clone_status_or_block(client, message):
         return
@@ -73,21 +86,24 @@ async def start_batch(client, message):
         return await message.reply("❌ Database is not configured.")
 
     key = (int(client.me.id), int(message.from_user.id))
+    old_session = _CHANNEL_BATCH_SESSIONS.get(key)
+    if old_session:
+        await _delete_previous_prompts(client, message.chat.id, old_session)
+
+    abort_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cbatch_abort")]])
+    prompt_msg = await message.reply(
+        "Forward The Batch First Message From your Batch Channel (With Forward Tag)..\n"
+        "or Give Me Batch First message link from your batch channel",
+        reply_markup=abort_markup
+    )
     _CHANNEL_BATCH_SESSIONS[key] = {
         "step": "first",
         "first_chat_id": None,
         "first_msg_id": None,
         "last_msg_id": None,
         "created_at": time.time(),
+        "prompt_msg_id": getattr(prompt_msg, "id", None),
     }
-
-    abort_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cbatch_abort")]])
-    abort_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cbatch_abort")]])
-    await message.reply(
-        "Forward The Batch First Message From your Batch Channel (With Forward Tag)..\n"
-        "or Give Me Batch First message link from your batch channel",
-        reply_markup=abort_markup
-    )
     raise StopPropagation
 
 
@@ -102,6 +118,7 @@ async def capture_batch_step(client, message):
     # Auto expire after 30 mins
     if time.time() - session.get("created_at", 0) > 1800:
         _CHANNEL_BATCH_SESSIONS.pop(key, None)
+        await _delete_previous_prompts(client, message.chat.id, session)
         return
 
     # Check for cancel
@@ -109,12 +126,14 @@ async def capture_batch_step(client, message):
     first_tok = text_val.split()[0] if text_val else ""
     if first_tok in ("/cancel", "cancel") or first_tok.startswith("/cancel@"):
         _CHANNEL_BATCH_SESSIONS.pop(key, None)
+        await _delete_previous_prompts(client, message.chat.id, session)
         await message.reply("❌ <b>Batch creation cancelled.</b>")
         raise StopPropagation
 
     if message.text and message.text.startswith("/") and not message.text.startswith("http"):
         # Another command sent
         _CHANNEL_BATCH_SESSIONS.pop(key, None)
+        await _delete_previous_prompts(client, message.chat.id, session)
         return
 
     abort_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cbatch_abort")]])
@@ -124,12 +143,14 @@ async def capture_batch_step(client, message):
     if step == "first":
         chat_id, msg_id = _extract_chat_and_msg_id(message)
         if not chat_id or not msg_id:
-            await message.reply(
+            await _delete_previous_prompts(client, message.chat.id, session)
+            prompt_msg = await message.reply(
                 "❌ <b>Invalid message or link!</b>\n\n"
                 "Please forward the <b>first message</b> with forward tag, or send its direct link.\n"
                 "/cancel - to abort.",
                 reply_markup=abort_markup
             )
+            session["prompt_msg_id"] = getattr(prompt_msg, "id", None)
             raise StopPropagation
 
         # Check bot admin permissions in the channel
@@ -140,29 +161,35 @@ async def capture_batch_step(client, message):
             if str(bot_member.status).lower().endswith(("left", "banned", "kicked")):
                 raise PermissionError("Bot is not an admin in channel")
         except Exception as e:
-            await message.reply(f"Error- Telegram says: [{e}]")
+            await _delete_previous_prompts(client, message.chat.id, session)
+            prompt_msg = await message.reply(f"Error- Telegram says: [{e}]")
+            session["prompt_msg_id"] = getattr(prompt_msg, "id", None)
             raise StopPropagation
 
+        await _delete_previous_prompts(client, message.chat.id, session)
         session["first_chat_id"] = chat_id
         session["first_msg_id"] = msg_id
         session["step"] = "last"
 
-        await message.reply(
+        prompt_msg = await message.reply(
             "Forward The Batch Last Message From your Batch Channel (With Forward Tag)..\n"
             "or Give Me Batch last message link from your batch channel",
             reply_markup=abort_markup
         )
+        session["prompt_msg_id"] = getattr(prompt_msg, "id", None)
         raise StopPropagation
 
     elif step == "last":
         chat_id, msg_id = _extract_chat_and_msg_id(message)
         if not chat_id or not msg_id:
-            await message.reply(
+            await _delete_previous_prompts(client, message.chat.id, session)
+            prompt_msg = await message.reply(
                 "❌ <b>Invalid message or link!</b>\n\n"
                 "Please forward the <b>last message</b> with forward tag, or send its direct link.\n"
                 "/cancel - to abort.",
                 reply_markup=abort_markup
             )
+            session["prompt_msg_id"] = getattr(prompt_msg, "id", None)
             raise StopPropagation
 
         first_chat_id = session.get("first_chat_id")
@@ -175,18 +202,23 @@ async def capture_batch_step(client, message):
             if str(bot_member.status).lower().endswith(("left", "banned", "kicked")):
                 raise PermissionError("Bot is not an admin in channel")
         except Exception as e:
-            await message.reply(f"Error- Telegram says: [{e}]")
+            await _delete_previous_prompts(client, message.chat.id, session)
+            prompt_msg = await message.reply(f"Error- Telegram says: [{e}]")
+            session["prompt_msg_id"] = getattr(prompt_msg, "id", None)
             raise StopPropagation
 
         if chat_id != first_chat_id:
-            await message.reply(
+            await _delete_previous_prompts(client, message.chat.id, session)
+            prompt_msg = await message.reply(
                 "❌ <b>Channel mismatch!</b>\n\n"
                 "Both first and last messages must be from the <b>same channel</b>.\n"
                 "Please send the last message from the same channel, or use /cancel.",
                 reply_markup=abort_markup
             )
+            session["prompt_msg_id"] = getattr(prompt_msg, "id", None)
             raise StopPropagation
 
+        await _delete_previous_prompts(client, message.chat.id, session)
         _CHANNEL_BATCH_SESSIONS.pop(key, None)
 
         # Normalize start and end
