@@ -10,6 +10,31 @@ from clone_plugins.sessions import start_user_session, is_user_session_active, c
 from plugins.clone import mongo_db
 from config import BOT_USERNAME
 
+# ----------------- TRACKED PROMPTS & CLEANUP ----------------- #
+_FSUB_TRACKED_MSGS = {}
+
+def track_fsub_msg(user_id, msg_id):
+    if not user_id or not msg_id:
+        return
+    uid = int(user_id)
+    if uid not in _FSUB_TRACKED_MSGS:
+        _FSUB_TRACKED_MSGS[uid] = set()
+    _FSUB_TRACKED_MSGS[uid].add(int(msg_id))
+
+async def cleanup_fsub_msgs(client, user_id, except_ids=None):
+    if not user_id:
+        return
+    uid = int(user_id)
+    msg_ids = list(_FSUB_TRACKED_MSGS.get(uid, set()))
+    _FSUB_TRACKED_MSGS[uid] = set()
+    exc = {int(x) for x in except_ids} if except_ids else set()
+    for mid in msg_ids:
+        if mid not in exc:
+            try:
+                await client.delete_messages(chat_id=uid, message_ids=mid)
+            except Exception:
+                pass
+
 # ----------------- MAIN FSUB UI TEXT & MENUS ----------------- #
 
 FSUB_MAIN_DESC = (
@@ -54,6 +79,7 @@ async def run_fsub_button_builder(client, user_id, save_fn, cancel_listeners_fn,
             await prev_msg.delete()
         except Exception:
             pass
+    await cleanup_fsub_msgs(client, user_id)
     cancel_listeners_fn(client, user_id, user_id)
     sess_token = start_user_session(user_id, "fsub_btn_builder")
     rows = []
@@ -71,17 +97,23 @@ async def run_fsub_button_builder(client, user_id, save_fn, cancel_listeners_fn,
             "<code>/cancel</code> - <b>CANCEL THIS PROCESS</b>"
         )
         prompt_cnt = await client.send_message(chat_id=user_id, text=msg_text, reply_markup=count_kb)
+        track_fsub_msg(user_id, prompt_cnt.id)
 
         btn_count = 0
         while is_user_session_active(user_id, sess_token):
             try:
                 ans = await client.listen(chat_id=user_id, timeout=120)
             except Exception:
-                await client.send_message(
+                try:
+                    await prompt_cnt.delete()
+                except Exception:
+                    pass
+                m = await client.send_message(
                     chat_id=user_id,
                     text="❌ <b>Timeout. Process cancelled.</b>",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_fake_btn_menu")]])
                 )
+                track_fsub_msg(user_id, m.id)
                 try:
                     temp = await client.send_message(chat_id=user_id, text=".", reply_markup=ReplyKeyboardRemove())
                     await temp.delete()
@@ -89,21 +121,24 @@ async def run_fsub_button_builder(client, user_id, save_fn, cancel_listeners_fn,
                     pass
                 clear_user_session(user_id)
                 return
+
+            try:
+                await prompt_cnt.delete()
+            except Exception:
+                pass
+            try:
+                await ans.delete()
+            except Exception:
+                pass
+
             txt = (ans.text or "").strip()
             if txt == "/cancel":
-                try:
-                    await prompt_cnt.delete()
-                except Exception:
-                    pass
-                try:
-                    await ans.delete()
-                except Exception:
-                    pass
-                await client.send_message(
+                m = await client.send_message(
                     chat_id=user_id,
                     text="❌ <b>Process Cancelled Successfully!</b>",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_fake_btn_menu")]])
                 )
+                track_fsub_msg(user_id, m.id)
                 try:
                     temp = await client.send_message(chat_id=user_id, text=".", reply_markup=ReplyKeyboardRemove())
                     await temp.delete()
@@ -119,7 +154,8 @@ async def run_fsub_button_builder(client, user_id, save_fn, cancel_listeners_fn,
                 break
             else:
                 invalid_msg = "❌ <b>INVALID CHOICE</b>\n\n<i>Please select 1 or 2 using the keyboard.</i>\n\n<code>/cancel</code> - <b>CANCEL THIS PROCESS</b>"
-                await client.send_message(chat_id=user_id, text=invalid_msg, reply_markup=count_kb)
+                prompt_cnt = await client.send_message(chat_id=user_id, text=invalid_msg, reply_markup=count_kb)
+                track_fsub_msg(user_id, prompt_cnt.id)
 
         if not is_user_session_active(user_id, sess_token):
             return
@@ -134,40 +170,48 @@ async def run_fsub_button_builder(client, user_id, save_fn, cancel_listeners_fn,
                 text=f"🔤 <b>BUTTON {btn_num} ❞</b>\n\n<i>Send the button text.</i>\n\n<i>Maximum length: 64 characters</i>\n\n<code>/cancel</code> - <b>CANCEL THIS PROCESS</b>",
                 reply_markup=ReplyKeyboardRemove()
             )
+            track_fsub_msg(user_id, p_txt_msg.id)
+
             b_text = ""
             while is_user_session_active(user_id, sess_token):
                 try:
                     ans = await client.listen(chat_id=user_id, timeout=120)
                 except Exception:
-                    await client.send_message(
-                        chat_id=user_id,
-                        text="❌ <b>Timeout. Process cancelled.</b>",
-                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_fake_btn_menu")]])
-                    )
-                    clear_user_session(user_id)
-                    return
-                t = (ans.text or "").strip()
-                if t == "/cancel":
                     try:
                         await p_txt_msg.delete()
                     except Exception:
                         pass
-                    try:
-                        await ans.delete()
-                    except Exception:
-                        pass
-                    await client.send_message(
+                    m = await client.send_message(
+                        chat_id=user_id,
+                        text="❌ <b>Timeout. Process cancelled.</b>",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_fake_btn_menu")]])
+                    )
+                    track_fsub_msg(user_id, m.id)
+                    clear_user_session(user_id)
+                    return
+
+                try:
+                    await p_txt_msg.delete()
+                except Exception:
+                    pass
+                try:
+                    await ans.delete()
+                except Exception:
+                    pass
+
+                t = (ans.text or "").strip()
+                if t == "/cancel":
+                    m = await client.send_message(
                         chat_id=user_id,
                         text="❌ <b>Process Cancelled Successfully!</b>",
                         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_fake_btn_menu")]])
                     )
+                    track_fsub_msg(user_id, m.id)
                     clear_user_session(user_id)
                     return
-                if not t:
-                    await client.send_message(chat_id=user_id, text="⚠️ <i>Please send valid text.</i>")
-                    continue
-                if len(t) > 64:
-                    await client.send_message(chat_id=user_id, text="⚠️ <i>Button text exceeds 64 characters. Send again:</i>")
+                if not t or len(t) > 64:
+                    p_txt_msg = await client.send_message(chat_id=user_id, text="⚠️ <i>Text must be 1 to 64 characters. Send again:</i>")
+                    track_fsub_msg(user_id, p_txt_msg.id)
                     continue
                 b_text = t
                 break
@@ -176,46 +220,52 @@ async def run_fsub_button_builder(client, user_id, save_fn, cancel_listeners_fn,
                 return
 
             # Step B: Button URL
-            url_prompt = (
-                f"🔗 <b>BUTTON {btn_num} ❞</b>\n\n"
-                "<i>Send the button URL.</i>\n\n"
-                "<i>Examples:</i>\n"
-                "<code>https://t.me/vj_botz</code>\n"
-                "<code>https://google.com</code>\n\n"
-                "<code>/cancel</code> - <b>CANCEL THIS PROCESS</b>"
+            p_url_msg = await client.send_message(
+                chat_id=user_id,
+                text=f"🔗 <b>BUTTON {btn_num} URL ❞</b>\n\n<i>Send the link for this button.</i>\n\n<i>Must start with http://, https:// or tg://</i>\n\n<code>/cancel</code> - <b>CANCEL THIS PROCESS</b>"
             )
-            p_url_msg = await client.send_message(chat_id=user_id, text=url_prompt)
+            track_fsub_msg(user_id, p_url_msg.id)
+
             b_url = ""
             while is_user_session_active(user_id, sess_token):
                 try:
                     ans = await client.listen(chat_id=user_id, timeout=120)
                 except Exception:
-                    await client.send_message(
-                        chat_id=user_id,
-                        text="❌ <b>Timeout. Process cancelled.</b>",
-                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_fake_btn_menu")]])
-                    )
-                    clear_user_session(user_id)
-                    return
-                u = (ans.text or "").strip()
-                if u == "/cancel":
                     try:
                         await p_url_msg.delete()
                     except Exception:
                         pass
-                    try:
-                        await ans.delete()
-                    except Exception:
-                        pass
-                    await client.send_message(
+                    m = await client.send_message(
+                        chat_id=user_id,
+                        text="❌ <b>Timeout. Process cancelled.</b>",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_fake_btn_menu")]])
+                    )
+                    track_fsub_msg(user_id, m.id)
+                    clear_user_session(user_id)
+                    return
+
+                try:
+                    await p_url_msg.delete()
+                except Exception:
+                    pass
+                try:
+                    await ans.delete()
+                except Exception:
+                    pass
+
+                u = (ans.text or "").strip()
+                if u == "/cancel":
+                    m = await client.send_message(
                         chat_id=user_id,
                         text="❌ <b>Process Cancelled Successfully!</b>",
                         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_fake_btn_menu")]])
                     )
+                    track_fsub_msg(user_id, m.id)
                     clear_user_session(user_id)
                     return
                 if not (u.startswith("http://") or u.startswith("https://") or u.startswith("tg://")):
-                    await client.send_message(chat_id=user_id, text="⚠️ <i>Invalid URL! Must start with http://, https:// or tg://. Send again:</i>")
+                    p_url_msg = await client.send_message(chat_id=user_id, text="⚠️ <i>Invalid URL! Must start with http://, https:// or tg://. Send again:</i>")
+                    track_fsub_msg(user_id, p_url_msg.id)
                     continue
                 b_url = u
                 break
@@ -238,16 +288,23 @@ async def run_fsub_button_builder(client, user_id, save_fn, cancel_listeners_fn,
             text=f"🪧 <b>ROW {row_idx} ❞</b>\n\n<i>Select a button style.</i>\n\n<i>Choose one of the options below.</i>\n\n<code>/cancel</code> - <b>CANCEL THIS PROCESS</b>",
             reply_markup=style_kb
         )
+        track_fsub_msg(user_id, p_style_msg.id)
+
         b_style = "primary"
         while is_user_session_active(user_id, sess_token):
             try:
                 ans = await client.listen(chat_id=user_id, timeout=120)
             except Exception:
-                await client.send_message(
+                try:
+                    await p_style_msg.delete()
+                except Exception:
+                    pass
+                m = await client.send_message(
                     chat_id=user_id,
                     text="❌ <b>Timeout. Process cancelled.</b>",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_fake_btn_menu")]])
                 )
+                track_fsub_msg(user_id, m.id)
                 try:
                     temp = await client.send_message(chat_id=user_id, text=".", reply_markup=ReplyKeyboardRemove())
                     await temp.delete()
@@ -255,21 +312,24 @@ async def run_fsub_button_builder(client, user_id, save_fn, cancel_listeners_fn,
                     pass
                 clear_user_session(user_id)
                 return
+
+            try:
+                await p_style_msg.delete()
+            except Exception:
+                pass
+            try:
+                await ans.delete()
+            except Exception:
+                pass
+
             st = (ans.text or "").strip().lower()
             if st == "/cancel":
-                try:
-                    await p_style_msg.delete()
-                except Exception:
-                    pass
-                try:
-                    await ans.delete()
-                except Exception:
-                    pass
-                await client.send_message(
+                m = await client.send_message(
                     chat_id=user_id,
                     text="❌ <b>Process Cancelled Successfully!</b>",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_fake_btn_menu")]])
                 )
+                track_fsub_msg(user_id, m.id)
                 try:
                     temp = await client.send_message(chat_id=user_id, text=".", reply_markup=ReplyKeyboardRemove())
                     await temp.delete()
@@ -302,16 +362,23 @@ async def run_fsub_button_builder(client, user_id, save_fn, cancel_listeners_fn,
             text="➕ <b>ADD NEW ROW ❞</b>\n\n<i>Do you want to add another row?</i>\n\n<code>/cancel</code> - <b>CANCEL THIS PROCESS</b>",
             reply_markup=add_more_kb
         )
+        track_fsub_msg(user_id, p_more_msg.id)
+
         add_more = False
         while is_user_session_active(user_id, sess_token):
             try:
                 ans = await client.listen(chat_id=user_id, timeout=120)
             except Exception:
-                await client.send_message(
+                try:
+                    await p_more_msg.delete()
+                except Exception:
+                    pass
+                m = await client.send_message(
                     chat_id=user_id,
                     text="❌ <b>Timeout. Process cancelled.</b>",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_fake_btn_menu")]])
                 )
+                track_fsub_msg(user_id, m.id)
                 try:
                     temp = await client.send_message(chat_id=user_id, text=".", reply_markup=ReplyKeyboardRemove())
                     await temp.delete()
@@ -319,21 +386,24 @@ async def run_fsub_button_builder(client, user_id, save_fn, cancel_listeners_fn,
                     pass
                 clear_user_session(user_id)
                 return
+
+            try:
+                await p_more_msg.delete()
+            except Exception:
+                pass
+            try:
+                await ans.delete()
+            except Exception:
+                pass
+
             ans_txt = (ans.text or "").strip()
             if ans_txt == "/cancel":
-                try:
-                    await p_more_msg.delete()
-                except Exception:
-                    pass
-                try:
-                    await ans.delete()
-                except Exception:
-                    pass
-                await client.send_message(
+                m = await client.send_message(
                     chat_id=user_id,
                     text="❌ <b>Process Cancelled Successfully!</b>",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_fake_btn_menu")]])
                 )
+                track_fsub_msg(user_id, m.id)
                 try:
                     temp = await client.send_message(chat_id=user_id, text=".", reply_markup=ReplyKeyboardRemove())
                     await temp.delete()
@@ -349,7 +419,8 @@ async def run_fsub_button_builder(client, user_id, save_fn, cancel_listeners_fn,
                 add_more = False
                 break
             else:
-                await client.send_message(chat_id=user_id, text="⚠️ <i>Please choose Yes or No.</i>", reply_markup=add_more_kb)
+                p_more_msg = await client.send_message(chat_id=user_id, text="⚠️ <i>Please choose Yes or No.</i>", reply_markup=add_more_kb)
+                track_fsub_msg(user_id, p_more_msg.id)
 
         if not is_user_session_active(user_id, sess_token):
             return
@@ -364,11 +435,12 @@ async def run_fsub_button_builder(client, user_id, save_fn, cancel_listeners_fn,
         await temp.delete()
     except Exception:
         pass
-    await client.send_message(
+    m = await client.send_message(
         chat_id=user_id,
         text="<b>SUCCESSFULLY BUTTON ADDED</b>",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_fake_btn_menu")]]),
     )
+    track_fsub_msg(user_id, m.id)
 
 
 # ----------------- MAIN CALLBACK HANDLER ----------------- #
@@ -390,6 +462,9 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
 
     # 1. Main Force Subscribe Settings Menu
     if data in ("master_fsub_menu", "cset_fsub_menu", "cset_fsub_main") or data.startswith("cset_fsub:"):
+        current_mid = query.message.id if query.message else 0
+        await cleanup_fsub_msgs(client, user_id, except_ids=[current_mid])
+
         fsub_on = bool(r.get("fsub_enabled", False))
         raw_channels = r.get("fsub_channels", [])
         if isinstance(raw_channels, list):
@@ -453,6 +528,9 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
 
     # 3. View / Manage Channel
     if data.startswith("cset_fsub_ch:"):
+        current_mid = query.message.id if query.message else 0
+        await cleanup_fsub_msgs(client, user_id, except_ids=[current_mid])
+
         idx = int(data.split(":", 1)[1])
         channels = r.get("fsub_channels", [])
         if idx >= len(channels):
@@ -503,6 +581,8 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
         sess_token = start_user_session(user_id, "fsub_add_ch")
         await query.answer()
 
+        await cleanup_fsub_msgs(client, user_id)
+
         try:
             await query.message.delete()
         except Exception:
@@ -514,6 +594,7 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
             "<code>/cancel</code> - <b>CANCEL THIS PROCESS</b>"
         )
         prompt_msg = await client.send_message(chat_id=user_id, text=prompt_msg_text)
+        track_fsub_msg(user_id, prompt_msg.id)
 
         async def _add_fsub_worker():
             try:
@@ -523,30 +604,34 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                     await prompt_msg.delete()
                 except Exception:
                     pass
-                await client.send_message(
+                m = await client.send_message(
                     chat_id=user_id,
                     text="❌ <b>Timeout. Process cancelled.</b>",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_menu")]])
                 )
+                track_fsub_msg(user_id, m.id)
                 clear_user_session(user_id)
                 return
             if not is_user_session_active(user_id, sess_token):
                 return
+
+            try:
+                await prompt_msg.delete()
+            except Exception:
+                pass
+            try:
+                await ans.delete()
+            except Exception:
+                pass
+
             txt = (ans.text or "").strip()
             if txt == "/cancel":
-                try:
-                    await prompt_msg.delete()
-                except Exception:
-                    pass
-                try:
-                    await ans.delete()
-                except Exception:
-                    pass
-                await client.send_message(
+                m = await client.send_message(
                     chat_id=user_id,
                     text="❌ <b>Process Cancelled Successfully!</b>",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_menu")]])
                 )
+                track_fsub_msg(user_id, m.id)
                 clear_user_session(user_id)
                 return
 
@@ -568,11 +653,12 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                     pass
 
             if not chat_id:
-                await client.send_message(
+                m = await client.send_message(
                     user_id,
                     "❌ <b>Please forward a message directly from the channel!</b>",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_menu")]])
                 )
+                track_fsub_msg(user_id, m.id)
                 clear_user_session(user_id)
                 return
 
@@ -583,9 +669,9 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                 act = mongo_db.active_clone_edit.find_one({"user_id": int(user_id)})
                 if act:
                     target_bid = act.get("bot_id")
-
-            target_client = get_clone_client(target_bid) if target_bid else None
             
+            target_client = get_clone_client(target_bid) if target_bid else None
+
             is_admin = False
             if target_client:
                 try:
@@ -596,14 +682,12 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                 except Exception:
                     is_admin = False
             elif target_bid:
-                # Target is a clone bot, if not loaded in memory, try with direct client get_chat_member
                 try:
                     target_me = client.me or (await client.get_me())
                     member = await client.get_chat_member(chat_id, target_me.id)
                     if member.status in (enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER):
                         is_admin = True
                 except Exception:
-                    # Allow adding channel for clone bot if clone bot is added by user
                     is_admin = True
             else:
                 try:
@@ -626,11 +710,13 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                         "<i>Please make me admin in that channel with full rights and try again.</i>"
                     )
                 clear_user_session(user_id)
-                return await client.send_message(
+                m = await client.send_message(
                     user_id,
                     err_msg,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_menu")]])
                 )
+                track_fsub_msg(user_id, m.id)
+                return
 
             # Prompt mode: Normal or Join Request
             mode_kb = ReplyKeyboardMarkup(
@@ -642,6 +728,7 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                 text="<b>SELECT YOUR MODE WHICH YOU WANT FOR THIS BELOW 👇</b>\n\n<code>/cancel</code> - <b>CANCEL THIS PROCESS</b>",
                 reply_markup=mode_kb
             )
+            track_fsub_msg(user_id, mode_prompt_msg.id)
 
             chosen_mode = "normal"
             while is_user_session_active(user_id, sess_token):
@@ -652,11 +739,12 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                         await mode_prompt_msg.delete()
                     except Exception:
                         pass
-                    await client.send_message(
+                    m = await client.send_message(
                         chat_id=user_id,
                         text="❌ <b>Timeout. Process cancelled.</b>",
                         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_menu")]])
                     )
+                    track_fsub_msg(user_id, m.id)
                     try:
                         temp = await client.send_message(chat_id=user_id, text=".", reply_markup=ReplyKeyboardRemove())
                         await temp.delete()
@@ -664,21 +752,24 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                         pass
                     clear_user_session(user_id)
                     return
+
+                try:
+                    await mode_prompt_msg.delete()
+                except Exception:
+                    pass
+                try:
+                    await m_ans.delete()
+                except Exception:
+                    pass
+
                 m_txt = (m_ans.text or "").strip().lower()
                 if m_txt == "/cancel":
-                    try:
-                        await mode_prompt_msg.delete()
-                    except Exception:
-                        pass
-                    try:
-                        await m_ans.delete()
-                    except Exception:
-                        pass
-                    await client.send_message(
+                    m = await client.send_message(
                         chat_id=user_id,
                         text="❌ <b>Process Cancelled Successfully!</b>",
                         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_menu")]])
                     )
+                    track_fsub_msg(user_id, m.id)
                     try:
                         temp = await client.send_message(chat_id=user_id, text=".", reply_markup=ReplyKeyboardRemove())
                         await temp.delete()
@@ -686,6 +777,7 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                         pass
                     clear_user_session(user_id)
                     return
+
                 if "request" in m_txt:
                     chosen_mode = "request"
                     break
@@ -693,7 +785,8 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                     chosen_mode = "normal"
                     break
                 else:
-                    await client.send_message(chat_id=user_id, text="⚠️ <i>Please choose Normal or Join Request.</i>", reply_markup=mode_kb)
+                    mode_prompt_msg = await client.send_message(chat_id=user_id, text="⚠️ <i>Please choose Normal or Join Request.</i>\n\n<b>SELECT YOUR MODE WHICH YOU WANT FOR THIS BELOW 👇</b>\n\n<code>/cancel</code> - <b>CANCEL THIS PROCESS</b>", reply_markup=mode_kb)
+                    track_fsub_msg(user_id, mode_prompt_msg.id)
 
             if not is_user_session_active(user_id, sess_token):
                 return
@@ -726,7 +819,6 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
 
             # Save channel entry
             chs = list(r.get("fsub_channels", []))
-            # Remove duplicate of same chat_id if exists
             chs = [c for c in chs if (c.get("chat_id") if isinstance(c, dict) else c) != chat_id]
             chs.append({
                 "chat_id": chat_id,
@@ -752,17 +844,21 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
             except Exception:
                 pass
 
-            await client.send_message(
+            succ_m = await client.send_message(
                 chat_id=user_id,
                 text=f"✨ <b>Successfully Added {chat_title or 'Channel'} As Your Force Sub Channel</b>",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_menu")]]),
             )
+            track_fsub_msg(user_id, succ_m.id)
 
         asyncio.create_task(_add_fsub_worker())
         return
 
     # 6. Force Subscribe Message Submenu
     if data == "cset_fsub_msg_menu":
+        current_mid = query.message.id if query.message else 0
+        await cleanup_fsub_msgs(client, user_id, except_ids=[current_mid])
+
         buttons = [
             [InlineKeyboardButton("FORCE SUBSCRIBE TEXT", callback_data="cset_fsub_text_menu")],
             [InlineKeyboardButton("FORCE SUBSCRIBE PICTURE", callback_data="cset_fsub_pic_menu")],
@@ -773,6 +869,9 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
 
     # 7. Force Subscribe Text Submenu
     if data == "cset_fsub_text_menu":
+        current_mid = query.message.id if query.message else 0
+        await cleanup_fsub_msgs(client, user_id, except_ids=[current_mid])
+
         current_txt = r.get("fsub_text") or DEFAULT_FSUB_TEXT
         text_disp = (
             f"<b>TEXT - {current_txt}</b>\n\n"
@@ -793,6 +892,8 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
         sess_token = start_user_session(user_id, "fsub_set_text")
         await query.answer()
 
+        await cleanup_fsub_msgs(client, user_id)
+
         try:
             await query.message.delete()
         except Exception:
@@ -806,6 +907,7 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
             "<code>/cancel</code> - <b>CANCEL THIS PROCESS</b>"
         )
         prompt_msg = await client.send_message(chat_id=user_id, text=prompt_msg_text)
+        track_fsub_msg(user_id, prompt_msg.id)
 
         async def _set_txt_worker():
             try:
@@ -815,50 +917,61 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                     await prompt_msg.delete()
                 except Exception:
                     pass
-                await client.send_message(
+                m = await client.send_message(
                     chat_id=user_id,
                     text="❌ <b>Timeout. Process cancelled.</b>",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_text_menu")]])
                 )
+                track_fsub_msg(user_id, m.id)
                 clear_user_session(user_id)
                 return
             if not is_user_session_active(user_id, sess_token):
                 return
+
+            try:
+                await prompt_msg.delete()
+            except Exception:
+                pass
+            try:
+                await ans.delete()
+            except Exception:
+                pass
+
             txt = (ans.text or "").strip()
             if txt == "/cancel":
-                try:
-                    await prompt_msg.delete()
-                except Exception:
-                    pass
-                try:
-                    await ans.delete()
-                except Exception:
-                    pass
-                await client.send_message(
+                m = await client.send_message(
                     chat_id=user_id,
                     text="❌ <b>Process Cancelled Successfully!</b>",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_text_menu")]])
                 )
+                track_fsub_msg(user_id, m.id)
                 clear_user_session(user_id)
                 return
             if not txt:
-                await client.send_message(
+                m = await client.send_message(
                     chat_id=user_id,
                     text="⚠️ <b>Please send a valid text message.</b>",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_text_menu")]])
                 )
+                track_fsub_msg(user_id, m.id)
                 clear_user_session(user_id)
                 return
 
             save_fn(fsub_text=txt)
+            if target_bid and mongo_db is not None:
+                try:
+                    mongo_db.bots.update_one({"bot_id": int(target_bid)}, {"$set": {"fsub_text": txt}}, upsert=True)
+                except Exception:
+                    pass
             r["fsub_text"] = txt
             clear_user_session(user_id)
 
-            await client.send_message(
+            succ_m = await client.send_message(
                 chat_id=user_id,
                 text=f"<b>SUCCESSFULLY SET FORCE SUBSCRIBE TEXT - </b>\n\n{txt}",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_text_menu")]])
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_text_menu")]]),
             )
+            track_fsub_msg(user_id, succ_m.id)
 
         asyncio.create_task(_set_txt_worker())
         return
@@ -866,12 +979,20 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
     # 9. Default Force Subscribe Text
     if data == "cset_fsub_def_text":
         save_fn(fsub_text=None)
+        if target_bid and mongo_db is not None:
+            try:
+                mongo_db.bots.update_one({"bot_id": int(target_bid)}, {"$set": {"fsub_text": None}}, upsert=True)
+            except Exception:
+                pass
         r["fsub_text"] = None
         await query.answer("✅ Default Force Subscribe text restored!")
         return await handle_fsub_callbacks(client, query, "cset_fsub_text_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)
 
     # 10. Force Subscribe Picture Submenu
     if data == "cset_fsub_pic_menu":
+        current_mid = query.message.id if query.message else 0
+        await cleanup_fsub_msgs(client, user_id, except_ids=[current_mid])
+
         has_pic = bool(r.get("fsub_pic"))
         spoiler = bool(r.get("fsub_pic_spoiler", False))
         invert = bool(r.get("fsub_pic_invert", False))
@@ -901,6 +1022,8 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
         sess_token = start_user_session(user_id, "fsub_set_pic")
         await query.answer()
 
+        await cleanup_fsub_msgs(client, user_id)
+
         try:
             await query.message.delete()
         except Exception:
@@ -911,6 +1034,7 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
             "<code>/cancel</code> - <b>CANCEL THIS PROCESS</b>"
         )
         prompt_msg = await client.send_message(chat_id=user_id, text=prompt_msg_text)
+        track_fsub_msg(user_id, prompt_msg.id)
 
         async def _set_pic_worker():
             try:
@@ -920,31 +1044,34 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                     await prompt_msg.delete()
                 except Exception:
                     pass
-                await client.send_message(
+                m = await client.send_message(
                     chat_id=user_id,
                     text="❌ <b>Timeout. Process cancelled.</b>",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_pic_menu")]])
                 )
+                track_fsub_msg(user_id, m.id)
                 clear_user_session(user_id)
                 return
             if not is_user_session_active(user_id, sess_token):
                 return
             
+            try:
+                await prompt_msg.delete()
+            except Exception:
+                pass
+            try:
+                await ans.delete()
+            except Exception:
+                pass
+
             raw_text = (ans.text or ans.caption or "").strip()
             if raw_text == "/cancel":
-                try:
-                    await prompt_msg.delete()
-                except Exception:
-                    pass
-                try:
-                    await ans.delete()
-                except Exception:
-                    pass
-                await client.send_message(
+                m = await client.send_message(
                     chat_id=user_id,
                     text="❌ <b>Process Cancelled Successfully!</b>",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_pic_menu")]])
                 )
+                track_fsub_msg(user_id, m.id)
                 clear_user_session(user_id)
                 return
 
@@ -955,11 +1082,12 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                 photo_file_id = ans.document.file_id
 
             if not photo_file_id:
-                await client.send_message(
+                m = await client.send_message(
                     chat_id=user_id,
                     text="⚠️ <b>Please send a valid picture file.</b>",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_pic_menu")]])
                 )
+                track_fsub_msg(user_id, m.id)
                 clear_user_session(user_id)
                 return
 
@@ -972,11 +1100,12 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                     pass
             r["fsub_pic"] = photo_file_id
 
-            await client.send_message(
+            succ_m = await client.send_message(
                 chat_id=user_id,
                 text="<b>SUCCESSFULLY PICTURE SET ✅</b>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_pic_menu")]])
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_pic_menu")]]),
             )
+            track_fsub_msg(user_id, succ_m.id)
 
         asyncio.create_task(_set_pic_worker())
         return
@@ -1037,6 +1166,9 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
 
     # 16. Fake Button Submenu
     if data == "cset_fsub_fake_btn_menu":
+        current_mid = query.message.id if query.message else 0
+        await cleanup_fsub_msgs(client, user_id, except_ids=[current_mid])
+
         fsub_buttons = r.get("fsub_buttons", [])
         has_btns = bool(fsub_buttons)
 
@@ -1049,41 +1181,45 @@ async def handle_fsub_callbacks(client, query, data, user_id, r, save_fn, cancel
                 InlineKeyboardButton("REMOVE BUTTON", callback_data="cset_fsub_btn_rem")
             ])
         buttons.append([InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_msg_menu")])
-
         return await edit_or_reply_fn(query, FSUB_BUTTON_DESC, reply_markup=InlineKeyboardMarkup(buttons))
 
-    # 17. Add Fake Buttons
+    # 17. Add Fake Buttons (Interactive Builder)
     if data == "cset_fsub_btn_add":
         await query.answer()
-        asyncio.create_task(run_fsub_button_builder(client, user_id, save_fn, cancel_listeners_fn, prev_msg=query.message))
-        return
+        return await run_fsub_button_builder(client, user_id, save_fn, cancel_listeners_fn, prev_msg=query.message)
 
     # 18. See Fake Buttons Preview
     if data == "cset_fsub_btn_see":
         fsub_buttons = r.get("fsub_buttons", [])
         if not fsub_buttons:
-            return await query.answer("❌ No buttons configured!", show_alert=True)
-        await query.answer()
-        preview_rows = []
+            return await query.answer("❌ No buttons configured yet!", show_alert=True)
+        preview_btns = []
         for r_item in fsub_buttons:
             row = []
             if isinstance(r_item, dict) and "buttons" in r_item:
                 for b in r_item["buttons"]:
-                    row.append(InlineKeyboardButton(b["text"], url=b["url"]))
+                    row.append(InlineKeyboardButton(f"{b['text']} ↗️", url=b.get('url', 'https://t.me')))
             elif isinstance(r_item, dict) and "text" in r_item:
-                row.append(InlineKeyboardButton(r_item["text"], url=r_item.get("url", "https://t.me")))
+                row.append(InlineKeyboardButton(f"{r_item['text']} ↗️", url=r_item.get('url', 'https://t.me')))
             if row:
-                preview_rows.append(row)
-        preview_markup = InlineKeyboardMarkup(preview_rows) if preview_rows else None
-        return await client.send_message(
-            chat_id=user_id,
-            text="👁️ <b>Force Subscribe Buttons Preview:</b>",
-            reply_markup=preview_markup
+                preview_btns.append(row)
+        preview_btns.append([InlineKeyboardButton("≼ BACK", callback_data="cset_fsub_fake_btn_menu")])
+        return await edit_or_reply_fn(
+            query,
+            "⚪ <b>FORCE SUBSCRIBE MESSAGE BUTTON PREVIEW:</b>\n\n<i>Here is how your custom fake buttons will look:</i>",
+            reply_markup=InlineKeyboardMarkup(preview_btns)
         )
 
     # 19. Remove Fake Buttons
     if data == "cset_fsub_btn_rem":
         save_fn(fsub_buttons=[])
+        if target_bid and mongo_db is not None:
+            try:
+                mongo_db.bots.update_one({"bot_id": int(target_bid)}, {"$set": {"fsub_buttons": []}}, upsert=True)
+            except Exception:
+                pass
         r["fsub_buttons"] = []
-        await query.answer("✅ Force Subscribe buttons removed!")
+        await query.answer("✅ All custom buttons removed!")
         return await handle_fsub_callbacks(client, query, "cset_fsub_fake_btn_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)
+
+    return False

@@ -173,6 +173,23 @@ async def check_master_verification(client, user_id, original_payload):
     return text, InlineKeyboardMarkup(btn)
 
 
+
+@Client.on_chat_join_request()
+async def master_join_req_handler(client, join_req):
+    try:
+        chat_id = int(join_req.chat.id)
+        user_id = int(join_req.from_user.id)
+        bot_id = int(client.me.id) if (client.me and client.me.id) else 0
+        from plugins.clone import mongo_db
+        if mongo_db is not None:
+            mongo_db.join_requests.update_one(
+                {"chat_id": chat_id, "user_id": user_id},
+                {"": {"chat_id": chat_id, "user_id": user_id, "bot_id": bot_id, "status": "pending", "created_at": time.time()}},
+                upsert=True
+            )
+    except Exception:
+        pass
+
 async def check_master_fsub(client, user_id, original_payload):
     master_cfg = await get_master_config(client)
     if not master_cfg.get("fsub_enabled", False):
@@ -212,11 +229,23 @@ async def check_master_fsub(client, user_id, original_payload):
         except Exception:
             pass
 
-        if not is_sub and mode == "request" and db is not None:
+        if not is_sub and mode == "request":
             try:
                 from plugins.clone import mongo_db
                 if mongo_db is not None:
-                    req_doc = mongo_db.join_requests.find_one({"chat_id": chat_id, "user_id": user_id})
+                    b_id_val = client.me.id if (client.me and client.me.id) else None
+                    q_conds = [
+                        {"chat_id": int(chat_id), "user_id": int(user_id)},
+                        {"chat_id": str(chat_id), "user_id": str(user_id)},
+                        {"chat_id": chat_id, "user_id": user_id}
+                    ]
+                    if b_id_val:
+                        q_conds.extend([
+                            {"bot_id": int(b_id_val), "chat_id": int(chat_id), "user_id": int(user_id)},
+                            {"bot_id": str(b_id_val), "chat_id": str(chat_id), "user_id": str(user_id)},
+                            {"bot_id": b_id_val, "chat_id": chat_id, "user_id": user_id}
+                        ])
+                    req_doc = mongo_db.join_requests.find_one({"": q_conds})
                     if req_doc:
                         is_sub = True
             except Exception:

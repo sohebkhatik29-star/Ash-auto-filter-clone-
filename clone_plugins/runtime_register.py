@@ -1,7 +1,7 @@
 """Register handlers on dynamically-created Pyrogram clone clients."""
 
 from pyrogram import filters, ContinuePropagation, StopPropagation
-from pyrogram.handlers import MessageHandler, CallbackQueryHandler
+from pyrogram.handlers import MessageHandler, CallbackQueryHandler, ChatJoinRequestHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins import commands as cmd
 from clone_plugins import advanced as adv
@@ -146,6 +146,8 @@ async def global_cancel_command(client, message):
 
 
 def register_clone_handlers(client):
+    if hasattr(cmd, "clone_join_req_handler"):
+        client.add_handler(ChatJoinRequestHandler(cmd.clone_join_req_handler), group=0)
     client.add_handler(MessageHandler(_clone_ban_guard_msg, filters.private), group=-1000)
     client.add_handler(CallbackQueryHandler(_clone_ban_guard_cb), group=-1000)
     cset.register(client)

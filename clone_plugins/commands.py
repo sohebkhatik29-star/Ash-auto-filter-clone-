@@ -6,7 +6,7 @@ import base64
 import secrets
 import time
 from pyrogram import filters, enums
-from pyrogram.handlers import MessageHandler, CallbackQueryHandler
+from pyrogram.handlers import MessageHandler, CallbackQueryHandler, ChatJoinRequestHandler
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins.dbusers import clonedb
 from clone_plugins.users_api import (
@@ -80,6 +80,21 @@ def make_file_link(bot_username, file_id, protected=False):
     return f"https://t.me/{bot_username}?start={payload}"
 
 
+
+async def clone_join_req_handler(client, join_req):
+    try:
+        chat_id = int(join_req.chat.id)
+        user_id = int(join_req.from_user.id)
+        bot_id = int(client.me.id) if (client.me and client.me.id) else 0
+        if mongo_db is not None:
+            mongo_db.join_requests.update_one(
+                {"chat_id": chat_id, "user_id": user_id, "bot_id": bot_id},
+                {"": {"chat_id": chat_id, "user_id": user_id, "bot_id": bot_id, "status": "pending", "created_at": time.time()}},
+                upsert=True
+            )
+    except Exception:
+        pass
+
 async def force_markup(client, user_id, original_payload):
     rec = bot_record(client)
     if not rec:
@@ -123,7 +138,19 @@ async def force_markup(client, user_id, original_payload):
 
         if not is_sub and mode == "request" and mongo_db is not None:
             try:
-                req_doc = mongo_db.join_requests.find_one({"bot_id": client.me.id, "chat_id": chat_id, "user_id": user_id})
+                b_id_val = client.me.id if (client.me and client.me.id) else None
+                q_conds = [
+                    {"chat_id": int(chat_id), "user_id": int(user_id)},
+                    {"chat_id": str(chat_id), "user_id": str(user_id)},
+                    {"chat_id": chat_id, "user_id": user_id}
+                ]
+                if b_id_val:
+                    q_conds.extend([
+                        {"bot_id": int(b_id_val), "chat_id": int(chat_id), "user_id": int(user_id)},
+                        {"bot_id": str(b_id_val), "chat_id": str(chat_id), "user_id": str(user_id)},
+                        {"bot_id": b_id_val, "chat_id": chat_id, "user_id": user_id}
+                    ])
+                req_doc = mongo_db.join_requests.find_one({"": q_conds})
                 if req_doc:
                     is_sub = True
             except Exception:
@@ -1290,6 +1317,7 @@ async def clone_command(client, message):
 
 def register(client):
     private=filters.private
+    client.add_handler(ChatJoinRequestHandler(clone_join_req_handler), group=0)
     client.add_handler(MessageHandler(start,filters.command("start")&private),group=0)
     client.add_handler(MessageHandler(help_command,filters.command("help")&private),group=0)
     client.add_handler(MessageHandler(id_command,filters.command("id")&private),group=0)
