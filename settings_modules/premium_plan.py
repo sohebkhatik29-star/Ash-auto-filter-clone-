@@ -531,7 +531,7 @@ async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, can
                 if bot_doc:
                     r = bot_doc
                     def _custom_save(**kwargs):
-                        mongo_db.bots.update_one({"bot_id": int(target_bid)}, {"": kwargs}, upsert=True)
+                        mongo_db.bots.update_one({"bot_id": int(target_bid)}, {"$set": kwargs}, upsert=True)
                     save_fn = _custom_save
         except Exception:
             pass
@@ -794,10 +794,19 @@ async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, can
                 clear_user_session(user_id)
                 return await handle_premium_callbacks(client, query, cb("cset_prem_pic_menu"), user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid)
 
+            photo_id = None
             if ans.photo:
                 photo_id = ans.photo.file_id
-                from settings_modules.thumbnail import save_thumbnail_media
-                local_path = await save_thumbnail_media(client, ans, user_id, prefix=f"prem_qr_{target_bid or 'master'}")
+            elif ans.document and ans.document.mime_type and ans.document.mime_type.startswith("image/"):
+                photo_id = ans.document.file_id
+
+            if photo_id:
+                local_path = None
+                try:
+                    from settings_modules.thumbnail import save_thumbnail_media
+                    local_path = await save_thumbnail_media(client, ans, user_id, prefix=f"prem_qr_{target_bid or 'master'}")
+                except Exception:
+                    pass
                 upd = {
                     "premium_plan_photo": photo_id,
                     "premium_qr_pic": photo_id
@@ -821,13 +830,21 @@ async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, can
 
                 back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=cb("cset_prem_pic_menu"))]])
                 photo_to_send = local_path or photo_id
-                return await client.send_photo(
-                    chat_id=user_id,
-                    photo=photo_to_send,
-                    caption="<b>SUCCESSFULLY PICTURE SET</b> ✅",
-                    reply_markup=back_markup,
-                    parse_mode=enums.ParseMode.HTML
-                )
+                try:
+                    return await client.send_photo(
+                        chat_id=user_id,
+                        photo=photo_to_send,
+                        caption="<b>SUCCESSFULLY PICTURE SET</b> ✅",
+                        reply_markup=back_markup,
+                        parse_mode=enums.ParseMode.HTML
+                    )
+                except Exception:
+                    return await client.send_message(
+                        chat_id=user_id,
+                        text="<b>SUCCESSFULLY PICTURE SET</b> ✅",
+                        reply_markup=back_markup,
+                        parse_mode=enums.ParseMode.HTML
+                    )
             else:
                 try:
                     await ans.reply("⚠️ <b>Please send a valid photo picture.</b>")
