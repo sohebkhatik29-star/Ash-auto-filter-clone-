@@ -81,9 +81,12 @@ async def start_batch(client, message):
         "created_at": time.time(),
     }
 
+    abort_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cbatch_abort")]])
+    abort_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cbatch_abort")]])
     await message.reply(
         "Forward The Batch First Message From your Batch Channel (With Forward Tag)..\n"
-        "or Give Me Batch First message link from your batch channel"
+        "or Give Me Batch First message link from your batch channel",
+        reply_markup=abort_markup
     )
     raise StopPropagation
 
@@ -96,16 +99,25 @@ async def capture_batch_step(client, message):
     if not session:
         return
 
-    # Check for cancel
-    if message.text and message.text.strip().lower() == "/cancel":
+    # Auto expire after 30 mins
+    if time.time() - session.get("created_at", 0) > 1800:
         _CHANNEL_BATCH_SESSIONS.pop(key, None)
-        await message.reply("❌ Batch creation cancelled.")
+        return
+
+    # Check for cancel
+    text_val = (message.text or "").strip().lower()
+    first_tok = text_val.split()[0] if text_val else ""
+    if first_tok in ("/cancel", "cancel") or first_tok.startswith("/cancel@"):
+        _CHANNEL_BATCH_SESSIONS.pop(key, None)
+        await message.reply("❌ <b>Batch creation cancelled.</b>")
         raise StopPropagation
 
     if message.text and message.text.startswith("/") and not message.text.startswith("http"):
         # Another command sent
         _CHANNEL_BATCH_SESSIONS.pop(key, None)
         return
+
+    abort_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cbatch_abort")]])
 
     step = session.get("step")
 
@@ -115,7 +127,8 @@ async def capture_batch_step(client, message):
             await message.reply(
                 "❌ <b>Invalid message or link!</b>\n\n"
                 "Please forward the <b>first message</b> with forward tag, or send its direct link.\n"
-                "/cancel - to abort."
+                "/cancel - to abort.",
+                reply_markup=abort_markup
             )
             raise StopPropagation
 
@@ -136,7 +149,8 @@ async def capture_batch_step(client, message):
 
         await message.reply(
             "Forward The Batch Last Message From your Batch Channel (With Forward Tag)..\n"
-            "or Give Me Batch last message link from your batch channel"
+            "or Give Me Batch last message link from your batch channel",
+            reply_markup=abort_markup
         )
         raise StopPropagation
 
@@ -146,7 +160,8 @@ async def capture_batch_step(client, message):
             await message.reply(
                 "❌ <b>Invalid message or link!</b>\n\n"
                 "Please forward the <b>last message</b> with forward tag, or send its direct link.\n"
-                "/cancel - to abort."
+                "/cancel - to abort.",
+                reply_markup=abort_markup
             )
             raise StopPropagation
 
@@ -167,7 +182,8 @@ async def capture_batch_step(client, message):
             await message.reply(
                 "❌ <b>Channel mismatch!</b>\n\n"
                 "Both first and last messages must be from the <b>same channel</b>.\n"
-                "Please send the last message from the same channel, or use /cancel."
+                "Please send the last message from the same channel, or use /cancel.",
+                reply_markup=abort_markup
             )
             raise StopPropagation
 
@@ -373,6 +389,15 @@ async def batch_start_deliver(client, message):
 
 async def callback_cancel(client, query):
     data = query.data or ""
+    if data == "cbatch_abort":
+        key = (int(client.me.id), int(query.from_user.id))
+        _CHANNEL_BATCH_SESSIONS.pop(key, None)
+        await query.answer("Batch creation cancelled.")
+        try:
+            await query.message.edit_text("❌ <b>Batch creation cancelled.</b>")
+        except Exception:
+            pass
+        raise StopPropagation
     if not data.startswith("cbatch_cancel_"):
         return
     delivery_key = (int(client.me.id), int(query.from_user.id))
@@ -390,6 +415,6 @@ def register(client, base_group=-102):
     client.add_handler(MessageHandler(batch_start_deliver, filters.command("start") & private), group=base_group)
     client.add_handler(MessageHandler(start_batch, filters.command("batch") & private), group=base_group)
     client.add_handler(MessageHandler(capture_batch_step, private), group=base_group + 1)
-    client.add_handler(CallbackQueryHandler(callback_cancel, filters.regex(r"^cbatch_cancel_")), group=base_group)
+    client.add_handler(CallbackQueryHandler(callback_cancel, filters.regex(r"^(cbatch_cancel_|cbatch_abort)")), group=base_group)
     return client
 

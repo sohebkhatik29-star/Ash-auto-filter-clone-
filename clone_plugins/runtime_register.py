@@ -67,6 +67,70 @@ async def clean_help(client, message):
     ]))
 
 
+async def global_cancel_command(client, message):
+    user_id = message.from_user.id if message.from_user else None
+    if not user_id:
+        return
+    key = (int(client.me.id), int(user_id))
+    cancelled_any = False
+
+    # 1. Channel batch
+    try:
+        from link_modules import channel_batch
+        if key in channel_batch._CHANNEL_BATCH_SESSIONS:
+            channel_batch._CHANNEL_BATCH_SESSIONS.pop(key, None)
+            cancelled_any = True
+    except Exception:
+        pass
+
+    # 2. Custom batch
+    try:
+        from link_modules.custom_batch import _session, _INDEX_TASKS, _LAST_MSG_TIME
+        cb_sess = _session(client, user_id)
+        if cb_sess:
+            task = _INDEX_TASKS.pop(key, None)
+            if task and not task.done():
+                task.cancel()
+            _LAST_MSG_TIME.pop(key, None)
+            from plugins.clone import mongo_db
+            if mongo_db is not None:
+                mongo_db.custom_batch_sessions.delete_many({"bot_id": client.me.id, "user_id": int(user_id)})
+            cancelled_any = True
+    except Exception:
+        pass
+
+    # 3. Special link
+    try:
+        from link_modules.special_link import _SPL_SESSIONS, _SPL_WAIT_INPUT
+        if key in _SPL_SESSIONS or key in _SPL_WAIT_INPUT:
+            _SPL_SESSIONS.pop(key, None)
+            _SPL_WAIT_INPUT.pop(key, None)
+            cancelled_any = True
+    except Exception:
+        pass
+
+    # 4. Single link
+    try:
+        from link_modules.single_link import _PENDING
+        if key in _PENDING:
+            _PENDING.pop(key, None)
+            cancelled_any = True
+    except Exception:
+        pass
+
+    # 5. Cancel any listeners
+    try:
+        from clone_plugins.sessions import cancel_all_listeners
+        cancel_all_listeners(client, message.chat.id, user_id)
+    except Exception:
+        pass
+
+    if cancelled_any:
+        await message.reply("❌ <b>Process cancelled.</b>")
+    else:
+        await message.reply("<i>No active process to cancel.</i>")
+
+
 def register_clone_handlers(client):
     client.add_handler(MessageHandler(_clone_ban_guard_msg, filters.private), group=-1000)
     client.add_handler(CallbackQueryHandler(_clone_ban_guard_cb), group=-1000)
@@ -89,6 +153,7 @@ def register_clone_handlers(client):
         "shortener": cmd.shortener,
         "api": cmd.api_handler,
         "base_site": cmd.base_site_handler,
+        "cancel": global_cancel_command,
     }
 
     advanced_commands = {

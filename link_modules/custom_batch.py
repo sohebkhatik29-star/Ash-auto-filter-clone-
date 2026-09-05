@@ -200,9 +200,15 @@ async def capture_message(client, message):
         return
     if message.chat.type.value != "private":
         return
+
+    # Only handle messages if user actually has an active custom_batch session
+    session = _session(client, message.from_user.id)
+    if not session or not session.get("active"):
+        return
+
     if message.text and message.text.startswith("/"):
-        cmd_name = message.text.split()[0].lower()
-        if cmd_name == "/cancel":
+        cmd_name = message.text.split()[0].lower().split("@")[0]
+        if cmd_name in ("/cancel", "cancel"):
             key = (int(client.me.id), int(message.from_user.id))
             task = _INDEX_TASKS.pop(key, None)
             if task and not task.done():
@@ -217,9 +223,6 @@ async def capture_message(client, message):
     _LAST_MSG_TIME[key] = time.time()
 
     async with _lock(client, message.from_user.id):
-        session = _session(client, message.from_user.id)
-        if not session or not session.get("active"):
-            return
 
         messages = list(session.get("messages", []))
         if len(messages) >= MAX_FILES:
