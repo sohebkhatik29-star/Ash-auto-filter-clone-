@@ -184,7 +184,7 @@ async def master_join_req_handler(client, join_req):
         if mongo_db is not None:
             mongo_db.join_requests.update_one(
                 {"chat_id": chat_id, "user_id": user_id},
-                {"": {"chat_id": chat_id, "user_id": user_id, "bot_id": bot_id, "status": "pending", "created_at": time.time()}},
+                {"$set": {"chat_id": chat_id, "user_id": user_id, "bot_id": bot_id, "status": "pending", "created_at": time.time()}},
                 upsert=True
             )
     except Exception:
@@ -233,21 +233,23 @@ async def check_master_fsub(client, user_id, original_payload):
             try:
                 from plugins.clone import mongo_db
                 if mongo_db is not None:
-                    b_id_val = client.me.id if (client.me and client.me.id) else None
-                    q_conds = [
-                        {"chat_id": int(chat_id), "user_id": int(user_id)},
-                        {"chat_id": str(chat_id), "user_id": str(user_id)},
-                        {"chat_id": chat_id, "user_id": user_id}
-                    ]
-                    if b_id_val:
-                        q_conds.extend([
-                            {"bot_id": int(b_id_val), "chat_id": int(chat_id), "user_id": int(user_id)},
-                            {"bot_id": str(b_id_val), "chat_id": str(chat_id), "user_id": str(user_id)},
-                            {"bot_id": b_id_val, "chat_id": chat_id, "user_id": user_id}
-                        ])
-                    req_doc = mongo_db.join_requests.find_one({"": q_conds})
-                    if req_doc:
-                        is_sub = True
+                    cid_int = int(chat_id) if str(chat_id).lstrip("-").isdigit() else None
+                    cid_str = str(chat_id)
+                    uid_int = int(user_id) if str(user_id).isdigit() else None
+                    uid_str = str(user_id)
+                    conds = []
+                    if cid_int is not None and uid_int is not None:
+                        conds.append({"chat_id": cid_int, "user_id": uid_int})
+                    if cid_str and uid_str:
+                        conds.append({"chat_id": cid_str, "user_id": uid_str})
+                        if cid_int is not None:
+                            conds.append({"chat_id": cid_int, "user_id": uid_str})
+                        if uid_int is not None:
+                            conds.append({"chat_id": cid_str, "user_id": uid_int})
+                    if conds:
+                        req_doc = mongo_db.join_requests.find_one({"$or": conds})
+                        if req_doc:
+                            is_sub = True
             except Exception:
                 pass
 
