@@ -1192,6 +1192,12 @@ async def callbacks(client, query):
             return
     except Exception:
         pass
+    try:
+        from settings_modules.button_debouncer import debounce_callback
+        if await debounce_callback(query):
+            return
+    except Exception:
+        pass
     data = query.data
     if data == "close_data":
         return await query.message.delete()

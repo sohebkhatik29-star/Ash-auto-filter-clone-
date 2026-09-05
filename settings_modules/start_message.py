@@ -264,11 +264,26 @@ async def handle_start_message_callbacks(client, query, data, user_id, r, save_f
             try:
                 ans = await client.listen(chat_id=user_id, timeout=120)
             except Exception:
+                try:
+                    if getattr(query, "message", None):
+                        await query.message.delete()
+                except Exception:
+                    pass
                 await client.send_message(user_id, "❌ <b>Timeout. Process cancelled.</b>")
                 clear_user_session(user_id)
                 return
             if not is_user_session_active(user_id, sess_token):
                 return
+            try:
+                if getattr(query, "message", None):
+                    await query.message.delete()
+            except Exception:
+                pass
+            try:
+                if ans:
+                    await ans.delete()
+            except Exception:
+                pass
             t_val = (ans.text or "").strip()
             clear_user_session(user_id)
             if t_val == "/cancel":
@@ -327,11 +342,26 @@ async def handle_start_message_callbacks(client, query, data, user_id, r, save_f
             try:
                 ans = await client.listen(chat_id=user_id, timeout=120)
             except Exception:
+                try:
+                    if getattr(query, "message", None):
+                        await query.message.delete()
+                except Exception:
+                    pass
                 await client.send_message(user_id, "❌ <b>Timeout. Process cancelled.</b>")
                 clear_user_session(user_id)
                 return
             if not is_user_session_active(user_id, sess_token):
                 return
+            try:
+                if getattr(query, "message", None):
+                    await query.message.delete()
+            except Exception:
+                pass
+            try:
+                if ans:
+                    await ans.delete()
+            except Exception:
+                pass
             if not ans or ans.text == "/cancel" or not ans.photo:
                 clear_user_session(user_id)
                 return await client.send_message(chat_id=user_id, text="❌ <b>Cancelled or not a photo.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="cset_start_pic")]]) )

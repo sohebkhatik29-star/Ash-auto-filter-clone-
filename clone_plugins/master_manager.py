@@ -132,6 +132,12 @@ async def edit_setting(query, bid, title, value):
 async def handle_clone_callbacks(client, query):
     data = query.data
     user_id = query.from_user.id
+    try:
+        from settings_modules.button_debouncer import debounce_callback
+        if await debounce_callback(query):
+            return
+    except Exception:
+        pass
     m = db()
 
     if data in ("my_clone", "my_clones", "clone_my_bots"):
@@ -174,12 +180,17 @@ async def handle_clone_callbacks(client, query):
             "3) I will automatically create your clone.\n\n"
             "<i>Send /cancel to abort.</i>"
         )
-        await client.send_message(
+        try:
+            if query.message:
+                await query.message.delete()
+        except Exception:
+            pass
+        prompt_msg = await client.send_message(
             chat_id=user_id,
             text=prompt_text,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ CANCEL", callback_data="my_clones")]])
         )
-        asyncio.create_task(_listen_and_create_clone(client, user_id, sess_token))
+        asyncio.create_task(_listen_and_create_clone(client, user_id, sess_token, prompt_msg))
         return
 
     if data.startswith("manage_clone:") or data.startswith("settings_back:"):
@@ -307,8 +318,13 @@ async def handle_clone_callbacks(client, query):
                 pass
             cancel_all_listeners(client, query.message.chat.id, user_id)
             sess = start_user_session(user_id, f"cm_force_{bid}")
-            await client.send_message(user_id, "📢 Send channel username/ID to add. Send <code>off</code> to clear Force Subscribe.", reply_markup=action_back(bid))
-            asyncio.create_task(_listen_force(client, user_id, bid, sess))
+            try:
+                if query.message:
+                    await query.message.delete()
+            except Exception:
+                pass
+            prompt_msg = await client.send_message(user_id, "📢 Send channel username/ID to add. Send <code>off</code> to clear Force Subscribe.", reply_markup=action_back(bid))
+            asyncio.create_task(_listen_force(client, user_id, bid, sess, prompt_msg))
             return
 
         if action == "mods":
@@ -321,7 +337,7 @@ async def handle_clone_callbacks(client, query):
             mods = [int(x) for x in d.get("moderators", []) if str(x).isdigit()]
             cur_mods = "\n".join(f"• <code>{x}</code>" for x in mods) or "None"
             await client.send_message(user_id, f"👮 <b>MODERATORS</b>\n\nCurrent moderators:\n{cur_mods}\n\nSend <code>add USER_ID</code>, <code>del USER_ID</code>, or <code>list</code>.", reply_markup=action_back(bid))
-            asyncio.create_task(_listen_mods(client, user_id, bid, sess))
+            asyncio.create_task(_listen_mods(client, user_id, bid, sess, prompt_msg))
             return
 
         if action == "startmsg":
@@ -331,8 +347,13 @@ async def handle_clone_callbacks(client, query):
                 pass
             cancel_all_listeners(client, query.message.chat.id, user_id)
             sess = start_user_session(user_id, f"cm_startmsg_{bid}")
-            await client.send_message(user_id, "📝 Send the new start message. Send <code>off</code> to remove custom message.", reply_markup=action_back(bid))
-            asyncio.create_task(_listen_startmsg(client, user_id, bid, sess))
+            try:
+                if query.message:
+                    await query.message.delete()
+            except Exception:
+                pass
+            prompt_msg = await client.send_message(user_id, "📝 Send the new start message. Send <code>off</code> to remove custom message.", reply_markup=action_back(bid))
+            asyncio.create_task(_listen_startmsg(client, user_id, bid, sess, prompt_msg))
             return
 
         if action == "caption":
@@ -342,8 +363,13 @@ async def handle_clone_callbacks(client, query):
                 pass
             cancel_all_listeners(client, query.message.chat.id, user_id)
             sess = start_user_session(user_id, f"cm_caption_{bid}")
-            await client.send_message(user_id, "📝 Send custom caption. Send <code>off</code> to disable.", reply_markup=action_back(bid))
-            asyncio.create_task(_listen_caption(client, user_id, bid, sess))
+            try:
+                if query.message:
+                    await query.message.delete()
+            except Exception:
+                pass
+            prompt_msg = await client.send_message(user_id, "📝 Send custom caption. Send <code>off</code> to disable.", reply_markup=action_back(bid))
+            asyncio.create_task(_listen_caption(client, user_id, bid, sess, prompt_msg))
             return
 
         if action == "button":
@@ -353,8 +379,13 @@ async def handle_clone_callbacks(client, query):
                 pass
             cancel_all_listeners(client, query.message.chat.id, user_id)
             sess = start_user_session(user_id, f"cm_button_{bid}")
-            await client.send_message(user_id, "➕ Send <code>Button Text - https://example.com</code>. Send <code>off</code> to clear buttons.", reply_markup=action_back(bid))
-            asyncio.create_task(_listen_button(client, user_id, bid, sess))
+            try:
+                if query.message:
+                    await query.message.delete()
+            except Exception:
+                pass
+            prompt_msg = await client.send_message(user_id, "➕ Send <code>Button Text - https://example.com</code>. Send <code>off</code> to clear buttons.", reply_markup=action_back(bid))
+            asyncio.create_task(_listen_button(client, user_id, bid, sess, prompt_msg))
             return
 
         if action == "shortener":
@@ -364,8 +395,13 @@ async def handle_clone_callbacks(client, query):
                 pass
             cancel_all_listeners(client, query.message.chat.id, user_id)
             sess = start_user_session(user_id, f"cm_shortener_{bid}")
-            await client.send_message(user_id, "🔗 Send <code>API_KEY | BASE_SITE</code>. Send <code>off</code> to disable.", reply_markup=action_back(bid))
-            asyncio.create_task(_listen_shortener(client, user_id, bid, sess))
+            try:
+                if query.message:
+                    await query.message.delete()
+            except Exception:
+                pass
+            prompt_msg = await client.send_message(user_id, "🔗 Send <code>API_KEY | BASE_SITE</code>. Send <code>off</code> to disable.", reply_markup=action_back(bid))
+            asyncio.create_task(_listen_shortener(client, user_id, bid, sess, prompt_msg))
             return
 
         if action == "startpic":
@@ -375,8 +411,13 @@ async def handle_clone_callbacks(client, query):
                 pass
             cancel_all_listeners(client, query.message.chat.id, user_id)
             sess = start_user_session(user_id, f"cm_startpic_{bid}")
-            await client.send_message(user_id, "🖼️ Send image URL for the clone start photo. Send <code>off</code> to reset.", reply_markup=action_back(bid))
-            asyncio.create_task(_listen_startpic(client, user_id, bid, sess))
+            try:
+                if query.message:
+                    await query.message.delete()
+            except Exception:
+                pass
+            prompt_msg = await client.send_message(user_id, "🖼️ Send image URL for the clone start photo. Send <code>off</code> to reset.", reply_markup=action_back(bid))
+            asyncio.create_task(_listen_startpic(client, user_id, bid, sess, prompt_msg))
             return
 
         if action == "transfer":
@@ -419,15 +460,30 @@ async def handle_clone_callbacks(client, query):
             pass
         return
 
-async def _listen_and_create_clone(client, user_id, sess_token):
+async def _listen_and_create_clone(client, user_id, sess_token, prompt_msg=None):
     try:
         ans = await client.listen(chat_id=user_id, timeout=120)
     except Exception:
+        try:
+            if prompt_msg:
+                await prompt_msg.delete()
+        except Exception:
+            pass
         clear_user_session(user_id)
         return
     if not is_user_session_active(user_id, sess_token):
         return
     clear_user_session(user_id)
+    try:
+        if prompt_msg:
+            await prompt_msg.delete()
+    except Exception:
+        pass
+    try:
+        if ans:
+            await ans.delete()
+    except Exception:
+        pass
     txt = (ans.text or getattr(ans, "caption", None) or "").strip()
     if txt.lower() == "/cancel":
         return await client.send_message(user_id, "<b>Cancelled 🚫</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ MY CLONE BOTS", callback_data="my_clones")]]))
@@ -496,15 +552,30 @@ async def _listen_and_create_clone(client, user_id, sess_token):
     except Exception as e:
         await msg.edit_text(f"⚠️ <b>Bot Error:</b>\n\n<code>{e}</code>")
 
-async def _listen_force(client, user_id, bid, sess):
+async def _listen_force(client, user_id, bid, sess, prompt_msg=None):
     try:
         ans = await client.listen(chat_id=user_id, timeout=120)
     except Exception:
+        try:
+            if prompt_msg:
+                await prompt_msg.delete()
+        except Exception:
+            pass
         clear_user_session(user_id)
         return
     if not is_user_session_active(user_id, sess):
         return
     clear_user_session(user_id)
+    try:
+        if prompt_msg:
+            await prompt_msg.delete()
+    except Exception:
+        pass
+    try:
+        if ans:
+            await ans.delete()
+    except Exception:
+        pass
     val = (ans.text or "").strip()
     d = get_bot(bid) or {}
     if val.lower() == "off":
@@ -520,15 +591,30 @@ async def _listen_force(client, user_id, bid, sess):
     except Exception:
         return await client.send_message(user_id, "❌ Could not access that channel. Check username/ID and admin permissions.", reply_markup=action_back(bid))
 
-async def _listen_mods(client, user_id, bid, sess):
+async def _listen_mods(client, user_id, bid, sess, prompt_msg=None):
     try:
         ans = await client.listen(chat_id=user_id, timeout=120)
     except Exception:
+        try:
+            if prompt_msg:
+                await prompt_msg.delete()
+        except Exception:
+            pass
         clear_user_session(user_id)
         return
     if not is_user_session_active(user_id, sess):
         return
     clear_user_session(user_id)
+    try:
+        if prompt_msg:
+            await prompt_msg.delete()
+    except Exception:
+        pass
+    try:
+        if ans:
+            await ans.delete()
+    except Exception:
+        pass
     parts = (ans.text or "").split()
     d = get_bot(bid) or {}
     mods = [int(x) for x in d.get("moderators", []) if str(x).isdigit()]
@@ -546,41 +632,86 @@ async def _listen_mods(client, user_id, bid, sess):
         text = "❌ Format: <code>add USER_ID</code> or <code>del USER_ID</code>"
     return await client.send_message(user_id, "👮 <b>MODERATORS</b>\n\n" + text, reply_markup=action_back(bid))
 
-async def _listen_startmsg(client, user_id, bid, sess):
+async def _listen_startmsg(client, user_id, bid, sess, prompt_msg=None):
     try:
         ans = await client.listen(chat_id=user_id, timeout=120)
     except Exception:
+        try:
+            if prompt_msg:
+                await prompt_msg.delete()
+        except Exception:
+            pass
         clear_user_session(user_id)
         return
     if not is_user_session_active(user_id, sess):
         return
     clear_user_session(user_id)
+    try:
+        if prompt_msg:
+            await prompt_msg.delete()
+    except Exception:
+        pass
+    try:
+        if ans:
+            await ans.delete()
+    except Exception:
+        pass
     text = (ans.text or "").strip()
     update_bot(bid, start_message=None if text.lower() == "off" else text[:4000])
     return await client.send_message(user_id, "📝 <b>START MESSAGE</b>\n\n" + ("Disabled." if text.lower() == "off" else "Saved successfully."), reply_markup=action_back(bid))
 
-async def _listen_caption(client, user_id, bid, sess):
+async def _listen_caption(client, user_id, bid, sess, prompt_msg=None):
     try:
         ans = await client.listen(chat_id=user_id, timeout=120)
     except Exception:
+        try:
+            if prompt_msg:
+                await prompt_msg.delete()
+        except Exception:
+            pass
         clear_user_session(user_id)
         return
     if not is_user_session_active(user_id, sess):
         return
     clear_user_session(user_id)
+    try:
+        if prompt_msg:
+            await prompt_msg.delete()
+    except Exception:
+        pass
+    try:
+        if ans:
+            await ans.delete()
+    except Exception:
+        pass
     text = (ans.text or "").strip()
     update_bot(bid, custom_caption=None if text.lower() == "off" else text[:4000])
     return await client.send_message(user_id, "📝 <b>CUSTOM CAPTION</b>\n\n" + ("Disabled." if text.lower() == "off" else "Saved successfully."), reply_markup=action_back(bid))
 
-async def _listen_button(client, user_id, bid, sess):
+async def _listen_button(client, user_id, bid, sess, prompt_msg=None):
     try:
         ans = await client.listen(chat_id=user_id, timeout=120)
     except Exception:
+        try:
+            if prompt_msg:
+                await prompt_msg.delete()
+        except Exception:
+            pass
         clear_user_session(user_id)
         return
     if not is_user_session_active(user_id, sess):
         return
     clear_user_session(user_id)
+    try:
+        if prompt_msg:
+            await prompt_msg.delete()
+    except Exception:
+        pass
+    try:
+        if ans:
+            await ans.delete()
+    except Exception:
+        pass
     text = (ans.text or "").strip()
     if text.lower() == "off":
         update_bot(bid, custom_buttons=[])
@@ -596,15 +727,30 @@ async def _listen_button(client, user_id, bid, sess):
     update_bot(bid, custom_buttons=buttons)
     return await client.send_message(user_id, "➕ <b>CUSTOM BUTTON</b>\n\nButton added successfully.", reply_markup=action_back(bid))
 
-async def _listen_shortener(client, user_id, bid, sess):
+async def _listen_shortener(client, user_id, bid, sess, prompt_msg=None):
     try:
         ans = await client.listen(chat_id=user_id, timeout=120)
     except Exception:
+        try:
+            if prompt_msg:
+                await prompt_msg.delete()
+        except Exception:
+            pass
         clear_user_session(user_id)
         return
     if not is_user_session_active(user_id, sess):
         return
     clear_user_session(user_id)
+    try:
+        if prompt_msg:
+            await prompt_msg.delete()
+    except Exception:
+        pass
+    try:
+        if ans:
+            await ans.delete()
+    except Exception:
+        pass
     text = (ans.text or "").strip()
     if text.lower() == "off":
         update_bot(bid, shortener_api=None, base_site=None)
@@ -616,15 +762,30 @@ async def _listen_shortener(client, user_id, bid, sess):
     update_bot(bid, shortener_api=api, base_site=site)
     return await client.send_message(user_id, "🔗 <b>LINK SHORTENER</b>\n\nAPI and base site saved for this clone.", reply_markup=action_back(bid))
 
-async def _listen_startpic(client, user_id, bid, sess):
+async def _listen_startpic(client, user_id, bid, sess, prompt_msg=None):
     try:
         ans = await client.listen(chat_id=user_id, timeout=120)
     except Exception:
+        try:
+            if prompt_msg:
+                await prompt_msg.delete()
+        except Exception:
+            pass
         clear_user_session(user_id)
         return
     if not is_user_session_active(user_id, sess):
         return
     clear_user_session(user_id)
+    try:
+        if prompt_msg:
+            await prompt_msg.delete()
+    except Exception:
+        pass
+    try:
+        if ans:
+            await ans.delete()
+    except Exception:
+        pass
     text = (ans.text or "").strip()
     if text.lower() == "off":
         update_bot(bid, start_pic=None)

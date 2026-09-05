@@ -34,24 +34,49 @@ async def handle_refer_callbacks(client, query, data, user_id, r, save_fn, cance
     if data == "m_set_refer_pts":
         cancel_listeners_fn(client, user_id, user_id)
         sess_token = start_user_session(user_id, "m_refer_pts")
-        await query.answer()
-        await query.message.reply("🌍 <b>Send points to award per referral (e.g. <code>10</code>):</b>\n\n<i>Send /cancel to abort.</i>")
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        try:
+            if getattr(query, "message", None):
+                await query.message.delete()
+        except Exception:
+            pass
+        prompt_msg = await client.send_message(
+            chat_id=user_id,
+            text="🌍 <b>Send points to award per referral (e.g. <code>10</code>):</b>\n\n<i>Send /cancel to abort.</i>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="master_refer_earn")]])
+        )
         async def _ref_worker():
             try:
                 ans = await client.listen(chat_id=user_id, timeout=120)
             except Exception:
+                try:
+                    await prompt_msg.delete()
+                except Exception:
+                    pass
                 await client.send_message(user_id, "❌ <b>Timeout. Process cancelled.</b>")
                 clear_user_session(user_id)
                 return
             if not is_user_session_active(user_id, sess_token):
                 return
+            try:
+                await prompt_msg.delete()
+            except Exception:
+                pass
+            try:
+                if ans:
+                    await ans.delete()
+            except Exception:
+                pass
             t = (ans.text or "").strip()
             if t == "/cancel":
-                await client.send_message(user_id, "❌ <b>Cancelled.</b>")
+                await client.send_message(user_id, "❌ <b>Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="master_refer_earn")]]))
                 clear_user_session(user_id)
                 return
             if not t.isdigit():
-                await client.send_message(user_id, "❌ <b>Must be a number.</b>")
+                await client.send_message(user_id, "❌ <b>Must be a number.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪧 BACK", callback_data="master_refer_earn")]]))
                 clear_user_session(user_id)
                 return
             save_fn(refer_points=int(t))

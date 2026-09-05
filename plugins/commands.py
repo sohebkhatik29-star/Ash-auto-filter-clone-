@@ -991,6 +991,12 @@ async def cb_handler(client: Client, query: CallbackQuery):
     if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
         return
     try:
+        from settings_modules.button_debouncer import debounce_callback
+        if await debounce_callback(query):
+            return
+    except Exception:
+        pass
+    try:
         from plugins.master_settings import cancel_user_listeners
         cancel_user_listeners(client, query.message.chat.id if query.message else query.from_user.id, query.from_user.id)
     except Exception:
