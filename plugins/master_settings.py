@@ -411,12 +411,6 @@ async def send_manage_clones(client, message_or_user_id, message=None):
 async def callbacks(client, query):
     user_id = query.from_user.id
     data = query.data or ""
-    try:
-        from settings_modules.button_debouncer import debounce_callback
-        if await debounce_callback(query):
-            return
-    except Exception:
-        pass
     
     # Check if target bid is in callback data (e.g. cset_prem:123456)
     target_bid = None

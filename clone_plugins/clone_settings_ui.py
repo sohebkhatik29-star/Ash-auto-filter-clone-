@@ -167,12 +167,6 @@ async def settings(client, message):
 async def callbacks(client, query):
     data = query.data
     user_id = query.from_user.id
-    try:
-        from settings_modules.button_debouncer import debounce_callback
-        if await debounce_callback(query):
-            return
-    except Exception:
-        pass
 
 
     try:

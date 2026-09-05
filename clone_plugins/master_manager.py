@@ -132,12 +132,6 @@ async def edit_setting(query, bid, title, value):
 async def handle_clone_callbacks(client, query):
     data = query.data
     user_id = query.from_user.id
-    try:
-        from settings_modules.button_debouncer import debounce_callback
-        if await debounce_callback(query):
-            return
-    except Exception:
-        pass
     m = db()
 
     if data in ("my_clone", "my_clones", "clone_my_bots"):

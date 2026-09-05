@@ -2,6 +2,7 @@
 Button Debouncer / Anti-Spam Module
 Prevents duplicate panels and race conditions when users click buttons multiple times rapidly.
 """
+
 import time
 import logging
 
@@ -38,6 +39,10 @@ async def debounce_callback(query, cooldown: float = 0.45) -> bool:
     and returns True.
     """
     try:
+        if getattr(query, "_debounced_checked", False):
+            return False
+        setattr(query, "_debounced_checked", True)
+
         uid = getattr(query, "from_user", None) and query.from_user.id
         msg_id = getattr(query, "message", None) and query.message.id
         data = getattr(query, "data", "") or ""
