@@ -195,6 +195,12 @@ async def callbacks(client, query):
     if data in ("my_clone", "my_clones", "clone_my_bots", "create_clone_prompt", "clone_limit") or data.startswith(("manage_clone:", "cm:", "cad:", "cmdelete:")):
         return
 
+    # Direct delegation for FSub verify and core clone commands
+    if data.startswith("verify:") or data in ("close_data", "help", "about"):
+        from clone_plugins import commands as cmd
+        if callable(getattr(cmd, "callbacks", None)):
+            return await cmd.callbacks(client, query)
+
     if data in ("settings", "settings_back", "cset:home", "clone_my_clone_info", "start_back", "cset:hub"):
         text = (
             f"🤖 <b>YOUR CLONE BOT - @{me.username}</b>\n\n"
@@ -314,7 +320,15 @@ async def callbacks(client, query):
     if data in ("cset_delete_bot", "cset_confirm_del_bot"):
         return await handle_delete_bot_callbacks(client, query, data, user_id, r, client_save, db, cancel_user_listeners, edit_or_reply)
 
-    # Fallback
+    # Fallback: check if handled by commands callbacks before answering empty
+    try:
+        from clone_plugins import commands as cmd
+        if callable(getattr(cmd, "callbacks", None)):
+            res = await cmd.callbacks(client, query)
+            if res is not None:
+                return res
+    except Exception:
+        pass
     await query.answer()
 
 def register(client):

@@ -193,6 +193,7 @@ def register_clone_handlers(client):
 
     callback = getattr(cmd, "callbacks", None)
     if callable(callback):
+        client.add_handler(CallbackQueryHandler(callback, filters.regex(r"^(close_data|verify:.*|help|about|start_back)$")), group=0)
         client.add_handler(CallbackQueryHandler(callback), group=2)
 
     advanced_callback = getattr(adv, "callbacks", None)
