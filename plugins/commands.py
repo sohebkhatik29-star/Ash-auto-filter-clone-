@@ -240,10 +240,14 @@ async def check_master_fsub(client, user_id, original_payload):
         return None
 
     buttons = []
-    # 1. Channel join buttons
-    for item in missing:
-        btn_title = f"Join {item['title']} ↗️" if len(item['title']) <= 25 else f"Join Channel {item['idx']} ↗️"
-        buttons.append([InlineKeyboardButton(btn_title, url=item["link"])])
+    # 1. Missing channel join buttons (2 per row, named Join Channel 1 ↗️, Join Channel 2 ↗️...)
+    channel_btns = []
+    for idx, item in enumerate(missing):
+        btn_title = f"Join Channel {idx + 1} ↗️"
+        channel_btns.append(InlineKeyboardButton(btn_title, url=item["link"]))
+
+    for i in range(0, len(channel_btns), 2):
+        buttons.append(channel_btns[i:i + 2])
 
     # 2. Custom fake buttons if set
     fsub_btns = master_cfg.get("fsub_buttons", [])
@@ -262,7 +266,7 @@ async def check_master_fsub(client, user_id, original_payload):
     if original_payload:
         buttons.append([InlineKeyboardButton("🔄 TRY AGAIN 🔄", url=f"https://t.me/{me.username}?start={original_payload}")])
     else:
-        buttons.append([InlineKeyboardButton("🔄 TRY AGAIN 🔄", callback_data=f"master_verify:{original_payload}")])
+        buttons.append([InlineKeyboardButton("🔄 TRY AGAIN 🔄", callback_data=f"master_verify:{original_payload or ''}")])
 
     return InlineKeyboardMarkup(buttons)
 
@@ -273,10 +277,32 @@ async def send_master_fsub_prompt(client, message, payload):
         return False
     master_cfg = await get_master_config(client)
     custom_text = master_cfg.get("fsub_text")
+    channels = master_cfg.get("fsub_channels", [])
+    if not channels and master_cfg.get("force_channels"):
+        channels = master_cfg.get("force_channels", [])
+    if not channels and master_cfg.get("force_sub"):
+        channels = [master_cfg.get("force_sub")]
+    count = len(channels) or 1
+
     if custom_text:
-        text = custom_text.replace("{user_mention}", message.from_user.mention).replace("{mention}", message.from_user.mention)
+        text = (
+            custom_text
+            .replace("{user_mention}", message.from_user.mention)
+            .replace("{mention}", message.from_user.mention)
+            .replace("{count}", str(count))
+        )
     else:
-        text = "👉 <b>PLEASE JOIN MY UPDATES CHANNEL AND THEN CLICK ON TRY AGAIN BUTTON</b> 👇"
+        if count == 1:
+            ch_str_en = "1 Update Channel"
+            ch_str_hi = "1 अपडेट चैनल"
+        else:
+            ch_str_en = f"{count} Update Channel(s)"
+            ch_str_hi = f"{count} अपडेट चैनल(ओं)"
+
+        text = f"""Hey {message.from_user.mention}
+Please Join My {ch_str_en} To Use Me!
+
+हे {message.from_user.mention} कृपया मुझे इस्तेमाल करने के लिए मेरे {ch_str_hi} से जुड़ें!"""
 
     fsub_pic = master_cfg.get("fsub_pic")
     has_spoiler = bool(master_cfg.get("fsub_pic_spoiler", False))
@@ -323,6 +349,8 @@ async def start(client, message):
         await db.add_user(message.from_user.id, message.from_user.first_name)
         await client.send_message(LOG_CHANNEL, script.LOG_TEXT.format(message.from_user.id, message.from_user.mention))
     if len(message.command) != 2:
+        if await send_master_fsub_prompt(client, message, ""):
+            return
         reply_markup = get_master_start_markup(message.from_user.id)
         me = client.me
         u_info = await get_user(message.from_user.id)
@@ -346,6 +374,9 @@ async def start(client, message):
 # Ask Doubt on telegram @movies_1780
     
     data = message.command[1]
+    if data.lower() == "start":
+        if await send_master_fsub_prompt(client, message, ""):
+            return
     if data.lower() == "clone":
         from plugins.master_settings import send_manage_clones
         return await send_manage_clones(client, message)
@@ -967,6 +998,36 @@ async def cb_handler(client: Client, query: CallbackQuery):
         payload = data.split(":", 1)[1] if ":" in data else ""
         from settings_modules.premium_plan import handle_user_back_from_premium
         return await handle_user_back_from_premium(client, query, payload=payload)
+
+    elif data.startswith("master_verify:"):
+        payload = data.split(":", 1)[1] if ":" in data else ""
+        markup = await check_master_fsub(client, query.from_user.id, payload)
+        if markup:
+            return await query.answer("❌ Join all required channels first.", show_alert=True)
+        await query.answer("✅ Verified!")
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        if payload and payload not in ("", "start"):
+            me = client.me or (await client.get_me())
+            return await client.send_message(
+                query.from_user.id,
+                "<b>✅ Verification successful. Open your file link again.</b>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📥 GET YOUR FILE", url=f"https://t.me/{me.username}?start={payload}")]])
+            )
+        else:
+            reply_markup = get_master_start_markup(query.from_user.id)
+            me = client.me or (await client.get_me())
+            u_info = await get_user(query.from_user.id)
+            start_photo = (u_info.get("start_pic") if u_info else None) or (random.choice(PICS) if PICS else None)
+            caption = script.START_TXT.format(query.from_user.mention, me.mention)
+            if start_photo:
+                try:
+                    return await client.send_photo(chat_id=query.from_user.id, photo=start_photo, caption=caption, reply_markup=reply_markup)
+                except Exception:
+                    pass
+            return await client.send_message(chat_id=query.from_user.id, text=caption, reply_markup=reply_markup)
 
     elif data == "about":
         buttons = [[

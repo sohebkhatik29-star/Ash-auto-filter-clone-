@@ -147,10 +147,14 @@ async def force_markup(client, user_id, original_payload):
         return None
 
     buttons = []
-    # 1. Missing channel join buttons
-    for item in missing:
-        btn_title = f"Join {item['title']} ↗️" if len(item['title']) <= 25 else f"Join Channel {item['idx']} ↗️"
-        buttons.append([InlineKeyboardButton(btn_title, url=item["link"])])
+    # 1. Missing channel join buttons (2 per row, named Join Channel 1 ↗️, Join Channel 2 ↗️...)
+    channel_btns = []
+    for idx, item in enumerate(missing):
+        btn_title = f"Join Channel {idx + 1} ↗️"
+        channel_btns.append(InlineKeyboardButton(btn_title, url=item["link"]))
+
+    for i in range(0, len(channel_btns), 2):
+        buttons.append(channel_btns[i:i + 2])
 
     # 2. Custom fake buttons if set
     fsub_btns = rec.get("fsub_buttons", [])
@@ -170,7 +174,7 @@ async def force_markup(client, user_id, original_payload):
         try_again_url = f"https://t.me/{me.username}?start={original_payload}"
         buttons.append([InlineKeyboardButton("🔄 TRY AGAIN 🔄", url=try_again_url)])
     else:
-        buttons.append([InlineKeyboardButton("🔄 TRY AGAIN 🔄", callback_data=f"verify:{original_payload}")])
+        buttons.append([InlineKeyboardButton("🔄 TRY AGAIN 🔄", callback_data=f"verify:{original_payload or ''}")])
 
     return InlineKeyboardMarkup(buttons)
 
@@ -181,10 +185,32 @@ async def send_fsub_prompt(client, message, payload):
         return False
     rec = bot_record(client)
     custom_text = rec.get("fsub_text")
+    channels = rec.get("fsub_channels", [])
+    if not channels and rec.get("force_channels"):
+        channels = rec.get("force_channels", [])
+    if not channels and rec.get("force_sub"):
+        channels = [rec.get("force_sub")]
+    count = len(channels) or 1
+
     if custom_text:
-        text = custom_text.replace("{user_mention}", message.from_user.mention).replace("{mention}", message.from_user.mention)
+        text = (
+            custom_text
+            .replace("{user_mention}", message.from_user.mention)
+            .replace("{mention}", message.from_user.mention)
+            .replace("{count}", str(count))
+        )
     else:
-        text = "👉 <b>PLEASE JOIN MY UPDATES CHANNEL AND THEN CLICK ON TRY AGAIN BUTTON</b> 👇"
+        if count == 1:
+            ch_str_en = "1 Update Channel"
+            ch_str_hi = "1 अपडेट चैनल"
+        else:
+            ch_str_en = f"{count} Update Channel(s)"
+            ch_str_hi = f"{count} अपडेट चैनल(ओं)"
+
+        text = f"""Hey {message.from_user.mention}
+Please Join My {ch_str_en} To Use Me!
+
+हे {message.from_user.mention} कृपया मुझे इस्तेमाल करने के लिए मेरे {ch_str_hi} से जुड़ें!"""
 
     fsub_pic = rec.get("fsub_pic")
     has_spoiler = bool(rec.get("fsub_pic_spoiler", False))
@@ -794,6 +820,8 @@ async def start(client, message):
             pass
 
     if len(message.command) != 2:
+        if await send_fsub_prompt(client, message, ""):
+            return
         buttons = [
             [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY OWN BOT", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
             [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
@@ -833,6 +861,9 @@ async def start(client, message):
         return await message.reply(caption, reply_markup=InlineKeyboardMarkup(buttons))
 
     data = message.command[1]
+    if data.lower() == "start":
+        if await send_fsub_prompt(client, message, ""):
+            return
     if data.lower() == "clone":
         text = (
             "👑 <b>CLONE BOT CREATOR</b>\n\n"
@@ -1136,7 +1167,7 @@ async def callbacks(client, query):
     if data == "close_data":
         return await query.message.delete()
     if data.startswith("verify:"):
-        payload = data.split(":", 1)[1]
+        payload = data.split(":", 1)[1] if ":" in data else ""
         markup = await force_markup(client, query.from_user.id, payload)
         if markup:
             return await query.answer("❌ Join all required channels first.", show_alert=True)
@@ -1145,7 +1176,51 @@ async def callbacks(client, query):
             await query.message.delete()
         except Exception:
             pass
-        return await client.send_message(query.from_user.id, "<b>✅ Verification successful. Open your file link again.</b>")
+        if payload and payload not in ("", "start"):
+            me = client.me or (await client.get_me())
+            return await client.send_message(
+                query.from_user.id,
+                "<b>✅ Verification successful. Open your file link again.</b>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📥 GET YOUR FILE", url=f"https://t.me/{me.username}?start={payload}")]])
+            )
+        else:
+            me = client.me or (await client.get_me())
+            rec = bot_record(client)
+            buttons = [
+                [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY OWN BOT", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
+                [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
+                [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
+            ]
+            start_btns = rec.get("start_buttons", [])
+            for r_item in start_btns:
+                row_btns = []
+                if isinstance(r_item, dict) and "buttons" in r_item:
+                    for b in r_item["buttons"]:
+                        row_btns.append(InlineKeyboardButton(b["text"], url=b["url"]))
+                elif isinstance(r_item, dict) and "text" in r_item:
+                    row_btns.append(InlineKeyboardButton(r_item["text"], url=r_item.get("url", "https://t.me")))
+                if row_btns:
+                    buttons.append(row_btns)
+
+            custom_text = rec.get("start_text")
+            if custom_text:
+                caption = custom_text.replace("{mention}", query.from_user.mention).replace("{bot_mention}", me.mention)
+            else:
+                caption = script.CLONE_START_TXT.format(query.from_user.mention, me.mention)
+
+            has_spoiler = bool(rec.get("start_pic_spoiler", False))
+            custom_pic = rec.get("start_pic")
+            start_photo = custom_pic or (random.choice(PICS) if PICS else None)
+
+            if start_photo:
+                try:
+                    return await client.send_photo(chat_id=query.from_user.id, photo=start_photo, caption=caption, reply_markup=InlineKeyboardMarkup(buttons), has_spoiler=has_spoiler)
+                except Exception:
+                    try:
+                        return await client.send_photo(chat_id=query.from_user.id, photo=start_photo, caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
+                    except Exception:
+                        pass
+            return await client.send_message(chat_id=query.from_user.id, text=caption, reply_markup=InlineKeyboardMarkup(buttons))
     if data == "help":
         return await help_command(client, query.message)
     if data == "about":
