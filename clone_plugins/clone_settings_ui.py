@@ -199,7 +199,7 @@ async def callbacks(client, query):
         return
 
     # Direct delegation for FSub verify and core clone commands
-    if data.startswith("verify:") or data in ("close_data", "help", "about"):
+    if data.startswith("verify:") or data in ("close_data", "help", "about", "start_back"):
         from clone_plugins import commands as cmd
         if callable(getattr(cmd, "callbacks", None)):
             return await cmd.callbacks(client, query)

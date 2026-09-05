@@ -1194,6 +1194,44 @@ async def settings_command(client, message):
     return await cset.settings(client, message)
 
 
+async def safe_edit_menu(query_or_msg, text, reply_markup=None):
+    msg = getattr(query_or_msg, "message", None) or query_or_msg
+    if not msg:
+        return
+    try:
+        if getattr(msg, "photo", None) or getattr(msg, "media", None):
+            try:
+                return await msg.edit_caption(caption=text, reply_markup=reply_markup)
+            except Exception as e:
+                err = str(e).upper()
+                if "MESSAGE_NOT_MODIFIED" in err:
+                    return msg
+                try:
+                    return await msg.edit_text(text=text, reply_markup=reply_markup, disable_web_page_preview=True)
+                except Exception:
+                    pass
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
+                chat_id = getattr(msg.chat, "id", None) or getattr(query_or_msg, "from_user", None).id
+                return await msg._client.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup, disable_web_page_preview=True)
+        else:
+            try:
+                return await msg.edit_text(text=text, reply_markup=reply_markup, disable_web_page_preview=True)
+            except Exception as e:
+                err = str(e).upper()
+                if "MESSAGE_NOT_MODIFIED" in err:
+                    return msg
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
+                chat_id = getattr(msg.chat, "id", None) or getattr(query_or_msg, "from_user", None).id
+                return await msg._client.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup, disable_web_page_preview=True)
+    except Exception:
+        pass
+
 async def callbacks(client, query):
     try:
         from clone_plugins.ban_manager import check_user_banned_or_block
@@ -1266,11 +1304,17 @@ async def callbacks(client, query):
                         pass
             return await client.send_message(chat_id=query.from_user.id, text=caption, reply_markup=InlineKeyboardMarkup(buttons))
     if data == "help":
+        try:
+            await query.answer()
+        except Exception:
+            pass
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="start_back")]])
-        if query.message.photo:
-            return await query.message.edit_caption(caption=script.HELP_TXT, reply_markup=markup)
-        return await query.message.edit_text(script.HELP_TXT, reply_markup=markup)
+        return await safe_edit_menu(query, text=script.HELP_TXT, reply_markup=markup)
     if data == "about":
+        try:
+            await query.answer()
+        except Exception:
+            pass
         me = client.me or (await client.get_me())
         owner_id_val = owner_id(client) or query.from_user.id
         owner_name = "Ash"
@@ -1287,10 +1331,12 @@ async def callbacks(client, query):
             owner_name
         )
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="start_back")]])
-        if query.message.photo:
-            return await query.message.edit_caption(caption=about_text, reply_markup=markup)
-        return await query.message.edit_text(about_text, reply_markup=markup)
+        return await safe_edit_menu(query, text=about_text, reply_markup=markup)
     if data == "start_back":
+        try:
+            await query.answer()
+        except Exception:
+            pass
         me = client.me or (await client.get_me())
         rec = bot_record(client)
         buttons = [
@@ -1315,9 +1361,7 @@ async def callbacks(client, query):
         else:
             caption = script.CLONE_START_TXT.format(query.from_user.mention, me.mention)
 
-        if query.message.photo:
-            return await query.message.edit_caption(caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
-        return await query.message.edit_text(caption, reply_markup=InlineKeyboardMarkup(buttons))
+        return await safe_edit_menu(query, text=caption, reply_markup=InlineKeyboardMarkup(buttons))
     if data.startswith("c_buy_prem") or data.startswith("c_prem_upi_view"):
         payload = data.split(":", 1)[1] if ":" in data else ""
         rec = bot_record(client)

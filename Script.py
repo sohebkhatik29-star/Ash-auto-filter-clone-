@@ -52,20 +52,20 @@ First Send /clone command then follow below steps.
 
     HELP_TXT = """🌵 <b>Help Menu</b>
 
-I am a permenant file store bot. you can store files from your public channel without i am admin in there. Either your channel or group is private first make me admin in there. Then you can store your files by using below mentioned commands and you can access stored files by using shareable link given by me
+I am a permanent file store bot. You can store files from your public channel without making me admin. For private channel or group, make me admin first. Use below commands to store and access your files via shareable link.
 
 📚 <b>Available Commands:</b>
-➜ /start -  check i am alive.
+➜ /start - check i am alive.
 ➜ /genlink - To store a single message or file (moderators only).
-➜ /batch - To store mutiple messages from a channel (moderators only).
+➜ /batch - To store multiple messages from a channel (moderators only).
 ➜ /custom_batch - To store multiple random messages (moderators only).
 ➜ /shortener - To shorten any shareable links (moderators only).
-➜ /settings - Customize Your settings as your need.
+➜ /settings - Customize your settings as needed.
  
 🛡️ <b>Moderators Commands:</b>
 ➜ /special_link - store multiple messages and get an editable link.
 ➜ /universal_link - stores multiple messages that can be accessed from any of your clones.
-➜ /broadcast - Broadcast a messages to users.
+➜ /broadcast - Broadcast messages to users.
 ➜ /an_broadcast - Broadcast messages without pin / unpin notification.
 ➜ /ban - ban a user.
 ➜ /unban - unban a user."""
