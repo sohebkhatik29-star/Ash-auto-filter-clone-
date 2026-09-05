@@ -797,8 +797,7 @@ async def help_command_handler(client, message):
     if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
         return
     buttons = [[
-        InlineKeyboardButton('Hᴏᴍᴇ', callback_data='start'),
-        InlineKeyboardButton('🔒 Cʟᴏsᴇ', callback_data='close_data')
+        InlineKeyboardButton("‹ BACK", callback_data="start")
     ]]
     try:
         await message.reply_photo(
@@ -1068,16 +1067,29 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
     elif data == "about":
         buttons = [[
-            InlineKeyboardButton("Hᴏᴍᴇ", callback_data="start"),
-            InlineKeyboardButton("🔒 Cʟᴏsᴇ", callback_data="close_data")
+            InlineKeyboardButton("‹ BACK", callback_data="start")
         ]]
-        me2 = (await client.get_me()).mention
+        me = await client.get_me()
+        me2 = me.first_name or "Ash File Store Bot"
+        owner_name = "Ash"
+        owner_id_val = ADMINS[0] if ADMINS else 0
+        try:
+            owner_user = await client.get_users(owner_id_val)
+            owner_name = owner_user.first_name or "Ash"
+        except Exception:
+            pass
+        about_text = script.ABOUT_TXT.format(
+            me2,
+            BOT_USERNAME or me.username or "Ash_files_or_clone_mangar_bot",
+            "Ash File Store Bot",
+            owner_id_val,
+            owner_name
+        )
         await safe_edit_menu(
             query,
-            text=script.ABOUT_TXT.format(me2),
+            text=about_text,
             reply_markup=InlineKeyboardMarkup(buttons)
         )
-
     elif data == "start":
         reply_markup = get_master_start_markup(query.from_user.id)
         me2 = (await client.get_me()).mention
@@ -1100,8 +1112,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
     elif data == "help":
         buttons = [[
-            InlineKeyboardButton("Hᴏᴍᴇ", callback_data="start"),
-            InlineKeyboardButton("🔒 Cʟᴏsᴇ", callback_data="close_data")
+            InlineKeyboardButton("‹ BACK", callback_data="start")
         ]]
         await safe_edit_menu(
             query,

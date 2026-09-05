@@ -1084,32 +1084,8 @@ async def help_command(client, message):
             return
     except Exception:
         pass
-    text = (
-        "📚 <b>ASH FILE STORE — HELP</b>\n\n"
-        "👤 <b>User Commands</b>\n"
-        "• /start — Check bot / open file link\n"
-        "• /help — Open this help\n"
-        "• /getlink — Create a single shareable file link\n"
-        "• /batch — Store multiple messages from a channel\n"
-        "• /custom_batch — Create custom batch links\n"
-        "• /special_link — Create a special link\n"
-        "• /universal_link — Create a universal link\n"
-        "• /shortener — Shortener settings\n"
-        "• /settings — Customize bot\n"
-        "• /api KEY — Set shortener API\n"
-        "• /base_site SITE — Set shortener site\n"
-        "• /clone — Create your own clone\n\n"
-        "👑 <b>Owner / Moderator</b>\n"
-        "• /admin • /stats • /broadcast\n"
-        "• /ban • /unban • /force_sub\n"
-        "• /caption • /button • /protect\n"
-        "• /auto_delete • /no_forward • /moderator\n"
-        "• /access_token • /transfer_db • /deactivate\n"
-        "• /mode • /restart • /delete • /start_msg\n\n"
-        "⚙️ Owner features are also available from <b>Settings → My Clone Bot</b>."
-    )
-    await message.reply(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings")]]))
-
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="start_back")]])
+    await message.reply(script.HELP_TXT, reply_markup=markup, disable_web_page_preview=True)
 
 async def genlink(client, message):
     if not is_owner_or_mod(client,message.from_user.id) and bot_record(client).get("mode","private")=="private": return await message.reply("❌ Link generation is private. Only owner/moderators can use it.")
@@ -1290,20 +1266,23 @@ async def callbacks(client, query):
                         pass
             return await client.send_message(chat_id=query.from_user.id, text=caption, reply_markup=InlineKeyboardMarkup(buttons))
     if data == "help":
-        return await help_command(client, query.message)
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="start_back")]])
+        if query.message.photo:
+            return await query.message.edit_caption(caption=script.HELP_TXT, reply_markup=markup)
+        return await query.message.edit_text(script.HELP_TXT, reply_markup=markup)
     if data == "about":
         me = client.me or (await client.get_me())
         owner_id_val = owner_id(client) or query.from_user.id
         owner_name = "Ash"
         try:
             owner_user = await client.get_users(owner_id_val)
-            owner_name = owner_user.first_name or "Owner"
+            owner_name = owner_user.first_name or "Ash"
         except Exception:
             pass
         about_text = script.CABOUT_TXT.format(
             me.first_name,
-            BOT_USERNAME,
-            "MD File Store Bot",
+            BOT_USERNAME or me.username or "Ash_files_or_clone_mangar_bot",
+            "Ash File Store Bot",
             owner_id_val,
             owner_name
         )
@@ -1313,12 +1292,29 @@ async def callbacks(client, query):
         return await query.message.edit_text(about_text, reply_markup=markup)
     if data == "start_back":
         me = client.me or (await client.get_me())
+        rec = bot_record(client)
         buttons = [
             [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY OWN BOT", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
             [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
             [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
         ]
-        caption = script.CLONE_START_TXT.format(query.from_user.mention, me.mention)
+        start_btns = rec.get("start_buttons", [])
+        for r_item in start_btns:
+            row_btns = []
+            if isinstance(r_item, dict) and "buttons" in r_item:
+                for b in r_item["buttons"]:
+                    row_btns.append(InlineKeyboardButton(b["text"], url=b["url"]))
+            elif isinstance(r_item, dict) and "text" in r_item:
+                row_btns.append(InlineKeyboardButton(r_item["text"], url=r_item.get("url", "https://t.me")))
+            if row_btns:
+                buttons.append(row_btns)
+
+        custom_text = rec.get("start_text")
+        if custom_text:
+            caption = custom_text.replace("{mention}", query.from_user.mention).replace("{bot_mention}", me.mention)
+        else:
+            caption = script.CLONE_START_TXT.format(query.from_user.mention, me.mention)
+
         if query.message.photo:
             return await query.message.edit_caption(caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
         return await query.message.edit_text(caption, reply_markup=InlineKeyboardMarkup(buttons))

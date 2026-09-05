@@ -1,33 +1,14 @@
 from pyrogram import Client, filters
-
-HELP_TEXT = """<b>📚 Clone Bot Help</b>
-
-<b>👤 File & Link</b>
-/start - Start / open a stored link
-/link - Create a file link
-genlink - Generate a file link
-/batch - Create a batch link
-/custom_batch - Custom batch
-/special_link - Special link
-/universal_link - Universal link
-/shortener - Shortener settings
-
-<b>⚙️ Owner Settings</b>
-/settings - View settings
-/force_sub - Add a force-join channel
-/caption - Set custom caption
-/button - Add a custom button
-/api - Set shortener API
-/base_site - Set shortener base site
-
-<b>👑 Owner</b>
-/admin - Owner panel
-/stats - Bot statistics
-/broadcast - Broadcast
-/ban - Ban user
-/unban - Unban user
-"""
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from Script import script
 
 @Client.on_message(filters.command("help") & filters.private)
 async def help_cmd(client, message):
-    await message.reply_text(HELP_TEXT)
+    try:
+        from clone_plugins.ban_manager import check_user_banned_or_block
+        if await check_user_banned_or_block(client, message):
+            return
+    except Exception:
+        pass
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="start_back")]])
+    await message.reply_text(script.HELP_TXT, reply_markup=markup, disable_web_page_preview=True)

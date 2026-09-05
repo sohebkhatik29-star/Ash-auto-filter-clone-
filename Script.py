@@ -2,104 +2,80 @@ class script(object):
     START_TXT = """<b>ʜᴇʟʟᴏ {}, ᴍʏ ɴᴀᴍᴇ {} 👋, ɪ ᴀᴍ ʟᴀᴛᴇꜱᴛ ᴀᴅᴠᴀɴᴄᴇᴅ ᴀɴᴅ ᴘᴏᴡᴇʀꜰᴜʟ ғɪʟᴇ sᴛᴏʀᴇ ʙᴏᴛ + ᴄʟᴏɴᴇ ғᴇᴀᴛᴜʀᴇ + sᴛʀᴇᴀᴍ / ᴅᴏᴡɴʟᴏᴀᴅ ʟɪɴᴋ ғᴇᴀᴛᴜʀᴇ + ᴄᴜsᴛᴏᴍ ᴜʀʟ sʜᴏʀᴛᴇɴᴇʀ sᴜᴘᴘᴏʀᴛ + ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ sᴜᴘᴘᴏʀᴛ ᴀɴᴅ ʙᴇsᴛ ᴜɪ ᴘᴇʀғᴏʀᴍᴀɴᴄᴇ </b>"""
 
     CAPTION = """<b>📂 ғɪʟᴇɴᴀᴍᴇ : {file_name}
-
 ⚙️ sɪᴢᴇ : {file_size}
-
 Jᴏɪɴ [ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ](https://t.me/MoviesGroupG3)</b>"""
 
     SHORTENER_API_MESSAGE = """<b>Tᴏ ᴀᴅᴅ ᴏʀ ᴜᴘᴅᴀᴛᴇ ʏᴏᴜʀ Sʜᴏʀᴛᴇɴᴇʀ Wᴇʙsɪᴛᴇ API, /api (ᴀᴘɪ)
-
-<b>Ex: /api ʏᴏᴜʀ_ᴀᴘɪ_ᴋᴇʏ
-
-<b>Cᴜʀʀᴇɴᴛ Wᴇʙsɪᴛᴇ: {base_site}
-
+Ex: /api ʏᴏᴜʀ_ᴀᴘɪ_ᴋᴇʏ
+Cᴜʀʀᴇɴᴛ Wᴇʙsɪᴛᴇ: {base_site}
 Cᴜʀʀᴇɴᴛ Sʜᴏʀᴛᴇɴᴇʀ API:</b> `{shortener_api}`
-
 If You Want To Remove Api Then Copy This And Send To Bot - `/api None`"""
 
-    CLONE_START_TXT = """<b>ʜᴇʟʟᴏ {}, ᴍʏ ɴᴀᴍᴇ {} 👋, ɪ ᴀᴍ ᴀɴ ᴀᴅᴠᴀɴᴄᴇᴅ ғɪʟᴇ sᴛᴏʀᴇ ʙᴏᴛ ᴡɪᴛʜ ᴄᴜsᴛᴏᴍ ᴜʀʟ sʜᴏʀᴛᴇɴᴇʀ ᴀɴᴅ ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ.
+    CLONE_START_TXT = """<b>ʜᴇʟʟᴏ {}, ᴍʏ ɴᴀᴍᴇ {} 👋, ɪ ᴀᴍ ᴀɴ ᴀᴅᴠᴀɴᴄᴇᴅ ғɪʟᴇ sᴛᴏʀᴇ ʙᴏᴛ ᴡɪᴛʜ ᴄᴜsᴛᴏᴍ ᴜʀʟ sʜᴏʀᴛᴇɴᴇʀ ᴀɴᴅ ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ.ɪғ ʏᴏᴜ ᴡᴀɴᴛ ᴛʜɪs ғᴇᴀᴛᴜʀᴇ ᴛʜᴇɴ ᴄʀᴇᴀᴛᴇ ʏᴏᴜʀ ᴏᴡɴ ᴄʟᴏɴᴇ ʙᴏᴛ ғʀᴏᴍ ᴛʜɪs ᴘᴀʀᴇɴᴛ ʙᴏᴛ.</b>"""
 
-ɪғ ʏᴏᴜ ᴡᴀɴᴛ ᴛʜɪs ғᴇᴀᴛᴜʀᴇ ᴛʜᴇɴ ᴄʀᴇᴀᴛᴇ ʏᴏᴜʀ ᴏᴡɴ ᴄʟᴏɴᴇ ʙᴏᴛ ғʀᴏᴍ ᴛʜɪs ᴘᴀʀᴇɴᴛ ʙᴏᴛ.</b>"""
+    ABOUT_TXT = """✨ <b><u>ABOUT ME</u></b>
 
-    ABOUT_TXT = """<b>ʜɪ ɪ ᴀᴍ ᴀ ᴘᴇʀᴍᴀɴᴇɴᴛ ғɪʟᴇ sᴛᴏʀᴇ ʙᴏᴛ ᴡɪᴛʜ ᴄʟᴏɴᴇ ғᴇᴀᴛᴜʀᴇ + ᴄᴜsᴛᴏᴍ ᴜʀʟ sʜᴏʀᴛᴇɴᴇʀ + ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ.
+☆ <b>MY NAME:</b> {}
 
-🤖 ᴍʏ ɴᴀᴍᴇ: {}
+☆ <b>CLONE OF:</b> <a href=https://t.me/{}>{}</a>
 
-📝 ʟᴀɴɢᴜᴀɢᴇ: <a href=https://www.python.org>𝐏𝐲𝐭𝐡𝐨𝐧𝟑</a>
+☆ <b>MY OWNER:</b> <a href=tg://user?id={}>{}</a>
 
-📚 ʟɪʙʀᴀʀʏ: <a href=https://docs.pyrogram.org>𝐏𝐲ʀᴏɢʀᴀᴍ</a>
+☆ <b>UPDATES:</b> <a href=https://t.me/MoviesGroupG3>ASH BOTZ</a>
 
-🧑🏻‍💻 ᴅᴇᴠᴇʟᴏᴘᴇʀ: <a href=https://t.me/movies_1780>@movies_1780</a>
+☆ <b>SUPPORT:</b> <a href=https://t.me/ash_movie_j>ASH GROUP</a>
 
-👥 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ: <a href=https://t.me/ash_movie_j>ash_movie_j</a>
+☆ <b>VERSION:</b> 0.7.19 [V1.6]"""
 
-📢 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ: <a href=https://t.me/MoviesGroupG3>MoviesGroupG3</a>
+    CABOUT_TXT = """✨ <b><u>ABOUT ME</u></b>
 
-▶️ ʏᴏᴜᴛᴜʙᴇ: <a href=https://www.youtube.com/@tech_as_0>Tech AS</a></b>
-"""
+☆ <b>MY NAME:</b> {}
 
-    CABOUT_TXT = """<b>✨ <u>ABOUT ME</u>
+☆ <b>CLONE OF:</b> <a href=https://t.me/{}>{}</a>
 
-☆ MY NAME: {}
-☆ CLONE OF: <a href=https://t.me/{}>{}</a>
-☆ MY OWNER: <a href=tg://user?id={}>{}</a>
-☆ UPDATES: <a href=https://t.me/MoviesGroupG3>MD BOTZ</a>
-☆ SUPPORT: <a href=https://t.me/ash_movie_j>MD GROUP</a>
-☆ VERSION: 0.7.19 [V1.6]</b>"""
+☆ <b>MY OWNER:</b> <a href=tg://user?id={}>{}</a>
+
+☆ <b>UPDATES:</b> <a href=https://t.me/MoviesGroupG3>ASH BOTZ</a>
+
+☆ <b>SUPPORT:</b> <a href=https://t.me/ash_movie_j>ASH GROUP</a>
+
+☆ <b>VERSION:</b> 0.7.19 [V1.6]"""
 
     CLONE_TXT = """<b>ʜᴇʟʟᴏ {} 👋
-
 First Send /clone command then follow below steps.
-
 1) sᴇɴᴅ <code>/newbot</code> ᴛᴏ @BotFather
 2) ɢɪᴠᴇ ᴀ ɴᴀᴍᴇ ғᴏʀ ʏᴏᴜʀ ʙᴏᴛ.
 3) ɢɪᴠᴇ ᴀ ᴜɴɪǫᴜᴇ ᴜsᴇʀɴᴀᴍᴇ.
 4) ᴛʜᴇɴ ʏᴏᴜ ᴡɪʟʟ ɢᴇᴛ ᴀ ᴍᴇssᴀɢᴇ ᴡɪᴛʜ ʏᴏᴜʀ ʙᴏᴛ ᴛᴏᴋᴇɴ.
 5) ꜰᴏʀᴡᴀʀᴅ ᴛʜᴀᴛ ᴍᴇssᴀɢᴇ ᴛᴏ ᴍᴇ.
-
 ᴛʜᴇɴ ɪ ᴡɪʟʟ ᴛʀʏ ᴛᴏ ᴄʀᴇᴀᴛᴇ ᴀ ᴄʟᴏɴᴇ ʙᴏᴛ ғᴏʀ ʏᴏᴜ 😌</b>"""
 
-    HELP_TXT = """<b><u>💢 HOW TO USE THE BOT ☺️</u>
+    HELP_TXT = """🌵 <b>Help Menu</b>
 
-🔻 /link - ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴠɪᴅᴇᴏ ᴏʀ ғɪʟᴇ ᴛᴏ ɢᴇᴛ sʜᴀʀᴀʙʟᴇ ʟɪɴᴋ
+I am a permenant file store bot. you can store files from your public channel without i am admin in there. Either your channel or group is private first make me admin in there. Then you can store your files by using below mentioned commands and you can access stored files by using shareable link given by me
 
-🔻 /batch - sᴇɴᴅ ғɪʀsᴛ ʟɪɴᴋ ᴏғ ᴛʜᴇ ғɪʟᴇ sᴛᴏʀᴇ ᴄʜᴀɴɴᴇʟ ᴘᴏsᴛ, ᴛʜᴇɴ ʟᴀsᴛ ᴘᴏsᴛ ʟɪɴᴋ.
-ᴇx - /batch https://t.me/MoviesGroupG3/25 https://t.me/MoviesGroupG3/30
+📚 <b>Available Commands:</b>
+➜ /start -  check i am alive.
+➜ /genlink - To store a single message or file (moderators only).
+➜ /batch - To store mutiple messages from a channel (moderators only).
+➜ /custom_batch - To store multiple random messages (moderators only).
+➜ /shortener - To shorten any shareable links (moderators only).
+➜ /settings - Customize Your settings as your need.
+ 
+🛡️ <b>Moderators Commands:</b>
+➜ /special_link - store multiple messages and get an editable link.
+➜ /universal_link - stores multiple messages that can be accessed from any of your clones.
+➜ /broadcast - Broadcast a messages to users.
+➜ /an_broadcast - Broadcast messages without pin / unpin notification.
+➜ /ban - ban a user.
+➜ /unban - unban a user."""
 
-🔻 /clone - ᴄʀᴇᴀᴛᴇ ʏᴏᴜʀ ᴏᴡɴ ᴄʟᴏɴᴇ ʙᴏᴛ
+    CHELP_TXT = HELP_TXT
 
-🔻 /base_site - ᴜsᴇ ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ ᴛᴏ sᴇᴛ ᴜʀʟ sʜᴏʀᴛᴇɴᴇʀ ᴅᴏᴍᴀɪɴ
-ᴇx - /base_site ʏᴏᴜʀᴅᴏᴍᴀɪɴ.ᴄᴏᴍ
+    LOG_TEXT = """<b>#NewUserID - <code>{}</code>
+Nᴀᴍᴇ - {}</b>"""
 
-🔻 /api - sᴇᴛ ʏᴏᴜʀ ᴜʀʟ sʜᴏʀᴛᴇɴᴇʀ ᴀᴄᴄᴏᴜɴᴛ ᴀᴘɪ
-ᴇx - /api ʏᴏᴜʀ_ᴀᴘɪ_ᴋᴇʏ
-
-🔻 /deletecloned - ᴜsᴇ ᴛʜɪs ғᴏʀ ᴅᴇʟᴇᴛᴇ ʏᴏᴜʀ ᴄʟᴏɴᴇ ʙᴏᴛ
-
-🔻 /broadcast - ʀᴇᴘʟʏ ᴛᴏ ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ ᴛᴏ ʙʀᴏᴀᴅᴄᴀsᴛ (ʙᴏᴛ ᴏᴡɴᴇʀ ᴏɴʟʏ)</b>"""
-
-    CHELP_TXT = """<b>💢 Hᴏᴡ Tᴏ Usᴇ Tʜɪs Bᴏᴛ ☺️
-
-🔻 /link - ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴠɪᴅᴇᴏ ᴏʀ ғɪʟᴇ ᴛᴏ ɢᴇᴛ sʜᴀʀᴀʙʟᴇ ʟɪɴᴋ
-
-🔻 /base_site - ᴜsᴇ ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ ᴛᴏ sᴇᴛ ᴜʀʟ sʜᴏʀᴛᴇɴᴇʀ ʟɪɴᴋ ᴅᴏᴍᴀɪɴ
-ᴇx - /base_site ʏᴏᴜʀᴅᴏᴍᴀɪɴ.ᴄᴏᴍ
-
-🔻 /api - sᴇᴛ ʏᴏᴜʀ ᴜʀʟ sʜᴏʀᴛᴇɴᴇʀ ᴀᴄᴄᴏᴜɴᴛ ᴀᴘɪ
-ᴇx - /api ʏᴏᴜʀ_ᴀᴘɪ_ᴋᴇʏ
-
-🔻 /broadcast - ʀᴇᴘʟʏ ᴛᴏ ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ ᴛᴏ ʙʀᴏᴀᴅᴄᴀsᴛ (ʙᴏᴛ ᴏᴡɴᴇʀ ᴏɴʟʏ)</b>"""
-
-    LOG_TEXT = """<b>#NewUser
-
-ID - <code>{}</code>
-
-Nᴀᴍᴇ - {}</b>
-"""
-
-    RESTART_TXT = """
-<b>Bᴏᴛ Rᴇsᴛᴀʀᴛᴇᴅ !
-
+    RESTART_TXT = """<b>Bᴏᴛ Rᴇsᴛᴀʀᴛᴇᴅ !
 📅 Dᴀᴛᴇ : <code>{}</code>
 ⏰ Tɪᴍᴇ : <code>{}</code>
 🌐 Tɪᴍᴇᴢᴏɴᴇ : <code>Asia/Kolkata</code>

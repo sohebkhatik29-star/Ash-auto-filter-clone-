@@ -38,34 +38,9 @@ async def clean_help(client, message):
             return
     except Exception:
         pass
-    text = (
-        "📚 <b>ASH FILE STORE — HELP</b>\n\n"
-        "👤 <b>User Commands</b>\n"
-        "• /start — Check bot / open file link\n"
-        "• /help — Open this help\n"
-        "• /getlink — Create a single shareable file link\n"
-        "• /batch — Store multiple messages from a channel\n"
-        "• /custom_batch — Create custom batch links\n"
-        "• /special_link — Create a special link\n"
-        "• /universal_link — Create a universal link\n"
-        "• /shortener — Shortener settings\n"
-        "• /settings — Customize bot\n"
-        "• /api KEY — Set or view shortener API\n"
-        "• /base_site SITE — Set or view shortener site\n"
-        "• /clone — Create your own clone\n\n"
-        "👑 <b>Owner / Moderator</b>\n"
-        "• /admin • /stats • /broadcast • /an_broadcast\n"
-        "• /ban • /unban • /force_sub\n"
-        "• /caption • /button • /protect\n"
-        "• /auto_delete • /no_forward • /moderator\n"
-        "• /access_token • /transfer_db • /deactivate\n"
-        "• /mode • /restart • /delete • /start_msg\n\n"
-        "⚙️ Owner features are also available from <b>Settings</b>."
-    )
-    await message.reply(text, reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings")]
-    ]))
-
+    from Script import script
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="start_back")]])
+    await message.reply(script.HELP_TXT, reply_markup=markup, disable_web_page_preview=True)
 
 async def global_cancel_command(client, message):
     user_id = message.from_user.id if message.from_user else None
