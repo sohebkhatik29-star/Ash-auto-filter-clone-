@@ -527,7 +527,7 @@ async def callbacks(client, query):
         return await handle_premium_callbacks(
             client, query, data, user_id, r, save_master,
             lambda uid: cancel_user_listeners(client, uid, uid),
-            edit_or_reply
+            edit_or_reply, target_bid=target_bid
         )
 
     # --- REFER AND EARN --- #

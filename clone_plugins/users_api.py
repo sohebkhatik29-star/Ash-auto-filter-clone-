@@ -121,21 +121,7 @@ def is_user_premium(user_id: int, source_doc: dict = None) -> bool:
             except Exception:
                 pass
 
-    # 2. Also check master_settings (platform-wide premium users added via Master bot)
-    try:
-        from plugins.clone import mongo_db
-        if mongo_db is not None:
-            m_rec = mongo_db.master_settings.find_one({"type": "master_config"}) or mongo_db.master_settings.find_one({}) or {}
-            m_prem = m_rec.get("premium_users", []) or []
-            for pu in m_prem:
-                try:
-                    if int(pu.get("user_id", 0)) == user_id:
-                        if int(pu.get("expires_at", 0)) > now:
-                            return True
-                except Exception:
-                    pass
-    except Exception:
-        pass
+
 
     return False
 

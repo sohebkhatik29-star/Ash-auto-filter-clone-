@@ -110,6 +110,11 @@ async def start():
         start_inactivity_checker(StreamBot)
     except Exception:
         pass
+    try:
+        from settings_modules.premium_plan import start_premium_expiry_checker
+        start_premium_expiry_checker(StreamBot)
+    except Exception:
+        pass
     print('Bot Started - ASH FILE STORE & CLONE MANAGER')
     await idle()
 

@@ -376,6 +376,41 @@ async def access_verification(client, user_id, original_payload=""):
     if not rec:
         return None, None
 
+    # Clean up expired premium users and send notification if expired
+    now_ts = int(time.time())
+    prem_users = list(rec.get("premium_users", []) or [])
+    expired_found = False
+    cleaned_prem_users = []
+    for pu in prem_users:
+        try:
+            if int(pu.get("user_id", 0)) == int(user_id):
+                exp = int(pu.get("expires_at", 0))
+                if exp > 0 and exp <= now_ts:
+                    expired_found = True
+                    continue
+        except Exception:
+            pass
+        cleaned_prem_users.append(pu)
+
+    if expired_found:
+        rec["premium_users"] = cleaned_prem_users
+        if mongo_db is not None and bot_id:
+            try:
+                mongo_db.bots.update_one({"bot_id": int(bot_id)}, {"$set": {"premium_users": cleaned_prem_users}})
+            except Exception:
+                pass
+        try:
+            bot_name = me.first_name if me else "Bot"
+            bot_user = f"@{me.username}" if (me and me.username) else ""
+            exp_text = (
+                f"⚠️ <b>YOUR PREMIUM HAS EXPIRED!</b>\n\n"
+                f"ℹ️ <b>Your premium subscription for {bot_name} {bot_user} has expired.</b>\n\n"
+                f"🔐 <i>Now you need to verify or purchase premium to access files.</i>"
+            )
+            await client.send_message(chat_id=int(user_id), text=exp_text, parse_mode=enums.ParseMode.HTML)
+        except Exception:
+            pass
+
     # Check if user is already a premium user
     if is_user_premium(user_id, rec):
         try:

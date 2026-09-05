@@ -211,7 +211,7 @@ async def callbacks(client, query):
     # Dispatch to modular handlers based on callback data prefix / match
     # 1. Premium Plan
     if data.startswith(("master_premium_plan", "cset_prem")):
-        return await handle_premium_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply)
+        return await handle_premium_callbacks(client, query, data, user_id, r, client_save, cancel_user_listeners, edit_or_reply, target_bid=client.me.id)
 
     # 2. Free Limit
     if data.startswith("cset_") and ("free_limit" in data or data in ("cset_set_free_limit", "cset_del_free_limit")):

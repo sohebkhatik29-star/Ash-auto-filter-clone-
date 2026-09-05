@@ -452,6 +452,51 @@ def format_time_remaining(seconds: int) -> str:
     hrs = (seconds % 86400) // 3600
     return f"{days}d {hrs}h Left" if hrs else f"{days} Day(s) Left"
 
+
+async def get_bot_send_client(client, target_bid=None):
+    """
+    Returns (send_client, bot_name, bot_username)
+    If target_bid is provided, finds the clone bot Client so notifications originate from that bot.
+    """
+    send_client = client
+    bot_name = ""
+    bot_user = ""
+
+    if target_bid:
+        try:
+            from plugins.clone import get_clone_client, CLONES, mongo_db
+            c_client = get_clone_client(target_bid)
+            if not c_client:
+                for k, v in CLONES.items():
+                    if str(k) == str(target_bid):
+                        c_client = v
+                        break
+            if c_client:
+                send_client = c_client
+                b_info = c_client.me or (await c_client.get_me())
+                if b_info:
+                    bot_name = b_info.first_name or "Bot"
+                    bot_user = f"@{b_info.username}" if b_info.username else ""
+            elif mongo_db is not None:
+                b_doc = mongo_db.bots.find_one({"bot_id": int(target_bid)})
+                if b_doc:
+                    bot_name = b_doc.get("name") or b_doc.get("first_name") or "Bot"
+                    uname = b_doc.get("username")
+                    bot_user = f"@{uname}" if uname else ""
+        except Exception:
+            pass
+
+    if not bot_name:
+        try:
+            me = client.me or (await client.get_me())
+            if me:
+                bot_name = me.first_name or "Bot"
+                bot_user = f"@{me.username}" if me.username else ""
+        except Exception:
+            bot_name = "Bot"
+
+    return send_client, bot_name, bot_user
+
 async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=None):
     data_str = str(data or "")
     if not target_bid and ":" in data_str:
@@ -460,10 +505,50 @@ async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, can
         except Exception:
             pass
 
+    # Fallback to active_clone_edit if target_bid is still not resolved
+    if not target_bid:
+        try:
+            from plugins.clone import mongo_db
+            if mongo_db is not None:
+                act = mongo_db.active_clone_edit.find_one({"user_id": int(user_id)})
+                if act and act.get("bot_id"):
+                    target_bid = int(act.get("bot_id"))
+        except Exception:
+            pass
+
+    # If this client is a clone bot, target_bid is client.me.id
+    if not target_bid and hasattr(client, "me") and client.me:
+        from config import BOT_USERNAME
+        if BOT_USERNAME and client.me.username and client.me.username.lower() != BOT_USERNAME.lower():
+            target_bid = client.me.id
+
+    # Ensure r and save_fn correctly target the clone bot's record if target_bid is present
+    if target_bid:
+        try:
+            from plugins.clone import mongo_db
+            if mongo_db is not None:
+                bot_doc = mongo_db.bots.find_one({"bot_id": int(target_bid)})
+                if bot_doc:
+                    r = bot_doc
+                    def _custom_save(**kwargs):
+                        mongo_db.bots.update_one({"bot_id": int(target_bid)}, {"": kwargs}, upsert=True)
+                    save_fn = _custom_save
+        except Exception:
+            pass
+
     def cb(name: str) -> str:
         return f"{name}:{target_bid}" if target_bid else name
 
-    back_main = f"manage_clone:{target_bid}" if target_bid else "settings_back"
+    is_master = False
+    if hasattr(client, "me") and client.me:
+        from config import BOT_USERNAME
+        if BOT_USERNAME and client.me.username and client.me.username.lower() == BOT_USERNAME.lower():
+            is_master = True
+
+    if is_master:
+        back_main = f"manage_clone:{target_bid}" if target_bid else "settings_back"
+    else:
+        back_main = f"manage_clone:{target_bid}" if target_bid else "clone_settings_hub"
 
     async def clean_show(text, reply_markup=None):
         msg = getattr(query, "message", None) or query
@@ -1150,12 +1235,10 @@ async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, can
                 except Exception:
                     pass
 
-            # Notify target user via bot
+            # Notify target user via the specific bot (clone or master)
+            send_client, bot_name, bot_user = await get_bot_send_client(client, target_bid)
             notified = False
             try:
-                bot_info = client.me or (await client.get_me())
-                bot_name = bot_info.first_name if bot_info else "Bot"
-                bot_user = f"@{bot_info.username}" if (bot_info and bot_info.username) else ""
                 notify_text = (
                     f"🎉 <b>CONGRATULATIONS! PREMIUM ACTIVATED</b>\n\n"
                     f"👑 <b>You have been granted Premium Access!</b>\n"
@@ -1163,12 +1246,12 @@ async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, can
                     f"🤖 <b>Bot:</b> {bot_name} {bot_user}\n\n"
                     f"⚡ <i>Now you can access all files without ads or verification!</i>"
                 )
-                await client.send_message(chat_id=target_uid, text=notify_text, parse_mode=enums.ParseMode.HTML)
+                await send_client.send_message(chat_id=target_uid, text=notify_text, parse_mode=enums.ParseMode.HTML)
                 notified = True
             except Exception:
                 notified = False
 
-            notify_status = "\n📩 <i>Notification sent to user via bot!</i>" if notified else "\n⚠️ <i>(Note: User hasn't started the bot in PM, so private notification could not be delivered)</i>"
+            notify_status = f"\n📩 <i>Notification sent to user via {bot_name}!</i>" if notified else f"\n⚠️ <i>(Note: User hasn't started {bot_name} in PM, so private notification could not be delivered)</i>"
             back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=cb("master_premium_plan"))]])
             return await client.send_message(
                 chat_id=user_id,
@@ -1239,10 +1322,25 @@ async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, can
                 except Exception:
                     pass
 
+                # Notify user that premium has ended / removed via the specific bot
+                send_client, bot_name, bot_user = await get_bot_send_client(client, target_bid)
+                rem_notified = False
+                try:
+                    rem_notify_text = (
+                        f"⚠️ <b>PREMIUM ACCESS ENDED</b>\n\n"
+                        f"ℹ️ <b>Your premium subscription for {bot_name} {bot_user} has ended or been removed.</b>\n\n"
+                        f"🔐 <i>Now you need to verify or purchase premium to access files.</i>"
+                    )
+                    await send_client.send_message(chat_id=target_uid, text=rem_notify_text, parse_mode=enums.ParseMode.HTML)
+                    rem_notified = True
+                except Exception:
+                    rem_notified = False
+
+                rem_status = f"\n📩 <i>Notification sent to user via {bot_name}!</i>" if rem_notified else f"\n⚠️ <i>(User has not started {bot_name} in PM)</i>"
                 back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=cb("master_premium_plan"))]])
                 return await client.send_message(
                     chat_id=user_id,
-                    text=f"✅ <b>User <code>{target_uid}</code> removed from Premium!</b>",
+                    text=f"✅ <b>User <code>{target_uid}</code> removed from Premium!</b>{rem_status}",
                     reply_markup=back_markup,
                     parse_mode=enums.ParseMode.HTML
                 )
@@ -1280,3 +1378,109 @@ async def handle_premium_callbacks(client, query, data, user_id, r, save_fn, can
 
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data=cb("master_premium_plan"))]])
         return await clean_show(text, markup)
+
+
+
+_expiry_checker_started = False
+
+def start_premium_expiry_checker(main_bot=None):
+    global _expiry_checker_started
+    if _expiry_checker_started:
+        return
+    _expiry_checker_started = True
+
+    async def _expiry_loop():
+        while True:
+            try:
+                now = int(time.time())
+                from plugins.clone import mongo_db, get_clone_client
+                if mongo_db is not None:
+                    # 1. Check all clone bots in mongo_db.bots
+                    bots_cursor = mongo_db.bots.find({"premium_users": {"$exists": True, "$ne": []}})
+                    for b_doc in list(bots_cursor):
+                        bid = b_doc.get("bot_id")
+                        if not bid:
+                            continue
+                        prem_users = b_doc.get("premium_users") or []
+                        expired_users = []
+                        remaining_users = []
+                        for pu in prem_users:
+                            try:
+                                exp = int(pu.get("expires_at", 0))
+                                if exp > 0 and exp <= now:
+                                    expired_users.append(pu)
+                                else:
+                                    remaining_users.append(pu)
+                            except Exception:
+                                remaining_users.append(pu)
+
+                        if expired_users:
+                            mongo_db.bots.update_one(
+                                {"bot_id": int(bid)},
+                                {"$set": {"premium_users": remaining_users}}
+                            )
+                            c_client = get_clone_client(bid)
+                            if c_client:
+                                b_info = c_client.me or (await c_client.get_me())
+                                bot_name = b_info.first_name if b_info else "Bot"
+                                bot_user = f"@{b_info.username}" if (b_info and b_info.username) else ""
+                                for exp_u in expired_users:
+                                    uid = exp_u.get("user_id")
+                                    try:
+                                        exp_text = (
+                                            f"⚠️ <b>YOUR PREMIUM HAS EXPIRED!</b>\n\n"
+                                            f"ℹ️ <b>Your premium subscription for {bot_name} {bot_user} has expired.</b>\n\n"
+                                            f"🔐 <i>Now you need to verify or purchase premium to access files.</i>"
+                                        )
+                                        await c_client.send_message(chat_id=int(uid), text=exp_text, parse_mode=enums.ParseMode.HTML)
+                                    except Exception:
+                                        pass
+
+                    # 2. Check master_settings for master bot premium users
+                    m_rec = mongo_db.master_settings.find_one({"type": "master_config"}) or mongo_db.master_settings.find_one({}) or {}
+                    if m_rec:
+                        prem_users = m_rec.get("premium_users") or []
+                        expired_users = []
+                        remaining_users = []
+                        for pu in prem_users:
+                            try:
+                                exp = int(pu.get("expires_at", 0))
+                                if exp > 0 and exp <= now:
+                                    expired_users.append(pu)
+                                else:
+                                    remaining_users.append(pu)
+                            except Exception:
+                                remaining_users.append(pu)
+
+                        if expired_users:
+                            mongo_db.master_settings.update_one(
+                                {"type": "master_config"},
+                                {"$set": {"premium_users": remaining_users}}
+                            )
+                            mb = main_bot
+                            if not mb:
+                                try:
+                                    from bot import StreamBot
+                                    mb = StreamBot
+                                except Exception:
+                                    pass
+                            if mb and getattr(mb, "is_connected", False):
+                                b_info = mb.me or (await mb.get_me())
+                                bot_name = b_info.first_name if b_info else "Bot"
+                                bot_user = f"@{b_info.username}" if (b_info and b_info.username) else ""
+                                for exp_u in expired_users:
+                                    uid = exp_u.get("user_id")
+                                    try:
+                                        exp_text = (
+                                            f"⚠️ <b>YOUR PREMIUM HAS EXPIRED!</b>\n\n"
+                                            f"ℹ️ <b>Your premium subscription for {bot_name} {bot_user} has expired.</b>\n\n"
+                                            f"🔐 <i>Now you need to verify or purchase premium to access files.</i>"
+                                        )
+                                        await mb.send_message(chat_id=int(uid), text=exp_text, parse_mode=enums.ParseMode.HTML)
+                                    except Exception:
+                                        pass
+            except Exception:
+                pass
+            await asyncio.sleep(15)
+
+    asyncio.create_task(_expiry_loop())
