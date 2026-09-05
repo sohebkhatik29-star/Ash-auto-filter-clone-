@@ -41,11 +41,10 @@ def _session(client, user_id):
 
 def _controls_initial(session_id):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("CONTINUE OR GENERATE LINK", callback_data=f"cb_continue_{session_id}")],
-        [InlineKeyboardButton("SET THUMBNAIL", callback_data=f"cb_thumb_{session_id}")],
-        [InlineKeyboardButton("CANCEL YOUR PROCESS", callback_data=f"cb_cancel_{session_id}")],
+        [InlineKeyboardButton("🔗 GENERATE LINK", callback_data=f"cb_generate_{session_id}")],
+        [InlineKeyboardButton("🖼️ SET THUMBNAIL", callback_data=f"cb_thumb_{session_id}")],
+        [InlineKeyboardButton("❌ CANCEL YOUR PROCESS", callback_data=f"cb_cancel_{session_id}")],
     ])
-
 
 def _controls_indexing(session_id):
     return InlineKeyboardMarkup([
@@ -73,7 +72,7 @@ def _text_initial(count=0):
             "Send or forward as many messages as you want.\n"
             "You can select multiple Telegram messages (e.g. 100+) and forward them together.\n"
             "I will index and save every message automatically.\n\n"
-            "When finished, tap <b>CONTINUE OR GENERATE LINK</b>."
+            "When finished, tap 🔗 <b>GENERATE LINK</b>."
         )
     return (
         "📦 <b>CUSTOM BATCH (ACTIVE)</b>\n\n"
@@ -81,7 +80,6 @@ def _text_initial(count=0):
         "Send or forward more files now. They will be added to this batch.\n"
         "When finished, tap 🔗 <b>GENERATE LINK</b>."
     )
-
 
 def _text_indexing():
     return (
@@ -438,17 +436,24 @@ async def callback(client, query):
             if task and not task.done():
                 task.cancel()
             count = len(session.get("messages", []))
+            mongo_db.custom_batch_sessions.update_one(
+                {"_id": session["_id"]},
+                {"$set": {"status": "ready", "updated_at": int(time.time())}}
+            )
+            session["status"] = "ready"
             if count > 0:
-                await _generate(client, query, session)
-            else:
-                mongo_db.custom_batch_sessions.update_one(
-                    {"_id": session["_id"]},
-                    {"$set": {"status": "ready", "updated_at": int(time.time())}}
-                )
                 await _replace_panel(
                     client,
                     session,
                     _text_initial(count),
+                    _controls_indexed(session_id),
+                )
+                await query.answer("Ready! Send or forward more files now, or tap GENERATE LINK when done.")
+            else:
+                await _replace_panel(
+                    client,
+                    session,
+                    _text_initial(0),
                     _controls_initial(session_id),
                 )
                 await query.answer("Ready! Send or forward your files now.")
