@@ -570,7 +570,12 @@ async def open_single(client, message):
         await send_verify_prompt(client, message, v_text, access_markup, v_photo)
         raise StopPropagation
 
+    from settings_modules.update_channel import send_wait_message
     wait_msg = None
+    try:
+        wait_msg = await send_wait_message(client, message, cancel_callback_data=f"sl_cancel_{payload}", auto_delete_delay=0)
+    except Exception:
+        pass
 
     try:
         rec = bot_record(client)

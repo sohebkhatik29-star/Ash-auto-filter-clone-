@@ -617,7 +617,13 @@ def settings_menu():
 
 
 async def deliver_file(client, user_id, file_id, protected=False):
+    from settings_modules.update_channel import send_wait_message
     wait_msg = None
+    try:
+        wait_msg = await send_wait_message(client, user_id, cancel_callback_data="cancel_deliv", auto_delete_delay=0)
+    except Exception:
+        pass
+
     rec = bot_record(client)
     protected = protected or bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
 
