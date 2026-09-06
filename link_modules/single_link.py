@@ -549,12 +549,8 @@ async def open_single(client, message):
         await send_verify_prompt(client, message, v_text, access_markup, v_photo)
         raise StopPropagation
 
-    from settings_modules.update_channel import send_wait_message
+    # Deliver file immediately without wait message latency
     wait_msg = None
-    try:
-        wait_msg = await send_wait_message(client, message, cancel_callback_data=f"sl_cancel_{payload}")
-    except Exception:
-        pass
 
     try:
         rec = bot_record(client)
@@ -748,19 +744,13 @@ async def open_single(client, message):
                 except Exception:
                     continue
 
-        if wait_msg:
-            try:
-                await wait_msg.delete()
-            except Exception:
-                pass
-
-        # Schedule auto delete if enabled
+        # Schedule auto delete in background if enabled
         try:
             ad_enabled = bool(rec.get("auto_delete_enabled", False))
             ad_sec = int(rec.get("auto_delete_time") or (int(rec.get("auto_delete_minutes", 0) or 0) * 60) or 0)
             if ad_enabled and ad_sec > 0 and delivered:
                 from link_modules.auto_delete_delivery import schedule_auto_delete
-                await schedule_auto_delete(client, message.from_user.id, [delivered], ad_sec)
+                asyncio.create_task(schedule_auto_delete(client, message.from_user.id, [delivered], ad_sec))
         except Exception:
             pass
 

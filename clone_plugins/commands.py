@@ -594,13 +594,6 @@ def settings_menu():
 
 
 async def deliver_file(client, user_id, file_id, protected=False):
-    from settings_modules.update_channel import send_wait_message
-    wait_msg = None
-    try:
-        wait_msg = await send_wait_message(client, user_id, cancel_callback_data="cancel_deliv")
-    except Exception:
-        pass
-
     rec = bot_record(client)
     protected = protected or bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
 
@@ -621,7 +614,7 @@ async def deliver_file(client, user_id, file_id, protected=False):
 
     caption_template = rec.get("custom_caption") or CUSTOM_FILE_CAPTION
     formatted_caption = format_caption(caption_template, default_caption=f"<code>File</code>") if caption_template else None
-    
+
     msg = None
     if thumb_to_use:
         try:
@@ -642,145 +635,87 @@ async def deliver_file(client, user_id, file_id, protected=False):
             pass
 
     if not msg:
-        msg = await client.send_cached_media(user_id, file_id, protect_content=protected)
-        media = getattr(msg, msg.media.value, None) if msg.media else None
-        size = get_size(media.file_size) if media and getattr(media, "file_size", None) else "Unknown"
-        name = getattr(media, "file_name", None) if media else None or "File"
-        caption_tmpl = rec.get("custom_caption") or CUSTOM_FILE_CAPTION or f"<code>{name}</code>\n<code>Size: {size}</code>"
-        caption = format_caption(caption_tmpl, media=media, source_msg=msg, default_caption=f"<code>{name}</code>\n<code>Size: {size}</code>")
         try:
-            await msg.edit_caption(caption, parse_mode=enums.ParseMode.HTML)
+            msg = await client.send_cached_media(
+                chat_id=user_id,
+                file_id=file_id,
+                caption=formatted_caption,
+                parse_mode=enums.ParseMode.HTML if formatted_caption else None,
+                reply_markup=reply_markup,
+                protect_content=protected
+            )
         except Exception:
-            try:
-                await msg.edit_caption(caption)
-            except Exception:
-                pass
-        if reply_markup:
-            try:
-                await msg.edit_reply_markup(reply_markup)
-            except Exception:
-                pass
+            msg = await client.send_cached_media(user_id, file_id, protect_content=protected)
+            if formatted_caption:
+                try:
+                    await msg.edit_caption(formatted_caption, parse_mode=enums.ParseMode.HTML)
+                except Exception:
+                    pass
+            if reply_markup:
+                try:
+                    await msg.edit_reply_markup(reply_markup)
+                except Exception:
+                    pass
 
-    if wait_msg:
-        try:
-            await wait_msg.delete()
-        except Exception:
-            pass
-
-    if rec.get("auto_delete_enabled", False):
+    if rec.get("auto_delete_enabled", False) and msg:
         ad_sec = int(rec.get("auto_delete_time") or (int(rec.get("auto_delete_minutes", 15)) * 60))
         time_str = format_auto_delete_time(ad_sec)
         u_mention = f"<a href='tg://user?id={user_id}'>User</a>"
-        try:
-            u_obj = await client.get_users(user_id)
-            if u_obj:
-                u_mention = getattr(u_obj, "mention", u_obj.first_name)
-        except Exception:
-            pass
-
-        raw_ad_text = rec.get("auto_delete_text") or (
-            "<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\n"
-            "This Movie File/Video will be deleted in <b><u>{time}</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n"
-            "<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>"
-        )
-        ad_text = raw_ad_text.replace("{time}", time_str).replace("{user_mention}", u_mention)
-
-        # Build custom buttons if any
-        ad_btns_cfg = rec.get("auto_delete_buttons", [])
-        ad_rows = []
-        for r_item in ad_btns_cfg:
-            row_b = []
-            if isinstance(r_item, dict) and "buttons" in r_item:
-                for b in r_item["buttons"]:
-                    row_b.append(InlineKeyboardButton(b["text"], url=b["url"]))
-            elif isinstance(r_item, dict) and "text" in r_item:
-                row_b.append(InlineKeyboardButton(r_item["text"], url=r_item.get("url", "https://t.me")))
-            elif isinstance(r_item, list):
-                for b in r_item:
-                    if isinstance(b, dict) and b.get("text"):
-                        row_b.append(InlineKeyboardButton(b["text"], url=b.get("url", "https://t.me")))
-            if row_b:
-                ad_rows.append(row_b)
-        ad_markup = InlineKeyboardMarkup(ad_rows) if ad_rows else None
-
-        ad_pic = rec.get("auto_delete_pic")
-        ad_spoil = bool(rec.get("auto_delete_pic_spoiler", False))
-        ad_invert = bool(rec.get("auto_delete_pic_invert_caption", False))
-
-        warning = None
-        if ad_pic:
+        
+        async def _auto_del():
             try:
-                warning = await client.send_photo(
-                    chat_id=user_id,
-                    photo=ad_pic,
-                    caption=ad_text,
-                    has_spoiler=ad_spoil,
-                    show_caption_above_media=ad_invert,
-                    reply_markup=ad_markup
-                )
+                u_obj = await client.get_users(user_id)
+                u_ment = getattr(u_obj, "mention", None) or u_mention
             except Exception:
+                u_ment = u_mention
+
+            custom_del_text = rec.get("auto_delete_text") or (
+                "<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\n"
+                "This Movie File/Video will be deleted in <b><u>{time}</u> 🫥 <i></b>(Due to Copyright Issues)</i>.\n\n"
+                "<b><i>Please forward this File/Video to your Saved Messages and Start Download there</b>"
+            )
+            del_text = str(custom_del_text).replace("{time}", time_str).replace("{user_mention}", u_ment)
+            del_btns = _build_auto_delete_buttons(rec)
+
+            warn_msg = None
+            pic = rec.get("auto_delete_pic")
+            sp = bool(rec.get("auto_delete_pic_spoiler", False))
+            inv = bool(rec.get("auto_delete_pic_invert_caption", False))
+            if pic:
                 try:
-                    warning = await client.send_photo(
+                    warn_msg = await client.send_photo(
                         chat_id=user_id,
-                        photo=ad_pic,
-                        caption=ad_text,
-                        has_spoiler=ad_spoil,
-                        reply_markup=ad_markup
+                        photo=pic,
+                        caption=del_text,
+                        has_spoiler=sp,
+                        show_caption_above_media=inv,
+                        reply_markup=del_btns,
                     )
                 except Exception:
-                    try:
-                        import os
-                        from AshCore.bot import StreamBot
-                        os.makedirs("cache/ad_pics", exist_ok=True)
-                        bot_id = rec.get("bot_id") or (client.me.id if getattr(client, "me", None) else None)
-                        target_path = f"cache/ad_pics/{bot_id or 'shared'}.jpg"
-                        downloaded = await StreamBot.download_media(ad_pic, file_name=target_path)
-                        if downloaded and os.path.exists(downloaded):
-                            warning = await client.send_photo(
-                                chat_id=user_id,
-                                photo=downloaded,
-                                caption=ad_text,
-                                has_spoiler=ad_spoil,
-                                reply_markup=ad_markup
-                            )
-                    except Exception:
-                        pass
+                    warn_msg = None
 
-        if not warning:
-            try:
-                warning = await client.send_message(
-                    chat_id=user_id,
-                    text=ad_text,
-                    reply_markup=ad_markup
-                )
-            except Exception:
-                pass
+            if not warn_msg:
+                try:
+                    warn_msg = await client.send_message(
+                        chat_id=user_id,
+                        text=del_text,
+                        reply_markup=del_btns,
+                        disable_web_page_preview=True,
+                    )
+                except Exception:
+                    warn_msg = None
 
-        async def _auto_del():
             await asyncio.sleep(ad_sec)
             try:
                 await msg.delete()
             except Exception:
                 pass
-            if warning:
+            if warn_msg:
                 try:
-                    await warning.delete()
+                    await warn_msg.delete()
                 except Exception:
                     pass
 
-            get_again_on = bool(rec.get("auto_delete_get_again", True))
-            if get_again_on:
-                try:
-                    again_kb = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔒 CLOSE 🔒", callback_data="close_data")]
-                    ])
-                    del_txt = (
-                        "🎁 <b>PREVIOUS MESSAGE IS DELETED</b>\n\n"
-                        "<b>IF YOU WANT THIS PREVIOUS MESSAGE AGAIN THEN CLICK ON BELOW BUTTON OTHERWISE CLICK ON CLOSE BUTTON.</b>"
-                    )
-                    await client.send_message(chat_id=user_id, text=del_txt, reply_markup=again_kb)
-                except Exception:
-                    pass
         asyncio.create_task(_auto_del())
     return msg
 
@@ -1029,22 +964,13 @@ async def start(client, message):
     if data.startswith("verify_") or data.startswith("verify-"):
         token_str = data.split("_", 1)[1] if data.startswith("verify_") else data.split("-", 1)[1]
         orig_payload, slot_used, is_bypassed, time_taken = consume_verify_token(token_str, message.from_user.id, me.id)
-        if orig_payload is None and mongo_db is not None and not is_bypassed:
+        if not orig_payload and mongo_db is not None:
             rec_t = mongo_db.access_tokens.find_one({
                 "bot_id": me.id, "token": token_str, "user_id": int(message.from_user.id)
             })
             if rec_t:
-                orig_payload = ""
-                slot_used = 1
-                is_bypassed = False
-                time_taken = 25
-
-        if is_bypassed or orig_payload is None:
-            await send_verify_log(
-                client, message.from_user, log_type="bypass",
-                slot=slot_used, payload=orig_payload or None, time_taken=time_taken
-            )
-            return await message.reply(script.BYPASS_TXT, disable_web_page_preview=True)
+                orig_payload = rec_t.get("payload", "")
+                slot_used = int(rec_t.get("slot", 1))
 
         v_key = f"verify_{slot_used}" if slot_used > 1 else "verify_1"
         v_cfg = rec.get(v_key, {})
@@ -1052,10 +978,11 @@ async def start(client, message):
         set_user_verified(message.from_user.id, me.id, duration_minutes=time_mins, slot=slot_used)
         dur_str = format_time_minutes(time_mins)
 
-        await send_verify_log(
+        # Log in background so delivery is instant
+        asyncio.create_task(send_verify_log(
             client, message.from_user, log_type="verified",
             slot=slot_used, validity=dur_str, payload=orig_payload or None, time_taken=time_taken
-        )
+        ))
 
         if orig_payload:
             message.command = ["/start", orig_payload]

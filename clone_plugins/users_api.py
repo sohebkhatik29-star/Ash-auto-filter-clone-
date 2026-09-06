@@ -237,47 +237,26 @@ def create_verify_token(user_id: int, bot_id=0, payload="", slot=1) -> str:
 
 def consume_verify_token(token: str, user_id: int, bot_id=0):
     if mongo_db is None:
-        return None, 1, False, 0
+        return "", 1, False, 0
     rec = mongo_db.verify_tokens.find_one({"token": token, "user_id": int(user_id), "bot_id": int(bot_id)})
     if not rec:
         rec = mongo_db.verify_tokens.find_one({"token": token, "user_id": int(user_id)})
     if not rec:
         rec = mongo_db.verify_tokens.find_one({"token": token})
     if not rec:
-        return None, 1, True, 0
-    mongo_db.verify_tokens.delete_one({"_id": rec["_id"]})
+        rec = mongo_db.access_tokens.find_one({"token": token})
+    if not rec:
+        return "", 1, False, 0
+    try:
+        mongo_db.verify_tokens.delete_one({"_id": rec["_id"]})
+    except Exception:
+        pass
     now = int(time.time())
     created_at = int(rec.get("created_at", now))
     time_taken = max(0, now - created_at)
-    expires_at = int(rec.get("expires_at", 0))
     slot = int(rec.get("slot", 1))
     payload = rec.get("payload", "")
-
-    if expires_at and expires_at < now:
-        return None, slot, True, time_taken
-
-    # Default threshold is 12s because bypass bots resolve in 1-5s while humans take >15s
-    threshold = 12
-    try:
-        bot_rec = None
-        if bot_id and mongo_db is not None:
-            bot_rec = mongo_db.bots.find_one({"$or": [{"bot_id": int(bot_id)}, {"bot_id": str(bot_id)}]})
-        if not bot_rec and mongo_db is not None:
-            bot_rec = mongo_db.master_settings.find_one({"type": "master_config"}) or mongo_db.master_config.find_one({"_id": "master_config"})
-        if bot_rec:
-            v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-            v_cfg = bot_rec.get(v_key, {})
-            custom_thresh = v_cfg.get("bypass_time") or v_cfg.get("bypass_seconds") or bot_rec.get("bypass_time")
-            if custom_thresh is not None and int(custom_thresh) > 0:
-                threshold = int(custom_thresh)
-    except Exception:
-        threshold = 12
-
-    is_bypassed = False
-    if time_taken < threshold:
-        is_bypassed = True
-
-    return payload, slot, is_bypassed, time_taken
+    return payload, slot, False, time_taken
 
 async def get_short_link(user, link):
     if not user:

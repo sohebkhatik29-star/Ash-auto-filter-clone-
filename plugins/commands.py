@@ -506,9 +506,17 @@ async def start(client, message):
         if data.startswith("verify_"):
             token = data.split("_", 1)[1]
             orig_payload, slot_used, is_bypassed, time_taken = consume_verify_token(token, message.from_user.id, client.me.id)
-            if is_bypassed or orig_payload is None:
-                log_ch = master_cfg.get("verify_log_channel")
-                if log_ch:
+
+            v_key = f"verify_{slot_used}" if slot_used > 1 else "verify_1"
+            v_cfg = master_cfg.get(v_key, {})
+            time_mins = int(v_cfg.get("time", v_cfg.get("time_minutes", 1440)))
+            set_user_verified(message.from_user.id, client.me.id, duration_minutes=time_mins, slot=slot_used)
+            dur_str = format_time_minutes(time_mins)
+
+            # Send log in background so file delivery is instant
+            log_ch = master_cfg.get("verify_log_channel")
+            if log_ch:
+                async def _bg_log():
                     try:
                         import datetime
                         ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
@@ -521,66 +529,25 @@ async def start(client, message):
                         uname = getattr(u, "username", None)
                         uname_str = f"@{uname}" if uname else "None"
                         parts = [
-                            "🚨 <b>BYPASS ATTEMPT DETECTED</b>\n",
-                            "⚠️ <b>Is user ne shortener bypass karne ki koshish ki!</b>\n",
+                            "🎯 <b>NEW USER VERIFIED</b>\n",
                             f"👤 <b>Mention:</b> {mention}",
                             f"🆔 <b>User ID:</b> <code>{uid}</code>",
                             f"👤 <b>First Name:</b> {first}",
                             f"👤 <b>Last Name:</b> {last}",
                             f"📎 <b>Username:</b> {uname_str}",
                             f"🤖 <b>Bot:</b> @{username}",
+                            f"🔢 <b>Step / Slot:</b> <code>{slot_used}</code>",
+                            f"⏰ <b>Validity:</b> <code>{dur_str}</code>",
                         ]
                         if time_taken is not None and time_taken > 0:
-                            parts.append(f"⏱ <b>Time Taken:</b> <code>{time_taken}s</code> (Too fast / Bypass bot)")
-                        elif time_taken == 0:
-                            parts.append("⏱ <b>Time Taken:</b> <code>0s</code> (Instant Bypass Bot)")
+                            parts.append(f"⏱ <b>Time Taken:</b> <code>{time_taken}s</code>")
                         parts.append(f"📅 <b>Date:</b> <code>{now_str}</code>")
                         if orig_payload:
                             parts.append(f"🔗 <b>Payload:</b> <code>{str(orig_payload)[:80]}</code>")
                         await client.send_message(int(log_ch), chr(10).join(parts))
                     except Exception:
                         pass
-                return await message.reply_text(script.BYPASS_TXT, disable_web_page_preview=True)
-
-            v_key = f"verify_{slot_used}" if slot_used > 1 else "verify_1"
-            v_cfg = master_cfg.get(v_key, {})
-            time_mins = int(v_cfg.get("time", v_cfg.get("time_minutes", 1440)))
-            set_user_verified(message.from_user.id, client.me.id, duration_minutes=time_mins, slot=slot_used)
-            dur_str = format_time_minutes(time_mins)
-
-            # Send log to verify_log_channel if configured
-            log_ch = master_cfg.get("verify_log_channel")
-            if log_ch:
-                try:
-                    import datetime
-                    ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
-                    now_str = datetime.datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S IST")
-                    u = message.from_user
-                    mention = getattr(u, "mention", None) or "User"
-                    uid = getattr(u, "id", None) or "Unknown"
-                    first = getattr(u, "first_name", None) or "None"
-                    last = getattr(u, "last_name", None) or "None"
-                    uname = getattr(u, "username", None)
-                    uname_str = f"@{uname}" if uname else "None"
-                    parts = [
-                        "🎯 <b>NEW USER VERIFIED</b>\n",
-                        f"👤 <b>Mention:</b> {mention}",
-                        f"🆔 <b>User ID:</b> <code>{uid}</code>",
-                        f"👤 <b>First Name:</b> {first}",
-                        f"👤 <b>Last Name:</b> {last}",
-                        f"📎 <b>Username:</b> {uname_str}",
-                        f"🤖 <b>Bot:</b> @{username}",
-                        f"🔢 <b>Step / Slot:</b> <code>{slot_used}</code>",
-                        f"⏰ <b>Validity:</b> <code>{dur_str}</code>",
-                    ]
-                    if time_taken is not None and time_taken > 0:
-                        parts.append(f"⏱ <b>Time Taken:</b> <code>{time_taken}s</code>")
-                    parts.append(f"📅 <b>Date:</b> <code>{now_str}</code>")
-                    if orig_payload:
-                        parts.append(f"🔗 <b>Payload:</b> <code>{str(orig_payload)[:80]}</code>")
-                    await client.send_message(int(log_ch), chr(10).join(parts))
-                except Exception:
-                    pass
+                asyncio.create_task(_bg_log())
 
             if orig_payload:
                 message.command = ["/start", orig_payload]
