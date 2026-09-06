@@ -791,6 +791,38 @@ async def send_verify_log(client, user, log_type="verified", slot=1, validity=No
     except Exception:
         pass
 
+def get_clone_start_markup(client, user_id, rec):
+    from clone_plugins.auth import is_clone_authorized
+    authorized = is_clone_authorized(client, user_id)
+    buttons = []
+    if authorized:
+        buttons.append([
+            InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"),
+            InlineKeyboardButton("🤖 MY OWN BOT", url=f"https://t.me/{BOT_USERNAME}?start=clone")
+        ])
+    else:
+        buttons.append([
+            InlineKeyboardButton("🤖 CREATE MY CLONE BOT", url=f"https://t.me/{BOT_USERNAME}?start=clone")
+        ])
+    buttons.append([
+        InlineKeyboardButton("💁 HELP", callback_data="help"),
+        InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")
+    ])
+    buttons.append([
+        InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))
+    ])
+    start_btns = rec.get("start_buttons", [])
+    for r_item in start_btns:
+        row_btns = []
+        if isinstance(r_item, dict) and "buttons" in r_item:
+            for b in r_item["buttons"]:
+                row_btns.append(InlineKeyboardButton(b["text"], url=b["url"]))
+        elif isinstance(r_item, dict) and "text" in r_item:
+            row_btns.append(InlineKeyboardButton(r_item["text"], url=r_item.get("url", "https://t.me")))
+        if row_btns:
+            buttons.append(row_btns)
+    return InlineKeyboardMarkup(buttons)
+
 async def start(client, message):
     try:
         from clone_plugins.ban_manager import check_user_banned_or_block
@@ -841,23 +873,7 @@ async def start(client, message):
     if len(message.command) != 2:
         if await send_fsub_prompt(client, message, ""):
             return
-        buttons = [
-            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY OWN BOT", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
-            [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
-            [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
-        ]
-        
-        # Add custom start buttons if configured
-        start_btns = rec.get("start_buttons", [])
-        for r_item in start_btns:
-            row_btns = []
-            if isinstance(r_item, dict) and "buttons" in r_item:
-                for b in r_item["buttons"]:
-                    row_btns.append(InlineKeyboardButton(b["text"], url=b["url"]))
-            elif isinstance(r_item, dict) and "text" in r_item:
-                row_btns.append(InlineKeyboardButton(r_item["text"], url=r_item.get("url", "https://t.me")))
-            if row_btns:
-                buttons.append(row_btns)
+        markup = get_clone_start_markup(client, message.from_user.id, rec)
 
         custom_text = rec.get("start_text")
         if custom_text:
@@ -871,13 +887,13 @@ async def start(client, message):
 
         if start_photo:
             try:
-                return await message.reply_photo(photo=start_photo, caption=caption, reply_markup=InlineKeyboardMarkup(buttons), has_spoiler=has_spoiler)
+                return await message.reply_photo(photo=start_photo, caption=caption, reply_markup=markup, has_spoiler=has_spoiler)
             except Exception:
                 try:
-                    return await message.reply_photo(photo=start_photo, caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
+                    return await message.reply_photo(photo=start_photo, caption=caption, reply_markup=markup)
                 except Exception:
                     pass
-        return await message.reply(caption, reply_markup=InlineKeyboardMarkup(buttons))
+        return await message.reply(caption, reply_markup=markup)
 
     data = message.command[1]
     if data.lower() == "start":
@@ -1220,21 +1236,7 @@ async def callbacks(client, query):
         else:
             me = client.me or (await client.get_me())
             rec = bot_record(client)
-            buttons = [
-                [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY OWN BOT", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
-                [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
-                [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
-            ]
-            start_btns = rec.get("start_buttons", [])
-            for r_item in start_btns:
-                row_btns = []
-                if isinstance(r_item, dict) and "buttons" in r_item:
-                    for b in r_item["buttons"]:
-                        row_btns.append(InlineKeyboardButton(b["text"], url=b["url"]))
-                elif isinstance(r_item, dict) and "text" in r_item:
-                    row_btns.append(InlineKeyboardButton(r_item["text"], url=r_item.get("url", "https://t.me")))
-                if row_btns:
-                    buttons.append(row_btns)
+            markup = get_clone_start_markup(client, query.from_user.id, rec)
 
             custom_text = rec.get("start_text")
             if custom_text:
@@ -1248,13 +1250,13 @@ async def callbacks(client, query):
 
             if start_photo:
                 try:
-                    return await client.send_photo(chat_id=query.from_user.id, photo=start_photo, caption=caption, reply_markup=InlineKeyboardMarkup(buttons), has_spoiler=has_spoiler)
+                    return await client.send_photo(chat_id=query.from_user.id, photo=start_photo, caption=caption, reply_markup=markup, has_spoiler=has_spoiler)
                 except Exception:
                     try:
-                        return await client.send_photo(chat_id=query.from_user.id, photo=start_photo, caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
+                        return await client.send_photo(chat_id=query.from_user.id, photo=start_photo, caption=caption, reply_markup=markup)
                     except Exception:
                         pass
-            return await client.send_message(chat_id=query.from_user.id, text=caption, reply_markup=InlineKeyboardMarkup(buttons))
+            return await client.send_message(chat_id=query.from_user.id, text=caption, reply_markup=markup)
     if data == "help":
         try:
             await query.answer()
@@ -1291,21 +1293,7 @@ async def callbacks(client, query):
             pass
         me = client.me or (await client.get_me())
         rec = bot_record(client)
-        buttons = [
-            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY OWN BOT", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
-            [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
-            [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
-        ]
-        start_btns = rec.get("start_buttons", [])
-        for r_item in start_btns:
-            row_btns = []
-            if isinstance(r_item, dict) and "buttons" in r_item:
-                for b in r_item["buttons"]:
-                    row_btns.append(InlineKeyboardButton(b["text"], url=b["url"]))
-            elif isinstance(r_item, dict) and "text" in r_item:
-                row_btns.append(InlineKeyboardButton(r_item["text"], url=r_item.get("url", "https://t.me")))
-            if row_btns:
-                buttons.append(row_btns)
+        markup = get_clone_start_markup(client, query.from_user.id, rec)
 
         custom_text = rec.get("start_text")
         if custom_text:
@@ -1313,7 +1301,7 @@ async def callbacks(client, query):
         else:
             caption = script.CLONE_START_TXT.format(query.from_user.mention, me.mention)
 
-        return await safe_edit_menu(query, text=caption, reply_markup=InlineKeyboardMarkup(buttons))
+        return await safe_edit_menu(query, text=caption, reply_markup=markup)
     if data.startswith("c_buy_prem") or data.startswith("c_prem_upi_view"):
         payload = data.split(":", 1)[1] if ":" in data else ""
         rec = bot_record(client)

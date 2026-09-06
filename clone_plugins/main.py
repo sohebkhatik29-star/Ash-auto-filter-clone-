@@ -85,10 +85,17 @@ async def clone_start(client, message):
         return await message.reply_text("⛔ You are banned from this bot.")
     await clonedb.add_user(me.id, message.from_user.id)
     if len(message.command) < 2:
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📚 HELP", callback_data="chelp")],
-            [InlineKeyboardButton("⚙️ SETTINGS", callback_data="csettings"), InlineKeyboardButton("📊 STATS", callback_data="cstats")],
-        ])
+        from clone_plugins.auth import is_clone_authorized
+        if is_clone_authorized(client, message.from_user.id):
+            buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📚 HELP", callback_data="chelp")],
+                [InlineKeyboardButton("⚙️ SETTINGS", callback_data="csettings"), InlineKeyboardButton("📊 STATS", callback_data="cstats")],
+            ])
+        else:
+            buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📚 HELP", callback_data="chelp")],
+                [InlineKeyboardButton("🤖 CREATE MY CLONE BOT", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
+            ])
         return await message.reply_text(
             f"<b>👋 Hello {message.from_user.first_name}!</b>\n\n"
             f"I am <b>{me.first_name}</b>, an advanced file-store and link bot.\n\n"
