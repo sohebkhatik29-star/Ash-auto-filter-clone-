@@ -349,13 +349,13 @@ def get_size(size):
     return "%.2f %s" % (size, units[i])
 
 
-def format_caption(custom_caption: str, media=None, source_msg=None, default_caption=None) -> str:
+def format_caption(custom_caption: str, media=None, source_msg=None, default_caption=None, file_name="", file_size="", orig_caption="") -> str:
     if not custom_caption:
         return default_caption
     
-    file_name = ""
-    file_size = ""
-    orig_caption = ""
+    file_name = file_name or ""
+    file_size = file_size or ""
+    orig_caption = orig_caption or ""
     
     if source_msg:
         orig_caption = getattr(source_msg, "caption", "") or getattr(source_msg, "text", "") or ""

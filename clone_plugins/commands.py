@@ -29,25 +29,48 @@ def get_size(size):
     return f"{size:.2f} {units[i]}"
 
 
-def bot_record(client):
+_BOT_REC_CACHE = {}  # key -> (expiry_ts, record_dict)
+_BOT_REC_TTL = 60  # seconds
+
+def invalidate_bot_cache(bot_id=None):
+    if bot_id is None:
+        _BOT_REC_CACHE.clear()
+    else:
+        try:
+            _BOT_REC_CACHE.pop(int(bot_id), None)
+            _BOT_REC_CACHE.pop(str(bot_id), None)
+        except Exception:
+            pass
+
+def bot_record(client, force_fresh=False):
     if mongo_db is None: return {}
     try:
-        b_id = getattr(client, "me", None) and client.me.id
+        me_obj = getattr(client, "me", None)
+        b_id = getattr(me_obj, "id", None)
+        cache_key = int(b_id) if b_id else (getattr(client, "bot_token", None) or "master")
+        now = time.time()
+        if not force_fresh and cache_key in _BOT_REC_CACHE:
+            exp, rec = _BOT_REC_CACHE[cache_key]
+            if now < exp:
+                return rec
+
+        rec = None
         if b_id:
             rec = mongo_db.bots.find_one({"$or": [{"bot_id": int(b_id)}, {"bot_id": str(b_id)}]})
-            if rec: return rec
-            token_val = getattr(client, "bot_token", None) or getattr(client, "_token", "")
-            if token_val:
-                rec = mongo_db.bots.find_one({"$or": [{"token": token_val}, {"bot_token": token_val}]})
-                if rec: return rec
-            if getattr(client.me, "username", None):
-                rec = mongo_db.bots.find_one({"$or": [{"username": client.me.username}, {"username": client.me.username.lower()}]})
-                if rec: return rec
-        m_rec = mongo_db.master_settings.find_one({"type": "master_config"}) or mongo_db.master_settings.find_one({})
-        return m_rec or {}
+            if not rec:
+                token_val = getattr(client, "bot_token", None) or getattr(client, "_token", "")
+                if token_val:
+                    rec = mongo_db.bots.find_one({"$or": [{"token": token_val}, {"bot_token": token_val}]})
+            if not rec and getattr(me_obj, "username", None):
+                rec = mongo_db.bots.find_one({"$or": [{"username": me_obj.username}, {"username": me_obj.username.lower()}]})
+        if not rec:
+            m_rec = mongo_db.master_settings.find_one({"type": "master_config"}) or mongo_db.master_settings.find_one({})
+            rec = m_rec or {}
+
+        _BOT_REC_CACHE[cache_key] = (now + _BOT_REC_TTL, rec)
+        return rec
     except Exception:
         return {}
-
 
 def owner_id(client): return int(bot_record(client).get("user_id", 0))
 
@@ -594,12 +617,7 @@ def settings_menu():
 
 
 async def deliver_file(client, user_id, file_id, protected=False):
-    from settings_modules.update_channel import send_wait_message
     wait_msg = None
-    try:
-        wait_msg = await send_wait_message(client, user_id, cancel_callback_data="cancel_deliv")
-    except Exception:
-        pass
     rec = bot_record(client)
     protected = protected or bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
 
@@ -822,14 +840,8 @@ async def start(client, message):
             return
     except Exception:
         pass
-    me = await client.get_me()
-    is_new_user = False
-    try:
-        if not await clonedb.is_user_exist(me.id, message.from_user.id):
-            await clonedb.add_user(me.id, message.from_user.id)
-            is_new_user = True
-    except Exception:
-        pass
+
+    me = getattr(client, "me", None) or (await client.get_me() if hasattr(client, "get_me") else None)
 
     from settings_modules.active_deactive import check_clone_status_or_block
     if await check_clone_status_or_block(client, message):
@@ -837,32 +849,38 @@ async def start(client, message):
 
     rec = bot_record(client)
 
-    log_ch = rec.get("log_channel")
-    if log_ch and is_new_user:
-        async def _log_clone_start():
-            try:
-                u = message.from_user
-                lines_info = [
-                    "❓ <b>USER INFO:</b>\n",
-                    f"🪪 <b>Mention:</b> {u.mention}",
-                    f"🆔 <b>User ID:</b> <code>{u.id}</code>",
-                    f"👤 <b>First Name:</b> {u.first_name or 'None'}",
-                    f"👤 <b>Last Name:</b> {u.last_name or 'None'}",
-                    f"📎 <b>Username:</b> @{u.username or 'None'}\n",
-                    f"🌐 <b>Language:</b> {getattr(u, 'language_code', None) or 'None'}",
-                    f"⭐️ <b>Premium:</b> {bool(getattr(u, 'is_premium', False))}",
-                    f"🤖 <b>Bot:</b> {bool(getattr(u, 'is_bot', False))}",
-                    f"🚨 <b>Scam:</b> {bool(getattr(u, 'is_scam', False))}",
-                    f"⚠️ <b>Fake:</b> {bool(getattr(u, 'is_fake', False))}",
-                    f"🛡️ <b>Support:</b> {bool(getattr(u, 'is_support', False))}",
-                    f"✅ <b>Verified:</b> {bool(getattr(u, 'is_verified', False))}",
-                    f"⛔️ <b>Restricted:</b> {bool(getattr(u, 'is_restricted', False))}",
-                    f"🌐 <b>DC ID:</b> {getattr(u, 'dc_id', None) or 'None'}",
-                ]
-                await client.send_message(chat_id=int(log_ch), text="\n".join(lines_info))
-            except Exception:
-                pass
-        asyncio.create_task(_log_clone_start())
+    # Ultra-fast background user registration and logging (0ms link latency)
+    async def _track_user_bg():
+        try:
+            bid = getattr(me, "id", None)
+            uid = getattr(getattr(message, "from_user", None), "id", None)
+            if bid and uid:
+                if not await clonedb.is_user_exist(bid, uid):
+                    await clonedb.add_user(bid, uid)
+                    log_ch = rec.get("log_channel")
+                    if log_ch:
+                        u = message.from_user
+                        lines_info = [
+                            "❓ <b>USER INFO:</b>\n",
+                            f"🪪 <b>Mention:</b> {u.mention}",
+                            f"🆔 <b>User ID:</b> <code>{u.id}</code>",
+                            f"👤 <b>First Name:</b> {u.first_name or 'None'}",
+                            f"👤 <b>Last Name:</b> {u.last_name or 'None'}",
+                            f"📎 <b>Username:</b> @{u.username or 'None'}\n",
+                            f"🌐 <b>Language:</b> {getattr(u, 'language_code', None) or 'None'}",
+                            f"⭐️ <b>Premium:</b> {bool(getattr(u, 'is_premium', False))}",
+                            f"🤖 <b>Bot:</b> {bool(getattr(u, 'is_bot', False))}",
+                            f"🚨 <b>Scam:</b> {bool(getattr(u, 'is_scam', False))}",
+                            f"⚠️ <b>Fake:</b> {bool(getattr(u, 'is_fake', False))}",
+                            f"🛡️ <b>Support:</b> {bool(getattr(u, 'is_support', False))}",
+                            f"✅ <b>Verified:</b> {bool(getattr(u, 'is_verified', False))}",
+                            f"⛔️ <b>Restricted:</b> {bool(getattr(u, 'is_restricted', False))}",
+                            f"🌐 <b>DC ID:</b> {getattr(u, 'dc_id', None) or 'None'}",
+                        ]
+                        await client.send_message(chat_id=int(log_ch), text="\n".join(lines_info))
+        except Exception:
+            pass
+    asyncio.create_task(_track_user_bg())
 
     # Ensure command menu visibility: Only on plain /start (never slow down link clicks)
     if len(message.command) != 2:

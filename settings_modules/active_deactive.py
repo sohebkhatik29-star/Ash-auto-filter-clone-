@@ -8,6 +8,18 @@ def db():
     from plugins.clone import mongo_db
     return mongo_db
 
+_BOT_ACTIVE_CACHE = {}  # {bot_id: expiry_ts}
+
+def invalidate_bot_status_cache(bot_id=None):
+    if bot_id is None:
+        _BOT_ACTIVE_CACHE.clear()
+    else:
+        try:
+            _BOT_ACTIVE_CACHE.pop(int(bot_id), None)
+            _BOT_ACTIVE_CACHE.pop(str(bot_id), None)
+        except Exception:
+            pass
+
 def touch_bot_activity(bot_id: int):
     """Update the last_active_time for a bot to the current timestamp."""
     try:
@@ -35,9 +47,14 @@ async def check_clone_status_or_block(client, message_or_query) -> bool:
     If suspended or deactivated, replies with notice and returns True (meaning BLOCKED).
     If active, touches bot activity and returns False (meaning ALLOWED).
     """
-    me = client.me or (await client.get_me())
+    me = getattr(client, "me", None) or (await client.get_me() if hasattr(client, "get_me") else None)
     from config import BOT_USERNAME
     if me and me.username and BOT_USERNAME and me.username.lower() == BOT_USERNAME.lower():
+        return False
+
+    bid = getattr(me, "id", None)
+    now = time.time()
+    if bid and int(bid) in _BOT_ACTIVE_CACHE and now < _BOT_ACTIVE_CACHE[int(bid)]:
         return False
 
     # 0. Check if user is banned from this clone bot
@@ -133,7 +150,12 @@ async def check_clone_status_or_block(client, message_or_query) -> bool:
                 pass
         return True
 
-    touch_bot_activity(me.id)
+    if bid:
+        _BOT_ACTIVE_CACHE[int(bid)] = now + 45
+    try:
+        asyncio.create_task(asyncio.to_thread(touch_bot_activity, me.id))
+    except Exception:
+        touch_bot_activity(me.id)
     return False
 
 def is_clone_deactivated(client_or_bid) -> bool:

@@ -57,14 +57,31 @@ def formate_file_name(file_name):
 # Ask Doubt on telegram @movies_1780
 
 
-async def get_master_config(client):
+_MASTER_CONFIG_CACHE = None
+_MASTER_CONFIG_EXP = 0
+
+def invalidate_master_config_cache():
+    global _MASTER_CONFIG_CACHE, _MASTER_CONFIG_EXP
+    _MASTER_CONFIG_CACHE = None
+    _MASTER_CONFIG_EXP = 0
+
+async def get_master_config(client, force_fresh=False):
+    global _MASTER_CONFIG_CACHE, _MASTER_CONFIG_EXP
+    now = time.time()
+    if not force_fresh and _MASTER_CONFIG_CACHE is not None and now < _MASTER_CONFIG_EXP:
+        return _MASTER_CONFIG_CACHE
+    res = None
     try:
         admin_id = int(ADMINS[0])
         u = await get_user(admin_id)
-        if u: return u
+        if u: res = u
     except Exception:
         pass
-    return await get_user(client.me.id)
+    if not res:
+        res = await get_user(client.me.id)
+    _MASTER_CONFIG_CACHE = res or {}
+    _MASTER_CONFIG_EXP = now + 60
+    return _MASTER_CONFIG_CACHE
 
 def get_master_start_markup(user_id: int):
     from settings_modules.master_admin_panel import is_master_admin
@@ -379,9 +396,15 @@ async def start(client, message):
     except Exception:
         pass
     username = client.me.username
-    if not await db.is_user_exist(message.from_user.id):
-        await db.add_user(message.from_user.id, message.from_user.first_name)
-        await client.send_message(LOG_CHANNEL, script.LOG_TEXT.format(message.from_user.id, message.from_user.mention))
+    async def _track_master_user_bg():
+        try:
+            uid = message.from_user.id
+            if not await db.is_user_exist(uid):
+                await db.add_user(uid, message.from_user.first_name)
+                await client.send_message(LOG_CHANNEL, script.LOG_TEXT.format(uid, message.from_user.mention))
+        except Exception:
+            pass
+    asyncio.create_task(_track_master_user_bg())
     if len(message.command) != 2:
         if await send_master_fsub_prompt(client, message, ""):
             return
