@@ -1,105 +1,45 @@
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
+from config import ADMINS
+from settings_modules.master_admin_panel import is_master_admin, admin_panel_main_markup, db, get_all_admins
 
-from config import ADMINS, BOT_USERNAME
-from plugins.dbusers import db
-from plugins.clone import mongo_db
-
-
-def admin_markup():
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("📊 Statistics", callback_data="admin_stats"),
-            InlineKeyboardButton("🤖 Cloned Bots", callback_data="admin_clones"),
-        ],
-        [InlineKeyboardButton("📢 Broadcast Help", callback_data="admin_broadcast")],
-        [InlineKeyboardButton("❌ Close", callback_data="admin_close")],
-    ])
-
-
-@Client.on_message(filters.command("admin") & filters.private & filters.user(ADMINS))
+@Client.on_message(filters.command(["admin", "stats"]) & filters.private)
 async def admin_panel(client, message):
-    me = client.me or (await client.get_me())
-    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
-        return
-    await message.reply_text(
-        "<b>⚙️ ADMIN PANEL</b>\n\nChoose an option below:",
-        reply_markup=admin_markup(),
+    user_id = message.from_user.id
+    if not is_master_admin(user_id):
+        return await message.reply("❌ <b>Access denied.</b> Master Bot Admins only.")
+
+    m = db()
+    total_master_users = 0
+    try:
+        from plugins.dbusers import db as u_db
+        total_master_users = await u_db.total_users_count()
+    except Exception:
+        pass
+
+    total_bots = 0
+    active_bots = 0
+    inactive_bots = 0
+    total_owners = 0
+    if m is not None:
+        total_bots = m.bots.count_documents({})
+        inactive_bots = m.bots.count_documents({"$or": [{"deactivated": True}, {"suspended": True}]})
+        active_bots = total_bots - inactive_bots
+        try:
+            total_owners = len(m.bots.distinct("user_id"))
+        except Exception:
+            agg = list(m.bots.aggregate([{"$group": {"_id": "$user_id"}}, {"$count": "total"}]))
+            total_owners = agg[0]["total"] if agg else 0
+    admin_count = len(get_all_admins())
+
+    text = (
+        "👑 <b>MASTER BOT ADMIN CONTROL PANEL</b>\n\n"
+        "<blockquote>Welcome Administrator! Control and supervise all cloned bots, search clone owners, monitor live system status, and configure bot settings.</blockquote>\n\n"
+        f"👤 <b>MASTER BOT USERS:</b> <code>{total_master_users:,} Users</code>\n"
+        f"👑 <b>TOTAL CLONE OWNERS:</b> <code>{total_owners:,} Users</code>\n"
+        f"🤖 <b>TOTAL CLONED BOTS:</b> <code>{total_bots:,} Bots</code>\n"
+        f"  ├ 🟢 <b>Active Clones:</b> <code>{active_bots:,}</code>\n"
+        f"  └ 🔴 <b>Stopped / Deactivated:</b> <code>{inactive_bots:,}</code>\n\n"
+        f"👮 <b>MASTER BOT ADMINS:</b> <code>{admin_count} Admins</code>\n\n"
+        "<i>Select an option from the menu below:</i>"
     )
-
-
-@Client.on_message(filters.command("stats") & filters.private & filters.user(ADMINS))
-async def admin_stats_command(client, message):
-    me = client.me or (await client.get_me())
-    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
-        return
-    users = await db.total_users_count()
-    clones = await mongo_db.bots.count_documents({})
-    await message.reply_text(
-        f"<b>📊 BOT STATISTICS</b>\n\n"
-        f"👥 Users: <code>{users}</code>\n"
-        f"🤖 Cloned bots: <code>{clones}</code>"
-    )
-
-
-@Client.on_callback_query(filters.regex(r"^admin_(stats|clones|broadcast|close)$"))
-async def admin_callbacks(client, query: CallbackQuery):
-    me = client.me or (await client.get_me())
-    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
-        return
-    if query.from_user.id not in ADMINS:
-        await query.answer("Not authorized.", show_alert=True)
-        return
-
-    if query.data == "admin_close":
-        await query.message.delete()
-        return
-
-    if query.data == "admin_stats":
-        users = await db.total_users_count()
-        clones = await mongo_db.bots.count_documents({})
-        await query.answer()
-        await query.message.edit_text(
-            f"<b>📊 BOT STATISTICS</b>\n\n"
-            f"👥 Users: <code>{users}</code>\n"
-            f"🤖 Cloned bots: <code>{clones}</code>",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Back", callback_data="admin_back")],
-                [InlineKeyboardButton("❌ Close", callback_data="admin_close")],
-            ])
-        )
-        return
-
-    if query.data == "admin_clones":
-        clones = await mongo_db.bots.count_documents({})
-        await query.answer()
-        await query.message.edit_text(
-            f"<b>🤖 CLONED BOTS</b>\n\nTotal: <code>{clones}</code>\n\n"
-            "Use <code>/deletecloned</code> to remove a clone from the database.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Back", callback_data="admin_back")],
-                [InlineKeyboardButton("❌ Close", callback_data="admin_close")],
-            ])
-        )
-        return
-
-    if query.data == "admin_broadcast":
-        await query.answer()
-        await query.message.edit_text(
-            "<b>📢 BROADCAST</b>\n\n"
-            "Reply to the message you want to send and use:\n"
-            "<code>/broadcast</code>\n\n"
-            "This command is restricted to ADMINS.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Back", callback_data="admin_back")],
-                [InlineKeyboardButton("❌ Close", callback_data="admin_close")],
-            ])
-        )
-        return
-
-    if query.data == "admin_back":
-        await query.answer()
-        await query.message.edit_text(
-            "<b>⚙️ ADMIN PANEL</b>\n\nChoose an option below:",
-            reply_markup=admin_markup(),
-        )
+    return await message.reply_text(text, reply_markup=admin_panel_main_markup())

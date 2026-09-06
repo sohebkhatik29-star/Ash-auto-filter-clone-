@@ -232,6 +232,7 @@ async def resolve_user_display(client, uid: int, m_db):
 
 def admin_panel_main_markup():
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 BOT & CLONE STATUS", callback_data="admin_stats_view")],
         [InlineKeyboardButton("👥 SEE ALL CLONE OWNERS", callback_data="admin_all_owners:0")],
         [InlineKeyboardButton("🔍 SEARCH CLONE OWNER", callback_data="admin_search_owner")],
         [InlineKeyboardButton("➕ ADD / MANAGE ADMINS", callback_data="admin_manage_admins")],
@@ -357,24 +358,96 @@ async def handle_admin_panel_callbacks(client, query):
     # 1. Main Admin Panel
     if data == "admin_panel_main":
         cancel_all_listeners(client, query.message.chat.id, user_id)
+        total_master_users = 0
+        try:
+            from plugins.dbusers import db as u_db
+            total_master_users = await u_db.total_users_count()
+        except Exception:
+            pass
+
         total_owners = 0
         total_bots = 0
+        active_bots = 0
+        inactive_bots = 0
         if m is not None:
             total_bots = m.bots.count_documents({})
-            pipeline = [{"$group": {"_id": "$user_id"}}, {"$count": "total"}]
-            agg = list(m.bots.aggregate(pipeline))
-            total_owners = agg[0]["total"] if agg else 0
+            inactive_bots = m.bots.count_documents({"$or": [{"deactivated": True}, {"suspended": True}]})
+            active_bots = total_bots - inactive_bots
+            try:
+                total_owners = len(m.bots.distinct("user_id"))
+            except Exception:
+                agg = list(m.bots.aggregate([{"$group": {"_id": "$user_id"}}, {"$count": "total"}]))
+                total_owners = agg[0]["total"] if agg else 0
 
         admin_count = len(get_all_admins())
         text = (
             "👑 <b>MASTER BOT ADMIN CONTROL PANEL</b>\n\n"
-            "<blockquote>Welcome Administrator! Control and supervise all cloned bots, search clone owners, manage suspension, and configure bot settings.</blockquote>\n\n"
-            f"📊 <b>TOTAL CLONE OWNERS:</b> <code>{total_owners} Users</code>\n"
-            f"🤖 <b>TOTAL CLONE BOTS:</b> <code>{total_bots} Bots</code>\n"
+            "<blockquote>Welcome Administrator! Control and supervise all cloned bots, search clone owners, monitor system status, and configure bot settings.</blockquote>\n\n"
+            f"👤 <b>MASTER BOT USERS:</b> <code>{total_master_users:,} Users</code>\n"
+            f"👑 <b>TOTAL CLONE OWNERS:</b> <code>{total_owners:,} Users</code>\n"
+            f"🤖 <b>TOTAL CLONED BOTS:</b> <code>{total_bots:,} Bots</code>\n"
+            f"  ├ 🟢 <b>Active Clones:</b> <code>{active_bots:,}</code>\n"
+            f"  └ 🔴 <b>Stopped / Deactivated:</b> <code>{inactive_bots:,}</code>\n\n"
             f"👮 <b>MASTER BOT ADMINS:</b> <code>{admin_count} Admins</code>\n\n"
             "<i>Select an option from the menu below:</i>"
         )
         return await query.message.edit_text(text, reply_markup=admin_panel_main_markup())
+
+    # 1.1 Detailed Status View
+    if data == "admin_stats_view":
+        cancel_all_listeners(client, query.message.chat.id, user_id)
+        total_master_users = 0
+        try:
+            from plugins.dbusers import db as u_db
+            total_master_users = await u_db.total_users_count()
+        except Exception:
+            pass
+
+        total_bots = 0
+        active_bots = 0
+        deactivated_bots = 0
+        suspended_bots = 0
+        total_clone_owners = 0
+        running_bots = 0
+
+        if m is not None:
+            total_bots = m.bots.count_documents({})
+            deactivated_bots = m.bots.count_documents({"deactivated": True})
+            suspended_bots = m.bots.count_documents({"suspended": True})
+            stopped_total = m.bots.count_documents({"$or": [{"deactivated": True}, {"suspended": True}]})
+            active_bots = total_bots - stopped_total
+            try:
+                total_clone_owners = len(m.bots.distinct("user_id"))
+            except Exception:
+                agg = list(m.bots.aggregate([{"$group": {"_id": "$user_id"}}, {"$count": "total"}]))
+                total_clone_owners = agg[0]["total"] if agg else 0
+
+        try:
+            from plugins.clone import CLONES
+            running_bots = len(CLONES)
+        except Exception:
+            running_bots = active_bots
+
+        text = (
+            "📊 <b>MASTER BOT & CLONE SYSTEM STATUS</b>\n\n"
+            "<blockquote>Live real-time analytics for your Master Bot and all connected Clone Bots.</blockquote>\n\n"
+            "👤 <b>MASTER BOT USERS:</b>\n"
+            f"├ 👥 <b>Total Active Users:</b> <code>{total_master_users:,} Users</code>\n"
+            f"└ 👑 <b>Clone Creators:</b> <code>{total_clone_owners:,} Users</code>\n\n"
+            "🤖 <b>CLONE BOTS METRICS:</b>\n"
+            f"├ 📦 <b>Total Clones Created:</b> <code>{total_bots:,} Bots</code>\n"
+            f"├ 🟢 <b>Active Running Clones:</b> <code>{active_bots:,} Bots</code>\n"
+            f"├ 🔴 <b>Deactivated Clones:</b> <code>{deactivated_bots:,} Bots</code>\n"
+            f"├ ⛔ <b>Suspended Clones:</b> <code>{suspended_bots:,} Bots</code>\n"
+            f"└ ⚡ <b>Loaded In Memory:</b> <code>{running_bots:,} Bots</code>\n\n"
+            f"<i>📅 Updated: Live Realtime</i>"
+        )
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 REFRESH STATUS", callback_data="admin_stats_view")],
+            [InlineKeyboardButton("👥 SEE ALL CLONE OWNERS", callback_data="admin_all_owners:0")],
+            [InlineKeyboardButton("‹ BACK TO ADMIN PANEL", callback_data="admin_panel_main")]
+        ])
+        return await query.message.edit_text(text, reply_markup=markup)
 
     # 2. All Clone Owners List
     if data.startswith("admin_all_owners"):
