@@ -96,6 +96,11 @@ async def handle_admins_callbacks(client, query, data, user_id, r, save_fn, canc
         adms = [a for a in adms if int(a.get("user_id", 0)) != target_uid]
         save_fn(admins=adms)
         r["admins"] = adms
+        try:
+            from pyrogram.types import BotCommandScopeChat
+            await client.delete_bot_commands(scope=BotCommandScopeChat(chat_id=int(target_uid)))
+        except Exception:
+            pass
         await query.answer("Admin removed successfully!")
         return await handle_admins_callbacks(client, query, "admins_menu", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)
 
@@ -230,6 +235,12 @@ async def handle_admins_callbacks(client, query, data, user_id, r, save_fn, canc
             save_fn(admins=adms)
             r["admins"] = adms
             clear_user_session(user_id)
+            try:
+                from plugins.clone import clone_commands
+                from pyrogram.types import BotCommandScopeChat
+                await client.set_bot_commands(clone_commands(True), scope=BotCommandScopeChat(chat_id=int(u_obj.id)))
+            except Exception:
+                pass
             return await client.send_message(
                 chat_id=user_id,
                 text="<b>SUCCESSFULLY UPDATED</b>",

@@ -870,6 +870,18 @@ async def start(client, message):
         except Exception:
             pass
 
+    # Ensure command menu visibility: Only for Clone Owner, Clone Admins, and Master Admins
+    try:
+        from clone_plugins.auth import is_clone_authorized
+        from pyrogram.types import BotCommandScopeChat
+        if is_clone_authorized(client, message.from_user.id):
+            from plugins.clone import clone_commands
+            await client.set_bot_commands(clone_commands(True), scope=BotCommandScopeChat(chat_id=int(message.from_user.id)))
+        else:
+            await client.delete_bot_commands(scope=BotCommandScopeChat(chat_id=int(message.from_user.id)))
+    except Exception:
+        pass
+
     if len(message.command) != 2:
         if await send_fsub_prompt(client, message, ""):
             return

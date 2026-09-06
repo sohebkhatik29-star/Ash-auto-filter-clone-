@@ -69,15 +69,80 @@ def clone_commands(include_owner=False):
 
 
 async def set_clone_menu(client, owner_id=None):
+    # Delete default command menu for regular users so regular subscribers never see bot commands menu
     try:
-        await client.set_bot_commands(clone_commands(False))
+        await client.delete_bot_commands()
     except Exception:
         pass
+
+    # Gather all authorized user IDs (clone owner, clone admins, master admins)
+    auth_uids = set()
     if owner_id:
         try:
-            await client.set_bot_commands(clone_commands(True), scope=BotCommandScopeChat(chat_id=int(owner_id)))
+            auth_uids.add(int(owner_id))
         except Exception:
-            logging.exception("Unable to set owner command menu")
+            pass
+
+    try:
+        rec = None
+        if mongo_db is not None:
+            b_id = getattr(client, "me", None) and client.me.id
+            if b_id:
+                rec = mongo_db.bots.find_one({"$or": [{"bot_id": int(b_id)}, {"bot_id": str(b_id)}]})
+        if rec:
+            rec_uid = rec.get("user_id")
+            if rec_uid:
+                try:
+                    auth_uids.add(int(rec_uid))
+                except Exception:
+                    pass
+            adms = rec.get("admins", [])
+            if isinstance(adms, dict):
+                adms = list(adms.values())
+            for a in adms:
+                if isinstance(a, dict) and a.get("user_id"):
+                    try:
+                        auth_uids.add(int(a["user_id"]))
+                    except Exception:
+                        pass
+                elif str(a).isdigit():
+                    try:
+                        auth_uids.add(int(a))
+                    except Exception:
+                        pass
+            for m in rec.get("moderators", []):
+                if str(m).isdigit():
+                    try:
+                        auth_uids.add(int(m))
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    try:
+        from config import ADMINS
+        for a in ADMINS:
+            if str(a).strip().lstrip("-").isdigit():
+                try:
+                    auth_uids.add(int(a))
+                except Exception:
+                    pass
+        if mongo_db is not None:
+            for ma in mongo_db.master_admins.find():
+                if ma.get("user_id"):
+                    try:
+                        auth_uids.add(int(ma["user_id"]))
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    cmds = clone_commands(True)
+    for uid in auth_uids:
+        try:
+            await client.set_bot_commands(cmds, scope=BotCommandScopeChat(chat_id=int(uid)))
+        except Exception:
+            pass
 
 
 def register_clone_handlers(client):
