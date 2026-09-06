@@ -108,14 +108,28 @@ def get_wait_markup(client=None, cancel_callback_data: str = "cancel_delivery", 
     return InlineKeyboardMarkup(buttons)
 
 
-async def send_wait_message(client, user_id_or_message, cancel_callback_data: str = "cancel_delivery"):
-    """Send the standard Please wait message with UPDATE CHANNEL markup."""
+async def send_wait_message(client, user_id_or_message, cancel_callback_data: str = "cancel_delivery", auto_delete_delay: int = 3):
+    """Send the standard Please wait message with UPDATE CHANNEL markup and automatically delete after 3 seconds."""
     try:
         markup = get_wait_markup(client, cancel_callback_data=cancel_callback_data)
         text = "Please wait...\n\n• cancel"
+        msg = None
         if hasattr(user_id_or_message, "reply"):
-            return await user_id_or_message.reply(text, reply_markup=markup)
-        return await client.send_message(user_id_or_message, text, reply_markup=markup)
+            msg = await user_id_or_message.reply(text, reply_markup=markup)
+        else:
+            msg = await client.send_message(user_id_or_message, text, reply_markup=markup)
+        
+        if msg and auto_delete_delay > 0:
+            import asyncio
+            async def _del_wait_msg():
+                await asyncio.sleep(auto_delete_delay)
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
+            asyncio.create_task(_del_wait_msg())
+
+        return msg
     except Exception:
         return None
 
