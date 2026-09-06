@@ -6,7 +6,9 @@ from pyrogram import Client, filters
 from pyrogram.handlers import CallbackQueryHandler
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from clone_plugins.sessions import start_user_session, is_user_session_active, clear_user_session, cancel_all_listeners
-from config import ADMINS, API_ID, API_HASH, PICS, BOT_USERNAME
+from datetime import datetime
+import pytz
+from config import ADMINS, API_ID, API_HASH, PICS, BOT_USERNAME, LOG_CHANNEL
 
 MAX_USER_CLONES = 5
 
@@ -547,6 +549,51 @@ async def _listen_and_create_clone(client, user_id, sess_token, prompt_msg=None)
                 [InlineKeyboardButton("‹ MY CLONE BOTS", callback_data="my_clones")]
             ])
         )
+
+        # Send detailed notification to LOG_CHANNEL
+        if LOG_CHANNEL:
+            try:
+                user_obj = ans.from_user if ans and getattr(ans, "from_user", None) else None
+                user_name = user_obj.first_name if user_obj and user_obj.first_name else "User"
+                user_uname = f"@{user_obj.username}" if user_obj and user_obj.username else "No Username"
+                user_mention = user_obj.mention if user_obj else f"<a href='tg://user?id={user_id}'>{user_name}</a>"
+                
+                try:
+                    tz = pytz.timezone('Asia/Kolkata')
+                    now_str = datetime.now(tz).strftime('%d %b %Y, %I:%M:%S %p')
+                except Exception:
+                    now_str = datetime.utcnow().strftime('%d %b %Y, %H:%M:%S UTC')
+                
+                total_user_clones = m.bots.count_documents({"user_id": int(user_id)}) if m is not None else 1
+                total_all_clones = m.bots.count_documents({}) if m is not None else 1
+
+                log_text = (
+                    "🎉 <b>#NEW_CLONE_CREATED</b>\n\n"
+                    "<blockquote>A user has successfully created a new Clone Bot!</blockquote>\n\n"
+                    "👤 <b>USER DETAILS:</b>\n"
+                    f"├ <b>Name:</b> {user_mention}\n"
+                    f"├ <b>Username:</b> {user_uname}\n"
+                    f"└ <b>User ID:</b> <code>{user_id}</code>\n\n"
+                    "🤖 <b>CLONE BOT DETAILS:</b>\n"
+                    f"├ <b>Bot Name:</b> <b>{bot.first_name}</b>\n"
+                    f"├ <b>Bot Username:</b> @{bot.username}\n"
+                    f"└ <b>Bot ID:</b> <code>{bot.id}</code>\n\n"
+                    "📊 <b>STATS:</b>\n"
+                    f"├ <b>User's Total Clones:</b> <code>{total_user_clones}/5</code>\n"
+                    f"└ <b>Global Total Clones:</b> <code>{total_all_clones} Bots</code>\n\n"
+                    f"🕒 <b>Time:</b> <code>{now_str} (IST)</code>"
+                )
+                
+                await client.send_message(
+                    chat_id=int(LOG_CHANNEL),
+                    text=log_text,
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton(f"🤖 Open @{bot.username} ↗", url=f"https://t.me/{bot.username}")],
+                        [InlineKeyboardButton("👤 User Profile", url=f"tg://user?id={user_id}")]
+                    ])
+                )
+            except Exception as log_err:
+                logging.warning("Unable to send new clone creation log to LOG_CHANNEL: %s", log_err)
     except Exception as e:
         await msg.edit_text(f"⚠️ <b>Bot Error:</b>\n\n<code>{e}</code>")
 
