@@ -257,7 +257,7 @@ def consume_verify_token(token: str, user_id: int, bot_id=0):
         return None, slot, True, time_taken
 
     is_bypassed = False
-    if time_taken < 10:
+    if time_taken < 20:
         is_bypassed = True
 
     return payload, slot, is_bypassed, time_taken
