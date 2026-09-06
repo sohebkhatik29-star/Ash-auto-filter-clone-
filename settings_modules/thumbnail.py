@@ -1,5 +1,6 @@
 # 🖼️ CUSTOM THUMBNAIL SETTINGS MODULE
 import os
+import time
 import json
 import uuid
 import mimetypes
