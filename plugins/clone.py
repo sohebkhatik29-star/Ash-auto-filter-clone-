@@ -85,28 +85,10 @@ def register_clone_handlers(client):
     _register(client)
 
 
-@Client.on_message(filters.command("clone") & filters.private)
+@Client.on_message(filters.command(["clone", "clones", "my_clones"]) & filters.private)
 async def clone(client, message):
-    me = client.me or (await client.get_me())
-    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
-        return
-    if not CLONE_MODE or mongo_db is None:
-        return await message.reply_text("Clone mode is disabled or database is not configured.")
-
-    from clone_plugins.master_manager import manage_clones_markup
-    text = (
-        "👑 <b>CLONE MENU</b>\n\n"
-        "<i>\" WELCOME TO YOUR CLONE BOT MANAGEMENT HUB! CUSTOMIZE YOUR BOT SETTINGS OR MANAGE ITS STATUS USING THE OPTIONS BELOW. \"</i>\n\n"
-        "⚙️ <b>QUICK COMMANDS</b>\n\n"
-        "🚀 /activate - ACTIVATE YOUR CLONE BOT\n"
-        "🗑️ /delete - PERMANENTLY DELETE YOUR CLONE BOT\n\n"
-        "🎨 <b>BOT CUSTOMIZATION</b>\n\n"
-        "✨ <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
-    )
-    return await message.reply_text(
-        text,
-        reply_markup=manage_clones_markup(message.from_user.id, back_cb="settings_back", is_clone=False)
-    )
+    from plugins.master_settings import send_manage_clones
+    return await send_manage_clones(client, message)
 
 
 @Client.on_message(filters.command("deletecloned") & filters.private)

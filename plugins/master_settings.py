@@ -403,8 +403,8 @@ async def send_manage_clones(client, message_or_user_id, message=None):
         "✨ <b>CLICK THE BUTTON BELOW TO OPEN YOUR CLONE BOT AND MODIFY ITS SETTINGS, WELCOME MESSAGE, AND FEATURES!</b>"
     )
     if msg_target:
-        return await edit_or_reply(msg_target, text, reply_markup=master_manager.manage_clones_markup(uid, back_cb="settings_back", is_clone=False))
-    return await client.send_message(uid, text, reply_markup=master_manager.manage_clones_markup(uid, back_cb="settings_back", is_clone=False))
+        return await edit_or_reply(msg_target, text, reply_markup=master_manager.manage_clones_markup(uid, back_cb="start", is_clone=False))
+    return await client.send_message(uid, text, reply_markup=master_manager.manage_clones_markup(uid, back_cb="start", is_clone=False))
 
 # ----------------- CALLBACK QUERY ROUTER ----------------- #
 

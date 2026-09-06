@@ -1144,3 +1144,8 @@ async def cb_handler(client: Client, query: CallbackQuery):
             await query.answer()
         except Exception:
             pass
+
+@Client.on_message(filters.command(["clone", "clones", "my_clones"]) & filters.private)
+async def clone_cmd_in_master(client, message):
+    from plugins.master_settings import send_manage_clones
+    return await send_manage_clones(client, message)

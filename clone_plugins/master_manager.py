@@ -157,10 +157,14 @@ async def handle_clone_callbacks(client, query):
             current_count = m.bots.count_documents({"user_id": int(user_id)})
             if current_count >= MAX_USER_CLONES:
                 return await query.answer("❌ You can create maximum 5 clone bots.", show_alert=True)
-        me = client.me or (await client.get_me())
-        is_clone = bool(me and me.username and me.username.lower() != BOT_USERNAME.lower())
+        try:
+            from plugins.clone import CLONES
+            is_clone = bool(getattr(client, "me", None) and int(client.me.id) in CLONES)
+        except Exception:
+            is_clone = False
         if is_clone:
-            return await query.answer(url=f"https://t.me/{BOT_USERNAME}?start=clone")
+            m_usr = BOT_USERNAME or "Ash_files_or_clone_mangar_bot"
+            return await query.answer(url=f"https://t.me/{m_usr}?start=clone")
         try:
             await query.answer()
         except Exception:
