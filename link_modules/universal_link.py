@@ -265,9 +265,6 @@ async def deliver_universal_link(client, message, token: str):
     except Exception:
         rec = {}
 
-    from settings_modules.update_channel import send_wait_message
-    wait_msg = await send_wait_message(client, message, cancel_callback_data=f"univ_cancel_{token}")
-    
     f_id = int(record["first_msg_id"])
     l_id = int(record["last_msg_id"])
     ch_id = int(record["channel_id"])
@@ -290,11 +287,15 @@ async def deliver_universal_link(client, message, token: str):
             break
         caption_to_use = None
         if custom_cap:
-            try:
-                src_msg = await client.get_messages(ch_id, m_id)
-                caption_to_use = format_caption(custom_cap, source_msg=src_msg)
-            except Exception:
+            if "{" in custom_cap:
+                try:
+                    src_msg = await client.get_messages(ch_id, m_id)
+                    caption_to_use = format_caption(custom_cap, source_msg=src_msg)
+                except Exception:
+                    caption_to_use = custom_cap
+            else:
                 caption_to_use = custom_cap
+
         base_kw = {
             "chat_id": user_id,
             "from_chat_id": ch_id,
@@ -305,34 +306,21 @@ async def deliver_universal_link(client, message, token: str):
         }
         if caption_to_use:
             base_kw["parse_mode"] = enums.ParseMode.HTML
-        attempts = []
-        kw1 = dict(base_kw)
         if invert_cap:
-            kw1["invert_media"] = True
+            base_kw["show_caption_above_media"] = True
         if spoiler_anim:
-            kw1["has_spoiler"] = True
-        attempts.append(kw1)
-        if invert_cap or spoiler_anim:
-            kw2 = dict(base_kw)
-            if invert_cap:
-                kw2["show_caption_above_media"] = True
-            if spoiler_anim:
-                kw2["has_spoiler"] = True
-            attempts.append(kw2)
-        if spoiler_anim:
-            attempts.append({**base_kw, "has_spoiler": True})
-        attempts.append(base_kw)
-        fb_no_pm = dict(base_kw)
-        fb_no_pm.pop("parse_mode", None)
-        attempts.append(fb_no_pm)
+            base_kw["has_spoiler"] = True
+
         delivered = None
-        for attempt_kw in attempts:
+        try:
+            delivered = await client.copy_message(**base_kw)
+        except Exception:
             try:
-                delivered = await client.copy_message(**attempt_kw)
-                await asyncio.sleep(0.1)
-                break
+                base_kw.pop("parse_mode", None)
+                delivered = await client.copy_message(**base_kw)
             except Exception:
-                continue
+                pass
+
         if delivered:
             delivered_messages.append(delivered)
             

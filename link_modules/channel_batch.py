@@ -310,9 +310,6 @@ async def batch_start_deliver(client, message):
     delivery_key = (int(client.me.id), user_id)
     _ACTIVE_DELIVERIES[delivery_key] = True
 
-    from settings_modules.update_channel import send_wait_message
-    wait_msg = await send_wait_message(client, message, cancel_callback_data=f"cbatch_cancel_{token}")
-
     f_id = int(record["first_msg_id"])
     l_id = int(record["last_msg_id"])
     ch_id = int(record["channel_id"])
@@ -336,10 +333,13 @@ async def batch_start_deliver(client, message):
             break
         caption_to_use = None
         if custom_cap:
-            try:
-                src_msg = await client.get_messages(ch_id, m_id)
-                caption_to_use = format_caption(custom_cap, source_msg=src_msg)
-            except Exception:
+            if "{" in custom_cap:
+                try:
+                    src_msg = await client.get_messages(ch_id, m_id)
+                    caption_to_use = format_caption(custom_cap, source_msg=src_msg)
+                except Exception:
+                    caption_to_use = custom_cap
+            else:
                 caption_to_use = custom_cap
 
         base_kw = {
@@ -352,55 +352,32 @@ async def batch_start_deliver(client, message):
         }
         if caption_to_use:
             base_kw["parse_mode"] = enums.ParseMode.HTML
-
-        attempts = []
-        kw1 = dict(base_kw)
         if invert_cap:
-            kw1["invert_media"] = True
+            base_kw["show_caption_above_media"] = True
         if spoiler_anim:
-            kw1["has_spoiler"] = True
-        attempts.append(kw1)
-
-        if invert_cap or spoiler_anim:
-            kw2 = dict(base_kw)
-            if invert_cap:
-                kw2["show_caption_above_media"] = True
-            if spoiler_anim:
-                kw2["has_spoiler"] = True
-            attempts.append(kw2)
-
-        if spoiler_anim:
-            attempts.append({**base_kw, "has_spoiler": True})
-
-        attempts.append(base_kw)
-        fb_no_pm = dict(base_kw)
-        fb_no_pm.pop("parse_mode", None)
-        attempts.append(fb_no_pm)
+            base_kw["has_spoiler"] = True
 
         delivered = None
-        for attempt_kw in attempts:
+        try:
+            delivered = await client.copy_message(**base_kw)
+        except Exception:
             try:
-                delivered = await client.copy_message(**attempt_kw)
-                await asyncio.sleep(0.1)
-                break
+                base_kw.pop("parse_mode", None)
+                delivered = await client.copy_message(**base_kw)
             except Exception:
-                continue
+                pass
 
         if delivered:
             delivered_messages.append(delivered)
 
     _ACTIVE_DELIVERIES.pop(delivery_key, None)
-    try:
-        await wait_msg.delete()
-    except Exception:
-        pass
 
     try:
         ad_enabled = bool(rec.get("auto_delete_enabled", False))
         ad_sec = int(rec.get("auto_delete_time") or (int(rec.get("auto_delete_minutes", 0) or 0) * 60) or 0)
         if ad_enabled and ad_sec > 0 and delivered_messages:
             from link_modules.auto_delete_delivery import schedule_auto_delete
-            await schedule_auto_delete(client, user_id, delivered_messages, ad_sec)
+            asyncio.create_task(schedule_auto_delete(client, message.from_user.id, delivered_messages, ad_sec))
     except Exception:
         pass
 

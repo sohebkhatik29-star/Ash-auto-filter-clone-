@@ -109,12 +109,8 @@ def get_wait_markup(client=None, cancel_callback_data: str = "cancel_delivery", 
 
 
 async def send_wait_message(client, user_id_or_message, cancel_callback_data: str = "cancel_delivery"):
-    """Send the standard 'Please wait...\n\n• cancel' message with markup."""
-    markup = get_wait_markup(client, cancel_callback_data=cancel_callback_data)
-    text = "Please wait...\n\n• cancel"
-    if hasattr(user_id_or_message, "reply"):
-        return await user_id_or_message.reply(text, reply_markup=markup)
-    return await client.send_message(user_id_or_message, text, reply_markup=markup)
+    """Disabled wait message to provide instant zero-delay delivery."""
+    return None
 
 
 def set_update_channel_link(bot_id: int, new_link: str) -> bool:

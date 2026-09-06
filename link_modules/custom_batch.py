@@ -626,13 +626,11 @@ async def batch_start(client, message):
         or rec.get("custom_thumbnail")
     )
 
-    from settings_modules.update_channel import send_wait_message
     delivery_key = (int(client.me.id), int(message.from_user.id))
     _ACTIVE_CUSTOM_DELIVERIES = getattr(custom_batch_cmd, "_active_deliveries", {})
     custom_batch_cmd._active_deliveries = _ACTIVE_CUSTOM_DELIVERIES
     _ACTIVE_CUSTOM_DELIVERIES[delivery_key] = True
 
-    wait_msg = await send_wait_message(client, message, cancel_callback_data=f"cb_deliv_cancel_{token}")
     delivered_messages = []
     for item in messages:
         if not _ACTIVE_CUSTOM_DELIVERIES.get(delivery_key, False):
@@ -641,119 +639,51 @@ async def batch_start(client, message):
         m_id = int(item["message_id"])
         caption_to_use = None
         if custom_cap:
-            try:
-                src_msg = await client.get_messages(c_id, m_id)
-                caption_to_use = format_caption(custom_cap, source_msg=src_msg)
-            except Exception:
+            if "{" in custom_cap:
+                try:
+                    src_msg = await client.get_messages(c_id, m_id)
+                    caption_to_use = format_caption(custom_cap, source_msg=src_msg)
+                except Exception:
+                    caption_to_use = custom_cap
+            else:
                 caption_to_use = custom_cap
 
+        base_kw = {
+            "chat_id": message.from_user.id,
+            "from_chat_id": c_id,
+            "message_id": m_id,
+            "caption": caption_to_use,
+            "reply_markup": markup,
+            "protect_content": is_protect,
+        }
+        if caption_to_use:
+            base_kw["parse_mode"] = enums.ParseMode.HTML
+        if invert_cap:
+            base_kw["show_caption_above_media"] = True
+        if spoiler_anim:
+            base_kw["has_spoiler"] = True
+
         delivered = None
-        if batch_thumb:
+        try:
+            delivered = await client.copy_message(**base_kw)
+        except Exception:
             try:
-                src_msg = await client.get_messages(c_id, m_id)
-                thumb_path = await get_cached_thumb_path(client, batch_thumb)
-                if src_msg and thumb_path and os.path.exists(thumb_path):
-                    if src_msg.video:
-                        send_kw = {
-                            "chat_id": message.from_user.id,
-                            "video": src_msg.video.file_id,
-                            "caption": caption_to_use,
-                            "thumb": thumb_path,
-                            "duration": getattr(src_msg.video, "duration", 0),
-                            "width": getattr(src_msg.video, "width", 0),
-                            "height": getattr(src_msg.video, "height", 0),
-                            "supports_streaming": True,
-                            "reply_markup": markup,
-                            "protect_content": is_protect,
-                        }
-                        if caption_to_use:
-                            send_kw["parse_mode"] = enums.ParseMode.HTML
-                        if invert_cap:
-                            send_kw["show_caption_above_media"] = True
-                        if spoiler_anim:
-                            send_kw["has_spoiler"] = True
-                        try:
-                            delivered = await client.send_video(**send_kw)
-                        except Exception:
-                            pass
-                    elif src_msg.document:
-                        send_kw_d = {
-                            "chat_id": message.from_user.id,
-                            "document": src_msg.document.file_id,
-                            "caption": caption_to_use,
-                            "thumb": thumb_path,
-                            "reply_markup": markup,
-                            "protect_content": is_protect,
-                        }
-                        if caption_to_use:
-                            send_kw_d["parse_mode"] = enums.ParseMode.HTML
-                        try:
-                            delivered = await client.send_document(**send_kw_d)
-                        except Exception:
-                            pass
+                base_kw.pop("parse_mode", None)
+                delivered = await client.copy_message(**base_kw)
             except Exception:
                 pass
 
-        if not delivered:
-            base_kw = {
-                "chat_id": message.from_user.id,
-                "from_chat_id": c_id,
-                "message_id": m_id,
-                "caption": caption_to_use,
-                "reply_markup": markup,
-                "protect_content": is_protect,
-            }
-            if caption_to_use:
-                base_kw["parse_mode"] = enums.ParseMode.HTML
-
-            attempts = []
-            kw1 = dict(base_kw)
-            if invert_cap:
-                kw1["invert_media"] = True
-            if spoiler_anim:
-                kw1["has_spoiler"] = True
-            attempts.append(kw1)
-
-            if invert_cap or spoiler_anim:
-                kw2 = dict(base_kw)
-                if invert_cap:
-                    kw2["show_caption_above_media"] = True
-                if spoiler_anim:
-                    kw2["has_spoiler"] = True
-                attempts.append(kw2)
-
-            if spoiler_anim:
-                attempts.append({**base_kw, "has_spoiler": True})
-
-            attempts.append(base_kw)
-            fb_no_pm = dict(base_kw)
-            fb_no_pm.pop("parse_mode", None)
-            attempts.append(fb_no_pm)
-
-            for attempt_kw in attempts:
-                try:
-                    delivered = await client.copy_message(**attempt_kw)
-                    await asyncio.sleep(0.1)
-                    break
-                except Exception:
-                    continue
-                    
         if delivered:
             delivered_messages.append(delivered)
 
     _ACTIVE_CUSTOM_DELIVERIES.pop(delivery_key, None)
-    if wait_msg:
-        try:
-            await wait_msg.delete()
-        except Exception:
-            pass
 
     try:
         ad_enabled = bool(rec.get("auto_delete_enabled", False))
         ad_sec = int(rec.get("auto_delete_time") or (int(rec.get("auto_delete_minutes", 0) or 0) * 60) or 0)
         if ad_enabled and ad_sec > 0 and delivered_messages:
             from link_modules.auto_delete_delivery import schedule_auto_delete
-            await schedule_auto_delete(client, message.from_user.id, delivered_messages, ad_sec)
+            asyncio.create_task(schedule_auto_delete(client, message.from_user.id, delivered_messages, ad_sec))
     except Exception:
         pass
 
