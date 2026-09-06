@@ -27,6 +27,16 @@ def token_verification_main_markup(r=None, prefix_cb="cset", target_bid=None):
         [InlineKeyboardButton("‹ BACK", callback_data=back_cb)]
     ])
 
+def bypass_time_markup(slot: int, prefix_cb="cset", target_bid=None):
+    cb = "master" if prefix_cb == "master" else "cset"
+    bid_suffix = f":{target_bid}" if target_bid else ""
+    back_cb = f"{cb}_token_verification:{slot}{bid_suffix}"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("SET BYPASS TIME", callback_data=f"{cb}_set_v_bypass_time:{slot}{bid_suffix}")],
+        [InlineKeyboardButton("RESET BYPASS TIME (50s)", callback_data=f"{cb}_del_v_bypass_time:{slot}{bid_suffix}")],
+        [InlineKeyboardButton("‹ BACK", callback_data=back_cb)]
+    ])
+
 def single_token_verification_markup(slot: int, is_on: bool, prefix_cb="cset", target_bid=None):
     prefix = slot_name(slot)
     status_icon = "✅" if is_on else "❌"
@@ -38,6 +48,7 @@ def single_token_verification_markup(slot: int, is_on: bool, prefix_cb="cset", t
         [InlineKeyboardButton(f"🎫 {prefix} VERIFY SHORTNER", callback_data=f"{cb}_v_shortner:{slot}{bid_suffix}")],
         [InlineKeyboardButton(f"🍿 {prefix} VERIFY TUTORIAL", callback_data=f"{cb}_v_tutorial:{slot}{bid_suffix}")],
         [InlineKeyboardButton(f"⏳ {prefix} VERIFY TIME", callback_data=f"{cb}_v_time:{slot}{bid_suffix}")],
+        [InlineKeyboardButton(f"🛡️ {prefix} ANTI-BYPASS TIME", callback_data=f"{cb}_v_bypass_time:{slot}{bid_suffix}")],
         [InlineKeyboardButton(f"✍️ {prefix} VERIFY TEXT", callback_data=f"{cb}_v_msg:{slot}{bid_suffix}")],
         [InlineKeyboardButton(f"🖼️ {prefix} VERIFY PIC", callback_data=f"{cb}_v_pic:{slot}{bid_suffix}")],
         [InlineKeyboardButton("👤 TOTAL USER VERIFIED TODAY", callback_data=f"{cb}_v_stats:{slot}{bid_suffix}")],
@@ -571,6 +582,116 @@ async def handle_token_callbacks(
                 reply_markup=back_to_slot_markup(slot, prefix_cb, target_bid=target_bid)
             )
         asyncio.create_task(_time_worker())
+        return
+
+    # 13.5. Anti-Bypass Time Screen
+    if str(data).startswith(("master_v_bypass_time:", "m_v_bypass_time:", "cset_v_bypass_time:")):
+        slot = int(data.split(":")[1])
+        prefix = slot_name(slot)
+        curr_r = get_rec_fn() if callable(get_rec_fn) else r
+        v_key = f"verify_{slot}" if slot > 1 else "verify_1"
+        v_cfg = curr_r.get(v_key, {})
+        secs = int(v_cfg.get("bypass_time") or curr_r.get("bypass_time") or 50)
+        text = (
+            f"🛡️ <b>{prefix} ANTI-BYPASS TIME:</b>\n\n"
+            "<blockquote>ANTI-BYPASS PROTECTION: Sets the minimum time (in seconds) a user must spend before verification is accepted. Shortener bypass bots that resolve instantly will be detected and blocked!</blockquote>\n\n"
+            f"<b>MINIMUM TIME -</b> <code>{secs} Seconds</code> (Default: 50s)"
+        )
+        return await clean_show(text, reply_markup=bypass_time_markup(slot, prefix_cb, target_bid=target_bid))
+
+    if str(data).startswith(("master_del_v_bypass_time:", "m_del_v_bypass_time:", "cset_del_v_bypass_time:")):
+        slot = int(data.split(":")[1])
+        v_key = f"verify_{slot}" if slot > 1 else "verify_1"
+        curr_r = get_rec_fn() if callable(get_rec_fn) else r
+        v_cfg = dict(curr_r.get(v_key, {}))
+        v_cfg["bypass_time"] = 50
+        curr_r[v_key] = v_cfg
+        save_fn(**{v_key: v_cfg})
+        try:
+            await query.answer("Bypass protection reset to 50s!")
+        except Exception:
+            pass
+        prefix = slot_name(slot)
+        text = (
+            f"🛡️ <b>{prefix} ANTI-BYPASS TIME:</b>\n\n"
+            "<blockquote>ANTI-BYPASS PROTECTION: Sets the minimum time (in seconds) a user must spend before verification is accepted. Shortener bypass bots that resolve instantly will be detected and blocked!</blockquote>\n\n"
+            "<b>MINIMUM TIME -</b> <code>50 Seconds</code> (Default: 50s)"
+        )
+        return await clean_show(text, reply_markup=bypass_time_markup(slot, prefix_cb, target_bid=target_bid))
+
+    if str(data).startswith(("master_set_v_bypass_time:", "m_set_v_bypass_time:", "cset_set_v_bypass_time:")):
+        slot = int(data.split(":")[1])
+        if cancel_listeners_fn:
+            cancel_listeners_fn(client, user_id, user_id)
+        sess_token = start_user_session(user_id, f"set_v_bypass_time_{slot}")
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        prompt_msg = await client.send_message(
+            chat_id=user_id,
+            text=(
+                "<b>SEND MINIMUM TIME IN SECONDS (e.g. 40, 50, 60)...</b>\n\n"
+                "<b>NOTE:</b> Bypass bots resolve links in 1-2 seconds, while humans take 40-60s on shorteners. Set between 10 to 300 seconds.\n\n"
+                "<code>/cancel</code> - <b>CANCEL THIS PROCESS.</b>"
+            )
+        )
+        async def _bypass_time_worker():
+            try:
+                ans = await client.listen(chat_id=user_id, timeout=120)
+            except Exception:
+                try:
+                    await prompt_msg.delete()
+                except Exception:
+                    pass
+                await client.send_message(user_id, "❌ <b>Timeout. Process cancelled.</b>")
+                clear_user_session(user_id)
+                return
+            if not is_user_session_active(user_id, sess_token):
+                return
+            raw = (ans.text or "").strip()
+            if raw == "/cancel":
+                try:
+                    await prompt_msg.delete()
+                except Exception:
+                    pass
+                clear_user_session(user_id)
+                await client.send_message(
+                    user_id,
+                    "❌ <b>Cancelled.</b>",
+                    reply_markup=back_to_slot_markup(slot, prefix_cb, target_bid=target_bid)
+                )
+                return
+            if not raw.isdigit() or int(raw) < 5 or int(raw) > 300:
+                try:
+                    await prompt_msg.delete()
+                except Exception:
+                    pass
+                await client.send_message(
+                    user_id,
+                    "❌ <b>Invalid time. Please enter a number between 10 and 300 seconds.</b>",
+                    reply_markup=back_to_slot_markup(slot, prefix_cb, target_bid=target_bid)
+                )
+                clear_user_session(user_id)
+                return
+            sec_val = int(raw)
+            v_key = f"verify_{slot}" if slot > 1 else "verify_1"
+            curr_r = get_rec_fn() if callable(get_rec_fn) else r
+            v_cfg = dict(curr_r.get(v_key, {}))
+            v_cfg["bypass_time"] = sec_val
+            curr_r[v_key] = v_cfg
+            save_fn(**{v_key: v_cfg})
+            clear_user_session(user_id)
+            try:
+                await prompt_msg.delete()
+            except Exception:
+                pass
+            await client.send_message(
+                user_id,
+                f"<b>SUCCESSFULLY SET ANTI-BYPASS TIME TO {sec_val} SECONDS</b> ✅",
+                reply_markup=back_to_slot_markup(slot, prefix_cb, target_bid=target_bid)
+            )
+        asyncio.create_task(_bypass_time_worker())
         return
 
     # 14. Verify Text Screen

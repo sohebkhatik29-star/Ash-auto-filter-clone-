@@ -256,8 +256,24 @@ def consume_verify_token(token: str, user_id: int, bot_id=0):
     if expires_at and expires_at < now:
         return None, slot, True, time_taken
 
+    threshold = 50
+    try:
+        bot_rec = None
+        if bot_id and mongo_db is not None:
+            bot_rec = mongo_db.clone_bots.find_one({"bot_id": int(bot_id)})
+        if not bot_rec and mongo_db is not None:
+            bot_rec = mongo_db.master_config.find_one({"_id": "master_config"})
+        if bot_rec:
+            v_key = f"verify_{slot}" if slot > 1 else "verify_1"
+            v_cfg = bot_rec.get(v_key, {})
+            custom_thresh = v_cfg.get("bypass_time") or v_cfg.get("bypass_seconds") or bot_rec.get("bypass_time")
+            if custom_thresh is not None and int(custom_thresh) > 0:
+                threshold = int(custom_thresh)
+    except Exception:
+        threshold = 50
+
     is_bypassed = False
-    if time_taken < 20:
+    if time_taken < threshold:
         is_bypassed = True
 
     return payload, slot, is_bypassed, time_taken
