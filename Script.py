@@ -1,4 +1,18 @@
 class script(object):
+    BYPASS_TXT = """🚨 <b>BYPASS DETECTED</b> 🚨
+
+<blockquote><b>H-HEY! DON'T GET THE WRONG IDEA!</b></blockquote>
+
+<blockquote><b>IT'S NOT LIKE I WAS WATCHING YOU TRY TO CHEAT THE SYSTEM OR ANYTHING... B-BAKA! 😤</b></blockquote>
+
+<blockquote><b>YOU REALLY THOUGHT YOU COULD SKIP VERIFICATION?</b></blockquote>
+
+<blockquote><b>TCH... EVEN BEGINNERS KNOW THAT DOESN'T WORK.</b></blockquote>
+
+<blockquote><b>JUST GO DO IT PROPERLY ALREADY!</b></blockquote>
+
+<blockquote><b>I'M NOT WAITING HERE FOR YOU OR ANYTHING... OKAY MAYBE A LITTLE.</b></blockquote>"""
+
     START_TXT = """<b>ʜᴇʟʟᴏ {}, ᴍʏ ɴᴀᴍᴇ {} 👋, ɪ ᴀᴍ ʟᴀᴛᴇꜱᴛ ᴀᴅᴠᴀɴᴄᴇᴅ ᴀɴᴅ ᴘᴏᴡᴇʀꜰᴜʟ ғɪʟᴇ sᴛᴏʀᴇ ʙᴏᴛ + ᴄʟᴏɴᴇ ғᴇᴀᴛᴜʀᴇ + sᴛʀᴇᴀᴍ / ᴅᴏᴡɴʟᴏᴀᴅ ʟɪɴᴋ ғᴇᴀᴛᴜʀᴇ + ᴄᴜsᴛᴏᴍ ᴜʀʟ sʜᴏʀᴛᴇɴᴇʀ sᴜᴘᴘᴏʀᴛ + ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ sᴜᴘᴘᴏʀᴛ ᴀɴᴅ ʙᴇsᴛ ᴜɪ ᴘᴇʀғᴏʀᴍᴀɴᴄᴇ </b>"""
 
     CAPTION = """<b>📂 ғɪʟᴇɴᴀᴍᴇ : {file_name}

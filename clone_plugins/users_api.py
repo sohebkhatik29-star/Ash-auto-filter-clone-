@@ -237,19 +237,30 @@ def create_verify_token(user_id: int, bot_id=0, payload="", slot=1) -> str:
 
 def consume_verify_token(token: str, user_id: int, bot_id=0):
     if mongo_db is None:
-        return None, 1
+        return None, 1, False, 0
     rec = mongo_db.verify_tokens.find_one({"token": token, "user_id": int(user_id), "bot_id": int(bot_id)})
     if not rec:
         rec = mongo_db.verify_tokens.find_one({"token": token, "user_id": int(user_id)})
     if not rec:
         rec = mongo_db.verify_tokens.find_one({"token": token})
     if not rec:
-        return None, 1
+        return None, 1, True, 0
     mongo_db.verify_tokens.delete_one({"_id": rec["_id"]})
-    if int(rec.get("expires_at", 0)) < int(time.time()):
-        return None, 1
-    return rec.get("payload", ""), int(rec.get("slot", 1))
+    now = int(time.time())
+    created_at = int(rec.get("created_at", now))
+    time_taken = max(0, now - created_at)
+    expires_at = int(rec.get("expires_at", 0))
+    slot = int(rec.get("slot", 1))
+    payload = rec.get("payload", "")
 
+    if expires_at and expires_at < now:
+        return None, slot, True, time_taken
+
+    is_bypassed = False
+    if time_taken < 10:
+        is_bypassed = True
+
+    return payload, slot, is_bypassed, time_taken
 
 async def get_short_link(user, link):
     if not user:
