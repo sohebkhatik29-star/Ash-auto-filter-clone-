@@ -1060,9 +1060,7 @@ async def start(client, message):
         if orig_payload:
             message.command = ["/start", orig_payload]
             return await start(client, message)
-        success_text = f"✅ <b>Hey {message.from_user.mention}, you are successfully verified!</b>
-
-Now you have unlimited access for all files for <b>{dur_str}</b>."
+        success_text = f"✅ <b>Hey {message.from_user.mention}, you are successfully verified!</b>\n\nNow you have unlimited access for all files for <b>{dur_str}</b>."
         return await message.reply(success_text)
     try:
         decoded = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode("ascii")
