@@ -265,6 +265,9 @@ async def deliver_universal_link(client, message, token: str):
     except Exception:
         rec = {}
 
+    from settings_modules.update_channel import send_wait_message
+    wait_msg = await send_wait_message(client, message, cancel_callback_data=f"univ_cancel_{token}")
+
     f_id = int(record["first_msg_id"])
     l_id = int(record["last_msg_id"])
     ch_id = int(record["channel_id"])

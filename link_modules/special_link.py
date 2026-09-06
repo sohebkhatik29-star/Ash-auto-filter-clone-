@@ -819,11 +819,13 @@ async def special_link_start(client, message):
     invert_cap = bool(rec.get("invert_caption", False))
     spoiler_anim = bool(rec.get("spoiler_animation", False))
 
+    from settings_modules.update_channel import send_wait_message
     delivery_key = (int(client.me.id), int(message.from_user.id))
     _ACTIVE_SPECIAL_DELIVERIES = getattr(special_link_start, "_active_deliveries", {})
     special_link_start._active_deliveries = _ACTIVE_SPECIAL_DELIVERIES
     _ACTIVE_SPECIAL_DELIVERIES[delivery_key] = True
 
+    wait_msg = await send_wait_message(client, message, cancel_callback_data=f"spl_cancel_{payload}")
     delivered_messages = []
     for item in messages:
         if not _ACTIVE_SPECIAL_DELIVERIES.get(delivery_key, False):

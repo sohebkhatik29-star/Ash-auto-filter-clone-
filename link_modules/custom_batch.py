@@ -626,11 +626,13 @@ async def batch_start(client, message):
         or rec.get("custom_thumbnail")
     )
 
+    from settings_modules.update_channel import send_wait_message
     delivery_key = (int(client.me.id), int(message.from_user.id))
     _ACTIVE_CUSTOM_DELIVERIES = getattr(custom_batch_cmd, "_active_deliveries", {})
     custom_batch_cmd._active_deliveries = _ACTIVE_CUSTOM_DELIVERIES
     _ACTIVE_CUSTOM_DELIVERIES[delivery_key] = True
 
+    wait_msg = await send_wait_message(client, message, cancel_callback_data=f"cb_deliv_cancel_{token}")
     delivered_messages = []
     for item in messages:
         if not _ACTIVE_CUSTOM_DELIVERIES.get(delivery_key, False):

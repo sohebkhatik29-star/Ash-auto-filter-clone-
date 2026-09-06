@@ -109,9 +109,15 @@ def get_wait_markup(client=None, cancel_callback_data: str = "cancel_delivery", 
 
 
 async def send_wait_message(client, user_id_or_message, cancel_callback_data: str = "cancel_delivery"):
-    """Disabled wait message to provide instant zero-delay delivery."""
-    return None
-
+    """Send the standard Please wait message with UPDATE CHANNEL markup."""
+    try:
+        markup = get_wait_markup(client, cancel_callback_data=cancel_callback_data)
+        text = "Please wait...\n\n• cancel"
+        if hasattr(user_id_or_message, "reply"):
+            return await user_id_or_message.reply(text, reply_markup=markup)
+        return await client.send_message(user_id_or_message, text, reply_markup=markup)
+    except Exception:
+        return None
 
 def set_update_channel_link(bot_id: int, new_link: str) -> bool:
     """Dynamically set/change the update channel join request link for a bot."""
