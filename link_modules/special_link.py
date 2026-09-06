@@ -872,6 +872,11 @@ async def special_link_start(client, message):
             delivered_messages.append(delivered)
 
     _ACTIVE_SPECIAL_DELIVERIES.pop(delivery_key, None)
+    if wait_msg:
+        try:
+            await wait_msg.delete()
+        except Exception:
+            pass
 
     try:
         ad_enabled = bool(rec.get("auto_delete_enabled", False))

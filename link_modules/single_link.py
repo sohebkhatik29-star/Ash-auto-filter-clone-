@@ -575,178 +575,132 @@ async def open_single(client, message):
         spoiler_anim = bool(rec.get("spoiler_animation", False))
         caption_to_use = None
 
-        # Hierarchy: 1) Single thumbnail set for this link; 2) Bot's permanent custom thumbnail
-        thumb_candidates = [
-            record.get("single_thumbnail"),
-            record.get("single_thumbnail_path"),
-            record.get("custom_thumbnail"),
-            record.get("custom_thumb_path"),
-            rec.get("custom_thumbnail"),
-            rec.get("custom_thumb_path"),
-        ]
-        thumb_candidates = [c for c in thumb_candidates if c]
-        thumb_to_use = thumb_candidates[0] if thumb_candidates else None
-
-        thumb_path = None
-        if thumb_candidates:
-            thumb_path = await get_cached_thumb_path(client, thumb_candidates)
-
         file_id = record.get("file_id")
         media_type = record.get("media_type")
-        duration = record.get("duration", 0)
-        width = record.get("width", 0)
-        height = record.get("height", 0)
-        file_name = record.get("file_name")
 
-        # Fetch source message if needed
-        src_msg = None
-        try:
-            src_msg = await client.get_messages(source_chat, source_mid)
-        except Exception:
-            try:
-                from AshCore.bot import StreamBot
-                src_msg = await StreamBot.get_messages(source_chat, source_mid)
-            except Exception:
-                pass
-
+        # Fast caption resolution without blocking network calls
         if custom_cap:
-            try:
-                caption_to_use = format_caption(custom_cap, source_msg=src_msg)
-            except Exception:
+            if "{" in custom_cap:
+                src_msg = None
+                try:
+                    src_msg = await client.get_messages(source_chat, source_mid)
+                except Exception:
+                    try:
+                        from AshCore.bot import StreamBot
+                        src_msg = await StreamBot.get_messages(source_chat, source_mid)
+                    except Exception:
+                        pass
+                try:
+                    caption_to_use = format_caption(custom_cap, source_msg=src_msg)
+                except Exception:
+                    caption_to_use = custom_cap
+            else:
                 caption_to_use = custom_cap
-        elif src_msg and src_msg.caption:
-            caption_to_use = src_msg.caption.html if hasattr(src_msg.caption, "html") else src_msg.caption
         elif record.get("file_caption"):
             caption_to_use = record.get("file_caption")
 
         delivered = None
 
-        target_file_id = file_id or (
-            src_msg.video.file_id if src_msg and src_msg.video else (
-                src_msg.document.file_id if src_msg and src_msg.document else None
-            )
-        )
-        detected_media_type = media_type or (
-            "video" if (src_msg and src_msg.video) else (
-                "document" if (src_msg and src_msg.document) else "video"
-            )
-        )
+        # 1. PRIMARY: Instant copy_message directly from source channel (0.05s latency)
+        base_kw = {
+            "chat_id": message.from_user.id,
+            "from_chat_id": source_chat,
+            "message_id": source_mid,
+            "caption": caption_to_use,
+            "reply_markup": markup,
+            "protect_content": is_protect,
+        }
+        if caption_to_use:
+            base_kw["parse_mode"] = enums.ParseMode.HTML
+        if invert_cap:
+            base_kw["show_caption_above_media"] = True
+        if spoiler_anim:
+            base_kw["has_spoiler"] = True
 
-        if target_file_id and thumb_to_use:
-            from settings_modules.thumbnail import deliver_media_with_custom_thumb
+        try:
+            delivered = await client.copy_message(**base_kw)
+        except Exception:
             try:
-                delivered = await deliver_media_with_custom_thumb(
-                    client=client,
-                    chat_id=message.from_user.id,
-                    file_id=target_file_id,
-                    media_type=detected_media_type,
-                    thumb_val=thumb_to_use,
-                    caption=caption_to_use,
-                    reply_markup=markup,
-                    protect_content=is_protect,
-                    invert_caption=invert_cap,
-                    has_spoiler=spoiler_anim,
-                    duration=duration or (src_msg.video.duration if src_msg and src_msg.video else None),
-                    width=width or (src_msg.video.width if src_msg and src_msg.video else None),
-                    height=height or (src_msg.video.height if src_msg and src_msg.video else None),
-                    file_name=file_name or (src_msg.video.file_name if src_msg and src_msg.video else (src_msg.document.file_name if src_msg and src_msg.document else None)),
-                )
+                fb_kw = dict(base_kw)
+                fb_kw.pop("parse_mode", None)
+                fb_kw.pop("show_caption_above_media", None)
+                fb_kw.pop("has_spoiler", None)
+                delivered = await client.copy_message(**fb_kw)
             except Exception:
                 pass
 
-        # 1. Direct send_video if video file and not delivered yet
-        if not delivered and (media_type == "video" or (src_msg and src_msg.video)):
-            vid_id = file_id or (src_msg.video.file_id if src_msg and src_msg.video else None)
-            if vid_id:
-                kw = {
-                    "chat_id": message.from_user.id,
-                    "video": vid_id,
-                    "caption": caption_to_use,
-                    "supports_streaming": True,
-                    "reply_markup": markup,
-                    "protect_content": is_protect,
-                }
-                if thumb_path and os.path.exists(thumb_path):
-                    kw["thumb"] = thumb_path
-                if duration or (src_msg and src_msg.video and getattr(src_msg.video, "duration", 0)):
-                    kw["duration"] = duration or src_msg.video.duration
-                if width or (src_msg and src_msg.video and getattr(src_msg.video, "width", 0)):
-                    kw["width"] = width or src_msg.video.width
-                if height or (src_msg and src_msg.video and getattr(src_msg.video, "height", 0)):
-                    kw["height"] = height or src_msg.video.height
-                if file_name or (src_msg and src_msg.video and getattr(src_msg.video, "file_name", None)):
-                    kw["file_name"] = file_name or src_msg.video.file_name
-                if caption_to_use:
-                    kw["parse_mode"] = enums.ParseMode.HTML
-                if invert_cap:
-                    kw["show_caption_above_media"] = True
-                if spoiler_anim:
-                    kw["has_spoiler"] = True
+        # 2. SECONDARY: Instant send_cached_media with file_id (when clone bot is not in source channel)
+        if not delivered and file_id:
+            try:
+                delivered = await client.send_cached_media(
+                    chat_id=message.from_user.id,
+                    file_id=file_id,
+                    caption=caption_to_use,
+                    parse_mode=enums.ParseMode.HTML if caption_to_use else None,
+                    reply_markup=markup,
+                    protect_content=is_protect,
+                )
+            except Exception:
                 try:
-                    delivered = await client.send_video(**kw)
+                    delivered = await client.send_cached_media(
+                        chat_id=message.from_user.id,
+                        file_id=file_id,
+                        protect_content=is_protect,
+                    )
                 except Exception:
-                    # Retry without custom thumb if send_video thumb param failed
-                    if "thumb" in kw:
-                        kw.pop("thumb", None)
-                        try:
-                            delivered = await client.send_video(**kw)
-                        except Exception:
-                            pass
+                    pass
 
-        # 2. Document file
-        if not delivered and (media_type == "document" or (src_msg and src_msg.document)):
-            doc_id = file_id or (src_msg.document.file_id if src_msg and src_msg.document else None)
-            if doc_id:
-                kw_d = {
-                    "chat_id": message.from_user.id,
-                    "document": doc_id,
-                    "caption": caption_to_use,
-                    "reply_markup": markup,
-                    "protect_content": is_protect,
-                }
-                if thumb_path and os.path.exists(thumb_path):
-                    kw_d["thumb"] = thumb_path
-                if file_name or (src_msg and src_msg.document and getattr(src_msg.document, "file_name", None)):
-                    kw_d["file_name"] = file_name or src_msg.document.file_name
-                if caption_to_use:
-                    kw_d["parse_mode"] = enums.ParseMode.HTML
-                try:
-                    delivered = await client.send_document(**kw_d)
-                except Exception:
-                    if "thumb" in kw_d:
-                        kw_d.pop("thumb", None)
-                        try:
-                            delivered = await client.send_document(**kw_d)
-                        except Exception:
-                            pass
-
-        # 3. Fallback: Copy message
+        # 3. TERTIARY: StreamBot copy_message (master bot has access to source channel)
         if not delivered:
-            attempts = []
-            base_kw = {
-                "chat_id": message.from_user.id,
-                "from_chat_id": source_chat,
-                "message_id": source_mid,
-                "caption": caption_to_use,
-                "reply_markup": markup,
-                "protect_content": is_protect,
-            }
-            if caption_to_use:
-                base_kw["parse_mode"] = enums.ParseMode.HTML
-            kw1 = dict(base_kw)
-            if invert_cap:
-                kw1["invert_media"] = True
-            if spoiler_anim:
-                kw1["has_spoiler"] = True
-            attempts.append(kw1)
-            attempts.append(base_kw)
-            for attempt_kw in attempts:
+            try:
+                from AshCore.bot import StreamBot
+                delivered = await StreamBot.copy_message(**base_kw)
+            except Exception:
                 try:
-                    delivered = await client.copy_message(**attempt_kw)
-                    if delivered:
-                        break
+                    delivered = await StreamBot.copy_message(
+                        chat_id=message.from_user.id,
+                        from_chat_id=source_chat,
+                        message_id=source_mid,
+                        protect_content=is_protect,
+                    )
                 except Exception:
-                    continue
+                    pass
+
+        # 4. QUATERNARY: send_video / send_document fallback
+        if not delivered and file_id:
+            detected_media_type = media_type or "video"
+            if detected_media_type == "video":
+                try:
+                    delivered = await client.send_video(
+                        chat_id=message.from_user.id,
+                        video=file_id,
+                        caption=caption_to_use,
+                        parse_mode=enums.ParseMode.HTML if caption_to_use else None,
+                        reply_markup=markup,
+                        protect_content=is_protect,
+                        supports_streaming=True,
+                    )
+                except Exception:
+                    pass
+            elif detected_media_type == "document":
+                try:
+                    delivered = await client.send_document(
+                        chat_id=message.from_user.id,
+                        document=file_id,
+                        caption=caption_to_use,
+                        parse_mode=enums.ParseMode.HTML if caption_to_use else None,
+                        reply_markup=markup,
+                        protect_content=is_protect,
+                    )
+                except Exception:
+                    pass
+
+        # IMMEDIATELY remove Please wait message when file arrives
+        if wait_msg:
+            try:
+                await wait_msg.delete()
+            except Exception:
+                pass
 
         # Schedule auto delete in background if enabled
         try:

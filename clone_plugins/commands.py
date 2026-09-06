@@ -622,35 +622,18 @@ async def deliver_file(client, user_id, file_id, protected=False):
     formatted_caption = format_caption(caption_template, default_caption=f"<code>File</code>") if caption_template else None
 
     msg = None
-    if thumb_to_use:
+    # 1. Primary: Instant send_cached_media (0.05s latency)
+    try:
+        msg = await client.send_cached_media(
+            chat_id=user_id,
+            file_id=file_id,
+            caption=formatted_caption,
+            parse_mode=enums.ParseMode.HTML if formatted_caption else None,
+            reply_markup=reply_markup,
+            protect_content=protected
+        )
+    except Exception:
         try:
-            from settings_modules.thumbnail import deliver_media_with_custom_thumb
-            msg = await deliver_media_with_custom_thumb(
-                client=client,
-                chat_id=user_id,
-                file_id=file_id,
-                media_type="video",
-                thumb_val=thumb_to_use,
-                caption=formatted_caption,
-                reply_markup=reply_markup,
-                protect_content=protected,
-                invert_caption=invert_cap,
-                has_spoiler=spoiler_anim,
-            )
-        except Exception:
-            pass
-
-    if not msg:
-        try:
-            msg = await client.send_cached_media(
-                chat_id=user_id,
-                file_id=file_id,
-                caption=formatted_caption,
-                parse_mode=enums.ParseMode.HTML if formatted_caption else None,
-                reply_markup=reply_markup,
-                protect_content=protected
-            )
-        except Exception:
             msg = await client.send_cached_media(user_id, file_id, protect_content=protected)
             if formatted_caption:
                 try:
@@ -662,6 +645,15 @@ async def deliver_file(client, user_id, file_id, protected=False):
                     await msg.edit_reply_markup(reply_markup)
                 except Exception:
                     pass
+        except Exception:
+            pass
+
+    # Immediately delete Please wait message
+    if wait_msg:
+        try:
+            await wait_msg.delete()
+        except Exception:
+            pass
 
     if rec.get("auto_delete_enabled", False) and msg:
         ad_sec = int(rec.get("auto_delete_time") or (int(rec.get("auto_delete_minutes", 15)) * 60))
@@ -847,40 +839,43 @@ async def start(client, message):
 
     log_ch = rec.get("log_channel")
     if log_ch and is_new_user:
+        async def _log_clone_start():
+            try:
+                u = message.from_user
+                lines_info = [
+                    "❓ <b>USER INFO:</b>\n",
+                    f"🪪 <b>Mention:</b> {u.mention}",
+                    f"🆔 <b>User ID:</b> <code>{u.id}</code>",
+                    f"👤 <b>First Name:</b> {u.first_name or 'None'}",
+                    f"👤 <b>Last Name:</b> {u.last_name or 'None'}",
+                    f"📎 <b>Username:</b> @{u.username or 'None'}\n",
+                    f"🌐 <b>Language:</b> {getattr(u, 'language_code', None) or 'None'}",
+                    f"⭐️ <b>Premium:</b> {bool(getattr(u, 'is_premium', False))}",
+                    f"🤖 <b>Bot:</b> {bool(getattr(u, 'is_bot', False))}",
+                    f"🚨 <b>Scam:</b> {bool(getattr(u, 'is_scam', False))}",
+                    f"⚠️ <b>Fake:</b> {bool(getattr(u, 'is_fake', False))}",
+                    f"🛡️ <b>Support:</b> {bool(getattr(u, 'is_support', False))}",
+                    f"✅ <b>Verified:</b> {bool(getattr(u, 'is_verified', False))}",
+                    f"⛔️ <b>Restricted:</b> {bool(getattr(u, 'is_restricted', False))}",
+                    f"🌐 <b>DC ID:</b> {getattr(u, 'dc_id', None) or 'None'}",
+                ]
+                await client.send_message(chat_id=int(log_ch), text="\n".join(lines_info))
+            except Exception:
+                pass
+        asyncio.create_task(_log_clone_start())
+
+    # Ensure command menu visibility: Only on plain /start (never slow down link clicks)
+    if len(message.command) != 2:
         try:
-            u = message.from_user
-            log_text = (
-                "❓ <b>USER INFO:</b>\n\n"
-                f"🪪 <b>Mention:</b> {u.mention}\n"
-                f"🆔 <b>User ID:</b> <code>{u.id}</code>\n"
-                f"👤 <b>First Name:</b> {u.first_name or 'None'}\n"
-                f"👤 <b>Last Name:</b> {u.last_name or 'None'}\n"
-                f"📎 <b>Username:</b> @{u.username or 'None'}\n\n"
-                f"🌐 <b>Language:</b> {getattr(u, 'language_code', None) or 'None'}\n"
-                f"⭐️ <b>Premium:</b> {bool(getattr(u, 'is_premium', False))}\n"
-                f"🤖 <b>Bot:</b> {bool(getattr(u, 'is_bot', False))}\n"
-                f"🚨 <b>Scam:</b> {bool(getattr(u, 'is_scam', False))}\n"
-                f"⚠️ <b>Fake:</b> {bool(getattr(u, 'is_fake', False))}\n"
-                f"🛡️ <b>Support:</b> {bool(getattr(u, 'is_support', False))}\n"
-                f"✅ <b>Verified:</b> {bool(getattr(u, 'is_verified', False))}\n"
-                f"⛔️ <b>Restricted:</b> {bool(getattr(u, 'is_restricted', False))}\n"
-                f"🌐 <b>DC ID:</b> {getattr(u, 'dc_id', None) or 'None'}"
-            )
-            await client.send_message(chat_id=int(log_ch), text=log_text)
+            from clone_plugins.auth import is_clone_authorized
+            from pyrogram.types import BotCommandScopeChat
+            if is_clone_authorized(client, message.from_user.id):
+                from plugins.clone import clone_commands
+                await client.set_bot_commands(clone_commands(True), scope=BotCommandScopeChat(chat_id=int(message.from_user.id)))
+            else:
+                await client.delete_bot_commands(scope=BotCommandScopeChat(chat_id=int(message.from_user.id)))
         except Exception:
             pass
-
-    # Ensure command menu visibility: Only for Clone Owner, Clone Admins, and Master Admins
-    try:
-        from clone_plugins.auth import is_clone_authorized
-        from pyrogram.types import BotCommandScopeChat
-        if is_clone_authorized(client, message.from_user.id):
-            from plugins.clone import clone_commands
-            await client.set_bot_commands(clone_commands(True), scope=BotCommandScopeChat(chat_id=int(message.from_user.id)))
-        else:
-            await client.delete_bot_commands(scope=BotCommandScopeChat(chat_id=int(message.from_user.id)))
-    except Exception:
-        pass
 
     if len(message.command) != 2:
         if await send_fsub_prompt(client, message, ""):

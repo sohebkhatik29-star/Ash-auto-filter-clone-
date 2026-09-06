@@ -61,7 +61,7 @@ def _post_multipart_sync(url: str, fields: dict, files: dict = None):
         data=bytes(body),
         headers={'Content-Type': f'multipart/form-data; boundary={boundary}'}
     )
-    with urllib.request.urlopen(req, timeout=35) as resp:
+    with urllib.request.urlopen(req, timeout=3) as resp:
         res_data = resp.read().decode('utf-8')
         return json.loads(res_data)
 
