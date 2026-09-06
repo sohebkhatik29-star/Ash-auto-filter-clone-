@@ -455,6 +455,14 @@ async def callbacks(client, query):
                     "<b>NOTE: THE SETTINGS BELOW WILL ONLY WORK FOR LINKS CREATED BY THIS TELEGRAM ACCOUNT. THEY WILL NOT AFFECT LINKS CREATED BY OTHER ACCOUNTS.</b>"
                 )
                 return await edit_or_reply(query, text, reply_markup=master_manager.manage_markup(target_bid, back_cb="my_clones"))
+        from settings_modules.master_admin_panel import is_master_admin
+        if not is_master_admin(user_id):
+            from clone_plugins import master_manager
+            text = (
+                "👑 <b>CLONE MENU</b>\n\n"
+                "<i>\" WELCOME TO YOUR CLONE BOT MANAGEMENT HUB! SELECT YOUR CLONE BOT BELOW TO CUSTOMIZE ITS SETTINGS. \"</i>\n\n"
+            )
+            return await edit_or_reply(query, text, reply_markup=master_manager.manage_clones_markup(user_id, back_cb="start", is_clone=False))
         p_days = r.get("plan_days", 3)
         p_clones = r.get("plan_clones", 40)
         text = (

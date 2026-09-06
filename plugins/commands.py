@@ -70,9 +70,12 @@ def get_master_start_markup(user_id: int):
     from settings_modules.master_admin_panel import is_master_admin
     buttons = []
     if is_master_admin(user_id):
-        buttons.append([InlineKeyboardButton('👑 ADMIN PANEL', callback_data='admin_panel_main')])
+        buttons.append([
+            InlineKeyboardButton('👑 ADMIN PANEL', callback_data='admin_panel_main'),
+            InlineKeyboardButton('⚙️ MASTER SETTINGS', callback_data='master_settings')
+        ])
     buttons.extend([
-        [InlineKeyboardButton('⚙️ SETTINGS', callback_data='master_settings'), InlineKeyboardButton('🤖 MY CLONE BOT', callback_data='my_clones')],
+        [InlineKeyboardButton('🤖 CREATE MY CLONE BOT', callback_data='my_clones')],
         [InlineKeyboardButton('💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ', url='https://www.youtube.com/@tech_as_0')],
         [InlineKeyboardButton('🔍 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ', url=tg_link(SUPPORT_GROUP, 'ash_movie_j')), InlineKeyboardButton('🤖 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ', url=tg_link(UPDATE_CHANNEL, 'MoviesGroupG3'))],
         [InlineKeyboardButton('💁‍♀️ ʜᴇʟᴘ', callback_data='help'), InlineKeyboardButton('😊 ᴀʙᴏᴜᴛ', callback_data='about')]
@@ -831,6 +834,11 @@ async def settings_cmd_handler(client, message):
     me = client.me or (await client.get_me())
     if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
         return
+    user_id = message.from_user.id
+    from settings_modules.master_admin_panel import is_master_admin
+    if not is_master_admin(user_id):
+        from plugins.master_settings import send_manage_clones
+        return await send_manage_clones(client, message)
     from plugins.master_settings import send_settings_menu
     return await send_settings_menu(client, message)
 
