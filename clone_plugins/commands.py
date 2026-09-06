@@ -397,40 +397,6 @@ async def access_verification(client, user_id, original_payload=""):
 
     # Check if user is already a premium user
     if is_user_premium(user_id, rec):
-        try:
-            u_obj = await client.get_users(user_id)
-        except Exception:
-            class _U:
-                pass
-            u_obj = _U()
-            u_obj.id = user_id
-            u_obj.first_name = "User"
-            u_obj.last_name = None
-            u_obj.username = None
-            u_obj.mention = f"<a href='tg://user?id={user_id}'>User</a>"
-        try:
-            ist = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
-            today = _dt.datetime.now(ist).strftime("%Y-%m-%d")
-            if mongo_db is not None:
-                already = mongo_db.bypass_logs.find_one({
-                    "bot_id": int(bot_id),
-                    "user_id": int(user_id),
-                    "date": today,
-                })
-                if not already:
-                    mongo_db.bypass_logs.update_one(
-                        {"bot_id": int(bot_id), "user_id": int(user_id), "date": today},
-                        {"$set": {"logged_at": int(_time.time())}},
-                        upsert=True,
-                    )
-                    await send_verify_log(client, u_obj, log_type="bypass", payload=original_payload)
-            else:
-                await send_verify_log(client, u_obj, log_type="bypass", payload=original_payload)
-        except Exception:
-            try:
-                await send_verify_log(client, u_obj, log_type="bypass", payload=original_payload)
-            except Exception:
-                pass
         return None, None, None
 
     # Check Free Usage Limit
@@ -998,39 +964,34 @@ async def start(client, message):
         
     if data.startswith("verify_") or data.startswith("verify-"):
         token_str = data.split("_", 1)[1] if data.startswith("verify_") else data.split("-", 1)[1]
-        orig_payload, slot_used = consume_verify_token(token_str, message.from_user.id, me.id)
-        if orig_payload is None and mongo_db is not None:
+        orig_payload, slot_used, is_bypassed, time_taken = consume_verify_token(token_str, message.from_user.id, me.id)
+        if orig_payload is None and mongo_db is not None and not is_bypassed:
             rec_t = mongo_db.access_tokens.find_one({"bot_id": me.id, "token": token_str, "user_id": int(message.from_user.id)})
             if rec_t:
                 orig_payload = ""
                 slot_used = 1
-        
-        if orig_payload is None:
-            return await message.reply("❌ <b>Invalid or expired verification link!</b>\n\nPlease verify again.")
-        
+                is_bypassed = False
+                time_taken = 20
+
+        if is_bypassed or orig_payload is None:
+            await send_verify_log(
+                client, message.from_user, log_type="bypass",
+                slot=slot_used, payload=orig_payload or None, time_taken=time_taken
+            )
+            return await message.reply(script.BYPASS_TXT, disable_web_page_preview=True)
+
         v_key = f"verify_{slot_used}" if slot_used > 1 else "verify_1"
         v_cfg = rec.get(v_key, {})
         time_mins = int(v_cfg.get("time", v_cfg.get("time_minutes", 1440)))
-        
+
         set_user_verified(message.from_user.id, me.id, duration_minutes=time_mins, slot=slot_used)
         dur_str = format_time_minutes(time_mins)
-        
+
         # Send log to verify_log_channel if configured
-        log_ch = rec.get("verify_log_channel")
-        if log_ch:
-            try:
-                import datetime
-                now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-                log_text = (
-                    "🎯 <b>NEW USER VERIFIED</b>\n\n"
-                    f"👤 <b>User:</b> {message.from_user.mention} (<code>{message.from_user.id}</code>)\n"
-                    f"⏰ <b>Validity:</b> <code>{dur_str}</code>\n"
-                    f"🔢 <b>Step:</b> <code>{slot_used}</code>\n"
-                    f"📅 <b>Date:</b> <code>{now_str}</code>"
-                )
-                await client.send_message(int(log_ch), log_text)
-            except Exception:
-                pass
+        await send_verify_log(
+            client, message.from_user, log_type="verified",
+            slot=slot_used, validity=dur_str, payload=orig_payload or None, time_taken=time_taken
+        )
 
         success_text = (
             f"✅ <b>Hey {message.from_user.mention}, you are successfully verified!</b>\n\n"
@@ -1425,8 +1386,8 @@ def register(client):
 import datetime as _dt
 import time as _time
 
-async def send_verify_log(client, user, log_type="verified", slot=1, validity=None, payload=None):
-    """Send detailed verify/bypass log to verify_log_channel (VJ File Store style)."""
+async def send_verify_log(client, user, log_type="verified", slot=1, validity=None, payload=None, time_taken=None):
+    """Send detailed verify/bypass log to verify_log_channel."""
     rec = bot_record(client)
     if not rec:
         return
@@ -1443,46 +1404,49 @@ async def send_verify_log(client, user, log_type="verified", slot=1, validity=No
         last = getattr(u, "last_name", None) or "None"
         uname = getattr(u, "username", None)
         uname_str = f"@{uname}" if uname else "None"
+        me = getattr(client, "me", None) or (await client.get_me())
+        bot_uname = f"@{me.username}" if me and getattr(me, "username", None) else "Bot"
+
+        parts = []
         if log_type == "bypass":
-            log_text = (
-                "🔓 <b>USER BYPASS KIYA</b>\n\n"
-                "⚠️ <b>Isne bypass kiya</b> (Premium / No Verify)\n\n"
-                f"👤 <b>Mention:</b> {mention}\n"
-                f"🆔 <b>User ID:</b> <code>{uid}</code>\n"
-                f"👤 <b>First Name:</b> {first}\n"
-                f"👤 <b>Last Name:</b> {last}\n"
-                f"📎 <b>Username:</b> {uname_str}\n"
-                f"📅 <b>Date:</b> <code>{now_str}</code>"
-            )
+            parts.append("🚨 <b>BYPASS ATTEMPT DETECTED</b>\n")
+            parts.append("⚠️ <b>Is user ne shortener bypass karne ki koshish ki!</b>\n")
+            parts.append(f"👤 <b>Mention:</b> {mention}")
+            parts.append(f"🆔 <b>User ID:</b> <code>{uid}</code>")
+            parts.append(f"👤 <b>First Name:</b> {first}")
+            parts.append(f"👤 <b>Last Name:</b> {last}")
+            parts.append(f"📎 <b>Username:</b> {uname_str}")
+            parts.append(f"🤖 <b>Bot:</b> {bot_uname}")
+            if time_taken is not None and time_taken > 0:
+                parts.append(f"⏱ <b>Time Taken:</b> <code>{time_taken}s</code> (Too fast / Bypass bot)")
+            elif time_taken == 0:
+                parts.append("⏱ <b>Time Taken:</b> <code>0s</code> (Instant Bypass Bot)")
+            parts.append(f"📅 <b>Date:</b> <code>{now_str}</code>")
             if payload:
-                log_text += f"\n🔗 <b>Payload:</b> <code>{str(payload)[:80]}</code>"
+                parts.append(f"🔗 <b>Payload:</b> <code>{str(payload)[:80]}</code>")
         else:
-            log_text = (
-                "🎯 <b>NEW USER VERIFIED</b>\n\n"
-                f"👤 <b>Mention:</b> {mention}\n"
-                f"🆔 <b>User ID:</b> <code>{uid}</code>\n"
-                f"👤 <b>First Name:</b> {first}\n"
-                f"👤 <b>Last Name:</b> {last}\n"
-                f"📎 <b>Username:</b> {uname_str}\n"
-                f"🔢 <b>Step / Slot:</b> <code>{slot}</code>\n"
-            )
+            parts.append("🎯 <b>NEW USER VERIFIED</b>\n")
+            parts.append(f"👤 <b>Mention:</b> {mention}")
+            parts.append(f"🆔 <b>User ID:</b> <code>{uid}</code>")
+            parts.append(f"👤 <b>First Name:</b> {first}")
+            parts.append(f"👤 <b>Last Name:</b> {last}")
+            parts.append(f"📎 <b>Username:</b> {uname_str}")
+            parts.append(f"🤖 <b>Bot:</b> {bot_uname}")
+            parts.append(f"🔢 <b>Step / Slot:</b> <code>{slot}</code>")
             if validity:
-                log_text += f"⏰ <b>Validity:</b> <code>{validity}</code>\n"
-            log_text += f"📅 <b>Date:</b> <code>{now_str}</code>"
+                parts.append(f"⏰ <b>Validity:</b> <code>{validity}</code>")
+            if time_taken is not None and time_taken > 0:
+                parts.append(f"⏱ <b>Time Taken:</b> <code>{time_taken}s</code>")
+            parts.append(f"📅 <b>Date:</b> <code>{now_str}</code>")
             if payload:
-                log_text += f"\n🔗 <b>Payload:</b> <code>{str(payload)[:80]}</code>"
+                parts.append(f"🔗 <b>Payload:</b> <code>{str(payload)[:80]}</code>")
+
+        log_text = "\n".join(parts)
         await client.send_message(int(log_ch), log_text)
     except Exception:
         pass
 
-# Patch success log inside start() by wrapping the verify success block is hard;
-# instead monkey-patch set_user_verified side-effect via a thin wrapper used only from start.
 _orig_set_user_verified = set_user_verified
-
-def set_user_verified(user_id, bot_id=0, duration_minutes=1440, slot=1, _log_user=None, _log_client=None, _payload=None):
-    _orig_set_user_verified(user_id, bot_id=bot_id, duration_minutes=duration_minutes, slot=slot)
-    # Logging is done from patched start path below when possible
-
 _orig_start = start
 
 async def start(client, message):
@@ -1492,44 +1456,52 @@ async def start(client, message):
             return
     except Exception:
         pass
-    # Intercept verify_* success path for detailed log
+    # Intercept verify_* path for bypass check & detailed log
     if len(getattr(message, "command", []) or []) == 2:
         data = message.command[1]
         if data.startswith("verify_") or data.startswith("verify-"):
             me = client.me or (await client.get_me())
             token_str = data.split("_", 1)[1] if data.startswith("verify_") else data.split("-", 1)[1]
             from clone_plugins.users_api import consume_verify_token, format_time_minutes
-            orig_payload, slot_used = consume_verify_token(token_str, message.from_user.id, me.id)
-            if orig_payload is None and mongo_db is not None:
+            orig_payload, slot_used, is_bypassed, time_taken = consume_verify_token(token_str, message.from_user.id, me.id)
+            if orig_payload is None and mongo_db is not None and not is_bypassed:
                 rec_t = mongo_db.access_tokens.find_one({
                     "bot_id": me.id, "token": token_str, "user_id": int(message.from_user.id)
                 })
                 if rec_t:
                     orig_payload = ""
                     slot_used = 1
-            if orig_payload is not None:
-                rec = bot_record(client)
-                v_key = f"verify_{slot_used}" if slot_used > 1 else "verify_1"
-                v_cfg = rec.get(v_key, {})
-                time_mins = int(v_cfg.get("time", v_cfg.get("time_minutes", 1440)))
-                _orig_set_user_verified(message.from_user.id, me.id, duration_minutes=time_mins, slot=slot_used)
-                dur_str = format_time_minutes(time_mins)
+                    is_bypassed = False
+                    time_taken = 20
+
+            if is_bypassed or orig_payload is None:
                 await send_verify_log(
-                    client, message.from_user, log_type="verified",
-                    slot=slot_used, validity=dur_str, payload=orig_payload or None,
+                    client, message.from_user, log_type="bypass",
+                    slot=slot_used, payload=orig_payload or None, time_taken=time_taken
                 )
-                success_text = (
-                    f"✅ <b>Hey {message.from_user.mention}, you are successfully verified!</b>\n\n"
-                    f"Now you have unlimited access for all files for <b>{dur_str}</b>."
-                )
-                if orig_payload:
-                    markup = InlineKeyboardMarkup([[InlineKeyboardButton(
-                        "📥 GET YOUR FILE",
-                        url=f"https://t.me/{me.username}?start={orig_payload}"
-                    )]])
-                    await message.reply(success_text, reply_markup=markup)
-                    message.command = ["/start", orig_payload]
-                    return await _orig_start(client, message)
-                return await message.reply(success_text)
-            # invalid token falls through to original (which will also reject)
+                return await message.reply(script.BYPASS_TXT, disable_web_page_preview=True)
+
+            rec = bot_record(client)
+            v_key = f"verify_{slot_used}" if slot_used > 1 else "verify_1"
+            v_cfg = rec.get(v_key, {})
+            time_mins = int(v_cfg.get("time", v_cfg.get("time_minutes", 1440)))
+            _orig_set_user_verified(message.from_user.id, me.id, duration_minutes=time_mins, slot=slot_used)
+            dur_str = format_time_minutes(time_mins)
+            await send_verify_log(
+                client, message.from_user, log_type="verified",
+                slot=slot_used, validity=dur_str, payload=orig_payload or None, time_taken=time_taken
+            )
+            success_text = (
+                f"✅ <b>Hey {message.from_user.mention}, you are successfully verified!</b>\n\n"
+                f"Now you have unlimited access for all files for <b>{dur_str}</b>."
+            )
+            if orig_payload:
+                markup = InlineKeyboardMarkup([[InlineKeyboardButton(
+                    "📥 GET YOUR FILE",
+                    url=f"https://t.me/{me.username}?start={orig_payload}"
+                )]])
+                await message.reply(success_text, reply_markup=markup)
+                message.command = ["/start", orig_payload]
+                return await _orig_start(client, message)
+            return await message.reply(success_text)
     return await _orig_start(client, message)
