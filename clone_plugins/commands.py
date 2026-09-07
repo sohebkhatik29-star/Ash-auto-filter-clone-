@@ -940,10 +940,7 @@ async def start(client, message):
         from clone_plugins import clone_settings_ui as cset
         return await cset.settings(client, message)
 
-    # Force Sub check must ALWAYS come before verification or premium prompts
-    if not data.startswith("verify_"):
-        if await send_fsub_prompt(client, message, data):
-            return
+
 
     # 1. Custom batch routing (plain or decoded)
     if data.startswith("batch_"):

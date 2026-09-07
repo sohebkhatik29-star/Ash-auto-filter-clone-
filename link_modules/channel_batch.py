@@ -287,24 +287,38 @@ async def batch_start_deliver(client, message):
         raise StopPropagation
 
     payload = message.command[1]
-    if await cmd.send_fsub_prompt(client, message, payload):
-        raise StopPropagation
+    from settings_modules.update_channel import send_wait_message
+    wait_msg = None
+    try:
+        wait_msg = await send_wait_message(client, message, cancel_callback_data=f"cb_cancel_{token}", auto_delete_delay=0)
+    except Exception:
+        pass
 
-    access_res = await cmd.access_verification(client, message.from_user.id, payload)
-    v_text = None
-    access_markup = None
-    v_photo = None
-    free_notice = None
-    if isinstance(access_res, (tuple, list)):
-        v_text = access_res[0]
-        access_markup = access_res[1] if len(access_res) > 1 else None
-        v_photo = access_res[2] if len(access_res) > 2 else None
-        free_notice = access_res[3] if len(access_res) > 3 else None
-    elif access_res:
-        v_text, access_markup = "<b>🔐 Please verify first to access this batch.</b>", access_res
-    if access_markup:
-        await cmd.send_verify_prompt(client, message, v_text, access_markup, v_photo)
-        raise StopPropagation
+    try:
+        if await cmd.send_fsub_prompt(client, message, payload):
+            if wait_msg: await wait_msg.delete()
+            raise StopPropagation
+
+        access_res = await cmd.access_verification(client, message.from_user.id, payload)
+        v_text = None
+        access_markup = None
+        v_photo = None
+        free_notice = None
+        if isinstance(access_res, (tuple, list)):
+            v_text = access_res[0]
+            access_markup = access_res[1] if len(access_res) > 1 else None
+            v_photo = access_res[2] if len(access_res) > 2 else None
+            free_notice = access_res[3] if len(access_res) > 3 else None
+        elif access_res:
+            v_text, access_markup = "<b>🔐 Please verify first to access this batch.</b>", access_res
+        if access_markup:
+            if wait_msg: await wait_msg.delete()
+            await cmd.send_verify_prompt(client, message, v_text, access_markup, v_photo)
+            raise StopPropagation
+    except StopPropagation:
+        raise
+    except Exception:
+        pass
 
     user_id = int(message.from_user.id)
     delivery_key = (int(client.me.id), user_id)

@@ -551,29 +551,36 @@ async def open_single(client, message):
         return
 
     payload = message.command[1]
-    if await send_fsub_prompt(client, message, payload):
-        raise StopPropagation
-
-    access_res = await access_verification(client, message.from_user.id, payload)
-    v_text = None
-    access_markup = None
-    v_photo = None
-    free_notice = None
-    if isinstance(access_res, (tuple, list)):
-        v_text = access_res[0]
-        access_markup = access_res[1] if len(access_res) > 1 else None
-        v_photo = access_res[2] if len(access_res) > 2 else None
-        free_notice = access_res[3] if len(access_res) > 3 else None
-    elif access_res:
-        v_text, access_markup = "<b>🔐 Please verify first to access this file.</b>", access_res
-    if access_markup:
-        await send_verify_prompt(client, message, v_text, access_markup, v_photo)
-        raise StopPropagation
-
     from settings_modules.update_channel import send_wait_message
     wait_msg = None
     try:
         wait_msg = await send_wait_message(client, message, cancel_callback_data=f"sl_cancel_{payload}", auto_delete_delay=0)
+    except Exception:
+        pass
+
+    try:
+        if await send_fsub_prompt(client, message, payload):
+            if wait_msg: await wait_msg.delete()
+            raise StopPropagation
+
+        access_res = await access_verification(client, message.from_user.id, payload)
+        v_text = None
+        access_markup = None
+        v_photo = None
+        free_notice = None
+        if isinstance(access_res, (tuple, list)):
+            v_text = access_res[0]
+            access_markup = access_res[1] if len(access_res) > 1 else None
+            v_photo = access_res[2] if len(access_res) > 2 else None
+            free_notice = access_res[3] if len(access_res) > 3 else None
+        elif access_res:
+            v_text, access_markup = "<b>🔐 Please verify first to access this file.</b>", access_res
+        if access_markup:
+            if wait_msg: await wait_msg.delete()
+            await send_verify_prompt(client, message, v_text, access_markup, v_photo)
+            raise StopPropagation
+    except StopPropagation:
+        raise
     except Exception:
         pass
 
