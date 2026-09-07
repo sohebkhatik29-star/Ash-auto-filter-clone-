@@ -24,6 +24,52 @@ _SPL_LAST_MSG_TIME = {}
 LINK_REGEX = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me|telegram\.dog)/(?:[a-zA-Z0-9_]+)\?start=(?:spl_|special_)?([a-zA-Z0-9_-]+)")
 
 
+
+def _extract_media_info(message):
+    file_id = None
+    media_type = None
+    file_name = None
+    file_caption = message.caption or None
+    file_size = None
+    if message.video:
+        file_id = message.video.file_id
+        media_type = "video"
+        file_name = getattr(message.video, "file_name", None)
+        file_size = getattr(message.video, "file_size", None)
+    elif message.document:
+        file_id = message.document.file_id
+        media_type = "document"
+        file_name = getattr(message.document, "file_name", None)
+        file_size = getattr(message.document, "file_size", None)
+    elif message.photo:
+        file_id = message.photo.file_id
+        media_type = "photo"
+        file_size = getattr(message.photo, "file_size", None)
+    elif message.audio:
+        file_id = message.audio.file_id
+        media_type = "audio"
+        file_name = getattr(message.audio, "file_name", None)
+        file_size = getattr(message.audio, "file_size", None)
+    elif message.animation:
+        file_id = message.animation.file_id
+        media_type = "animation"
+        file_name = getattr(message.animation, "file_name", None)
+        file_size = getattr(message.animation, "file_size", None)
+    elif message.voice:
+        file_id = message.voice.file_id
+        media_type = "voice"
+        file_size = getattr(message.voice, "file_size", None)
+    elif message.text:
+        media_type = "text"
+    return {
+        "file_id": file_id,
+        "media_type": media_type,
+        "file_name": file_name,
+        "file_caption": file_caption,
+        "file_size": file_size,
+        "text": message.text or None
+    }
+
 def _lock(client, user_id):
     key = (int(client.me.id), int(user_id))
     if key not in _SPL_LOCKS:
@@ -275,7 +321,12 @@ async def capture_special_message(client, message):
         if len(messages) >= MAX_FILES:
             raise StopPropagation
 
-        item = {"chat_id": int(message.chat.id), "message_id": int(message.id)}
+        media_info = _extract_media_info(message)
+        item = {
+            "chat_id": int(message.chat.id),
+            "message_id": int(message.id),
+            **media_info
+        }
         messages.append(item)
         if int(message.id) not in input_msg_ids:
             input_msg_ids.append(int(message.id))
@@ -433,9 +484,11 @@ async def special_link_callbacks(client, query):
         db_ch = rec.get("database_channel") or rec.get("db_channel") or LOG_CHANNEL
 
         saved_messages = []
+        copy_all_succeeded = bool(db_ch)
         for item in raw_messages:
-            c_id = int(item["chat_id"])
-            m_id = int(item["message_id"])
+            c_id = int(item.get("chat_id") or query.from_user.id)
+            m_id = int(item.get("message_id") or 0)
+            entry = dict(item)
             if db_ch:
                 try:
                     copied = await client.copy_message(
@@ -443,11 +496,26 @@ async def special_link_callbacks(client, query):
                         from_chat_id=c_id,
                         message_id=m_id
                     )
-                    saved_messages.append({"chat_id": int(db_ch), "message_id": int(copied.id)})
+                    entry["chat_id"] = int(db_ch)
+                    entry["message_id"] = int(copied.id)
+                    saved_messages.append(entry)
                 except Exception:
-                    saved_messages.append({"chat_id": c_id, "message_id": m_id})
+                    try:
+                        from AshCore.bot import StreamBot
+                        copied = await StreamBot.copy_message(
+                            chat_id=int(db_ch),
+                            from_chat_id=c_id,
+                            message_id=m_id
+                        )
+                        entry["chat_id"] = int(db_ch)
+                        entry["message_id"] = int(copied.id)
+                        saved_messages.append(entry)
+                    except Exception:
+                        copy_all_succeeded = False
+                        saved_messages.append(entry)
             else:
-                saved_messages.append({"chat_id": c_id, "message_id": m_id})
+                copy_all_succeeded = False
+                saved_messages.append(entry)
 
         token = secrets.token_urlsafe(18)
         protected = bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
@@ -470,14 +538,15 @@ async def special_link_callbacks(client, query):
         from settings_modules.link_shortener import get_shortened_link_if_enabled
         shown_link = await get_shortened_link_if_enabled(client, int(query.from_user.id), orig_link)
 
-        # 2. Delete all forwarded user input messages from the private chat
-        input_ids = session.get("input_msg_ids", [])
-        if input_ids:
-            try:
-                for k in range(0, len(input_ids), 100):
-                    await client.delete_messages(int(query.from_user.id), input_ids[k:k + 100])
-            except Exception:
-                pass
+        # 2. Delete forwarded user input messages only if safely copied
+        if copy_all_succeeded and db_ch:
+            input_ids = session.get("input_msg_ids", [])
+            if input_ids:
+                try:
+                    for k in range(0, len(input_ids), 100):
+                        await client.delete_messages(int(query.from_user.id), input_ids[k:k + 100])
+                except Exception:
+                    pass
 
         # 3. Clean up extra control message if exists
         ctrl_id = session.get("control_msg_id")
@@ -830,43 +899,108 @@ async def special_link_start(client, message):
     for item in messages:
         if not _ACTIVE_SPECIAL_DELIVERIES.get(delivery_key, False):
             break
-        c_id = int(item["chat_id"])
-        m_id = int(item["message_id"])
+        c_id = item.get("chat_id")
+        m_id = item.get("message_id")
+        f_id = item.get("file_id")
+        m_type = item.get("media_type")
+        f_name = item.get("file_name") or "File"
+        f_cap = item.get("file_caption") or ""
+        f_sz = item.get("file_size") or ""
+        txt_val = item.get("text")
+
         caption_to_use = None
         if custom_cap:
             if "{" in custom_cap:
-                try:
-                    src_msg = await client.get_messages(c_id, m_id)
-                    caption_to_use = format_caption(custom_cap, source_msg=src_msg)
-                except Exception:
-                    caption_to_use = custom_cap
+                caption_to_use = format_caption(
+                    custom_cap,
+                    file_name=f_name,
+                    file_size=str(f_sz) if f_sz else "",
+                    orig_caption=f_cap
+                )
             else:
                 caption_to_use = custom_cap
-
-        base_kw = {
-            "chat_id": message.from_user.id,
-            "from_chat_id": c_id,
-            "message_id": m_id,
-            "caption": caption_to_use,
-            "reply_markup": markup,
-            "protect_content": protected,
-        }
-        if caption_to_use:
-            base_kw["parse_mode"] = enums.ParseMode.HTML
-        if invert_cap:
-            base_kw["show_caption_above_media"] = True
-        if spoiler_anim:
-            base_kw["has_spoiler"] = True
+        elif f_cap:
+            caption_to_use = f_cap
 
         delivered = None
-        try:
-            delivered = await client.copy_message(**base_kw)
-        except Exception:
+        # 1. PRIMARY: Instant send_cached_media with file_id
+        if f_id:
             try:
-                base_kw.pop("parse_mode", None)
-                delivered = await client.copy_message(**base_kw)
+                delivered = await client.send_cached_media(
+                    chat_id=message.from_user.id,
+                    file_id=f_id,
+                    caption=caption_to_use,
+                    parse_mode=enums.ParseMode.HTML if caption_to_use else None,
+                    reply_markup=markup,
+                    protect_content=protected,
+                )
+            except Exception:
+                try:
+                    delivered = await client.send_cached_media(
+                        chat_id=message.from_user.id,
+                        file_id=f_id,
+                        protect_content=protected,
+                    )
+                except Exception:
+                    pass
+
+        # 2. Text message delivery
+        if not delivered and m_type == "text" and txt_val:
+            try:
+                delivered = await client.send_message(
+                    chat_id=message.from_user.id,
+                    text=txt_val,
+                    reply_markup=markup,
+                    protect_content=protected
+                )
             except Exception:
                 pass
+
+        # 3. SECONDARY: copy_message from source / db_channel
+        if not delivered and c_id and m_id:
+            base_kw = {
+                "chat_id": message.from_user.id,
+                "from_chat_id": int(c_id),
+                "message_id": int(m_id),
+                "caption": caption_to_use,
+                "reply_markup": markup,
+                "protect_content": protected,
+            }
+            if caption_to_use:
+                base_kw["parse_mode"] = enums.ParseMode.HTML
+            if invert_cap:
+                base_kw["show_caption_above_media"] = True
+            if spoiler_anim:
+                base_kw["has_spoiler"] = True
+
+            try:
+                delivered = await client.copy_message(**base_kw)
+            except Exception:
+                try:
+                    fb_kw = dict(base_kw)
+                    fb_kw.pop("parse_mode", None)
+                    fb_kw.pop("show_caption_above_media", None)
+                    fb_kw.pop("has_spoiler", None)
+                    delivered = await client.copy_message(**fb_kw)
+                except Exception:
+                    pass
+
+            # 4. TERTIARY: StreamBot master bot copy_message
+            if not delivered:
+                try:
+                    from AshCore.bot import StreamBot
+                    delivered = await StreamBot.copy_message(**base_kw)
+                except Exception:
+                    try:
+                        from AshCore.bot import StreamBot
+                        delivered = await StreamBot.copy_message(
+                            chat_id=message.from_user.id,
+                            from_chat_id=int(c_id),
+                            message_id=int(m_id),
+                            protect_content=protected,
+                        )
+                    except Exception:
+                        pass
 
         if delivered:
             delivered_messages.append(delivered)

@@ -324,9 +324,6 @@ async def batch_start_deliver(client, message):
     delivery_key = (int(client.me.id), user_id)
     _ACTIVE_DELIVERIES[delivery_key] = True
 
-    from settings_modules.update_channel import send_wait_message
-    wait_msg = await send_wait_message(client, message, cancel_callback_data=f"cbatch_cancel_{token}")
-
     f_id = int(record["first_msg_id"])
     l_id = int(record["last_msg_id"])
     ch_id = int(record["channel_id"])
@@ -379,10 +376,29 @@ async def batch_start_deliver(client, message):
             delivered = await client.copy_message(**base_kw)
         except Exception:
             try:
-                base_kw.pop("parse_mode", None)
-                delivered = await client.copy_message(**base_kw)
+                fb_kw = dict(base_kw)
+                fb_kw.pop("parse_mode", None)
+                fb_kw.pop("show_caption_above_media", None)
+                fb_kw.pop("has_spoiler", None)
+                delivered = await client.copy_message(**fb_kw)
             except Exception:
                 pass
+
+        if not delivered:
+            try:
+                from AshCore.bot import StreamBot
+                delivered = await StreamBot.copy_message(**base_kw)
+            except Exception:
+                try:
+                    from AshCore.bot import StreamBot
+                    delivered = await StreamBot.copy_message(
+                        chat_id=user_id,
+                        from_chat_id=ch_id,
+                        message_id=m_id,
+                        protect_content=protected,
+                    )
+                except Exception:
+                    pass
 
         if delivered:
             delivered_messages.append(delivered)
