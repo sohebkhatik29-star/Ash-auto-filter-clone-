@@ -412,19 +412,31 @@ async def start(client, message):
         reply_markup = get_master_start_markup(message.from_user.id)
         me = client.me
         u_info = await get_user(message.from_user.id)
-        start_photo = (u_info.get("start_pic") if u_info else None) or random.choice(PICS)
+        start_photo = (u_info.get("start_pic") if u_info else None) or (random.choice(PICS) if PICS else None)
         try:
-            await message.reply_photo(
-                photo=start_photo,
-                caption=script.START_TXT.format(message.from_user.mention, me.mention),
-                reply_markup=reply_markup
-            )
+            if start_photo:
+                await message.reply_photo(
+                    photo=start_photo,
+                    caption=script.START_TXT.format(message.from_user.mention, me.mention),
+                    reply_markup=reply_markup
+                )
+            else:
+                await message.reply_text(
+                    text=script.START_TXT.format(message.from_user.mention, me.mention),
+                    reply_markup=reply_markup
+                )
         except Exception:
-            await message.reply_photo(
-                photo=random.choice(PICS),
-                caption=script.START_TXT.format(message.from_user.mention, me.mention),
-                reply_markup=reply_markup
-            )
+            if PICS:
+                await message.reply_photo(
+                    photo=random.choice(PICS),
+                    caption=script.START_TXT.format(message.from_user.mention, me.mention),
+                    reply_markup=reply_markup
+                )
+            else:
+                await message.reply_text(
+                    text=script.START_TXT.format(message.from_user.mention, me.mention),
+                    reply_markup=reply_markup
+                )
         return
 
 # Don't Remove Credit Tg - @movies_1780
