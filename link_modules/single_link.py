@@ -618,36 +618,8 @@ async def open_single(client, message):
 
         delivered = None
 
-        # 1. PRIMARY: Instant copy_message directly from source channel (0.05s latency)
-        base_kw = {
-            "chat_id": message.from_user.id,
-            "from_chat_id": source_chat,
-            "message_id": source_mid,
-            "caption": caption_to_use,
-            "reply_markup": markup,
-            "protect_content": is_protect,
-        }
-        if caption_to_use:
-            base_kw["parse_mode"] = enums.ParseMode.HTML
-        if invert_cap:
-            base_kw["show_caption_above_media"] = True
-        if spoiler_anim:
-            base_kw["has_spoiler"] = True
-
-        try:
-            delivered = await client.copy_message(**base_kw)
-        except Exception:
-            try:
-                fb_kw = dict(base_kw)
-                fb_kw.pop("parse_mode", None)
-                fb_kw.pop("show_caption_above_media", None)
-                fb_kw.pop("has_spoiler", None)
-                delivered = await client.copy_message(**fb_kw)
-            except Exception:
-                pass
-
-        # 2. SECONDARY: Instant send_cached_media with file_id (when clone bot is not in source channel)
-        if not delivered and file_id:
+        # 1. PRIMARY: Instant send_cached_media with file_id (0.01s latency)
+        if file_id:
             try:
                 delivered = await client.send_cached_media(
                     chat_id=message.from_user.id,
@@ -664,6 +636,35 @@ async def open_single(client, message):
                         file_id=file_id,
                         protect_content=is_protect,
                     )
+                except Exception:
+                    pass
+
+        # 2. SECONDARY: copy_message directly from source channel (0.05s latency)
+        if not delivered:
+            base_kw = {
+                "chat_id": message.from_user.id,
+                "from_chat_id": source_chat,
+                "message_id": source_mid,
+                "caption": caption_to_use,
+                "reply_markup": markup,
+                "protect_content": is_protect,
+            }
+            if caption_to_use:
+                base_kw["parse_mode"] = enums.ParseMode.HTML
+            if invert_cap:
+                base_kw["show_caption_above_media"] = True
+            if spoiler_anim:
+                base_kw["has_spoiler"] = True
+
+            try:
+                delivered = await client.copy_message(**base_kw)
+            except Exception:
+                try:
+                    fb_kw = dict(base_kw)
+                    fb_kw.pop("parse_mode", None)
+                    fb_kw.pop("show_caption_above_media", None)
+                    fb_kw.pop("has_spoiler", None)
+                    delivered = await client.copy_message(**fb_kw)
                 except Exception:
                     pass
 
