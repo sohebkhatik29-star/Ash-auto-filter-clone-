@@ -897,7 +897,8 @@ async def start(client, message):
                 from plugins.clone import clone_commands
                 await client.set_bot_commands(clone_commands(True), scope=BotCommandScopeChat(chat_id=int(message.from_user.id)))
             else:
-                await client.delete_bot_commands(scope=BotCommandScopeChat(chat_id=int(message.from_user.id)))
+                from plugins.clone import clone_user_commands
+                await client.set_bot_commands(clone_user_commands(), scope=BotCommandScopeChat(chat_id=int(message.from_user.id)))
         except Exception:
             pass
 

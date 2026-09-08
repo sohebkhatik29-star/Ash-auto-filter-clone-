@@ -407,6 +407,16 @@ async def start(client, message):
             pass
     asyncio.create_task(_track_master_user_bg())
     if len(message.command) != 2:
+        try:
+            from pyrogram.types import BotCommandScopeChat
+            from bot import owner_commands, all_commands
+            from settings_modules.master_admin_panel import is_master_admin
+            if is_master_admin(message.from_user.id):
+                await client.set_bot_commands(owner_commands(), scope=BotCommandScopeChat(chat_id=int(message.from_user.id)))
+            else:
+                await client.set_bot_commands(all_commands(), scope=BotCommandScopeChat(chat_id=int(message.from_user.id)))
+        except Exception:
+            pass
         if await send_master_fsub_prompt(client, message, ""):
             return
         reply_markup = get_master_start_markup(message.from_user.id)

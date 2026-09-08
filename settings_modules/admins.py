@@ -97,8 +97,9 @@ async def handle_admins_callbacks(client, query, data, user_id, r, save_fn, canc
         save_fn(admins=adms)
         r["admins"] = adms
         try:
+            from plugins.clone import clone_user_commands
             from pyrogram.types import BotCommandScopeChat
-            await client.delete_bot_commands(scope=BotCommandScopeChat(chat_id=int(target_uid)))
+            await client.set_bot_commands(clone_user_commands(), scope=BotCommandScopeChat(chat_id=int(target_uid)))
         except Exception:
             pass
         await query.answer("Admin removed successfully!")

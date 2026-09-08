@@ -23,6 +23,13 @@ loop = asyncio.get_event_loop()
 def all_commands():
     return [
         BotCommand('start', 'Start the bot'),
+        BotCommand('clone', 'Create your own clone'),
+    ]
+
+
+def owner_commands():
+    return [
+        BotCommand('start', 'Start the bot'),
         BotCommand('help', 'Show all commands'),
         BotCommand('getlink', 'Generate a file link'),
         BotCommand('batch', 'Create batch links'),
@@ -34,11 +41,6 @@ def all_commands():
         BotCommand('api', 'Set or view shortener API'),
         BotCommand('base_site', 'Set or view shortener site'),
         BotCommand('clone', 'Create your own clone'),
-    ]
-
-
-def owner_commands():
-    return all_commands() + [
         BotCommand('admin', 'Open owner admin panel'),
         BotCommand('stats', 'Show statistics'),
         BotCommand('broadcast', 'Broadcast a message'),

@@ -47,6 +47,12 @@ except Exception:
     logging.exception("Unable to load focused clone manager fix")
 
 
+def clone_user_commands():
+    return [
+        BotCommand("start", "Check i am alive"),
+    ]
+
+
 def clone_commands(include_owner=False):
     base_commands = [
         BotCommand("start", "Check i am alive"),
@@ -69,9 +75,9 @@ def clone_commands(include_owner=False):
 
 
 async def set_clone_menu(client, owner_id=None):
-    # Delete default command menu for regular users so regular subscribers never see bot commands menu
+    # Set default command menu for regular users so regular subscribers only see /start
     try:
-        await client.delete_bot_commands()
+        await client.set_bot_commands(clone_user_commands())
     except Exception:
         pass
 
