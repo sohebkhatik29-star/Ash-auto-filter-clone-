@@ -820,38 +820,43 @@ async def special_link_start(client, message):
     try:
         from clone_plugins.ban_manager import check_user_banned_or_block
         if await check_user_banned_or_block(client, message):
-            from pyrogram import StopPropagation
-            raise StopPropagation
-    except Exception as e:
-        if "StopPropagation" in type(e).__name__:
-            raise
+            return
+    except Exception:
+        pass
 
     if mongo_db is None:
-        await message.reply("❌ Database is not configured.")
-        raise StopPropagation
+        return await message.reply("❌ Database is not configured.")
 
     token = payload.split("_", 1)[1]
+
+    # Concurrency / double-delivery lock
+    now_ts = time.time()
+    delivery_lock_key = (int(client.me.id), int(message.from_user.id), str(token))
+    _DELIVERY_TIMESTAMPS = getattr(special_link_start, "_delivery_timestamps", {})
+    special_link_start._delivery_timestamps = _DELIVERY_TIMESTAMPS
+    last_run = _DELIVERY_TIMESTAMPS.get(delivery_lock_key, 0)
+    if (now_ts - last_run) < 3.0:
+        return
+    _DELIVERY_TIMESTAMPS[delivery_lock_key] = now_ts
+
     record = mongo_db.special_links.find_one({"token": token}) or mongo_db.special_links.find_one({"short_token": token}) or mongo_db.special_links.find_one({"token": payload})
 
     if not record:
-        await message.reply("❌ Invalid or expired special link.")
-        raise StopPropagation
+        return await message.reply("❌ Invalid or expired special link.")
 
     exp = record.get("expire_at")
     if exp and time.time() > exp:
-        await message.reply("❌ This special link has expired and is no longer available.")
-        raise StopPropagation
+        return await message.reply("❌ This special link has expired and is no longer available.")
 
     if record.get("whitelisters_enabled", False):
         user_id = int(message.from_user.id)
         whitelisters = record.get("whitelisters", [])
         is_mod = cmd.is_owner_or_mod(client, user_id)
         if user_id not in whitelisters and not is_mod:
-            await message.reply("❌ You are not authorized to view this special link.")
-            raise StopPropagation
+            return await message.reply("❌ You are not authorized to view this special link.")
 
     if await cmd.send_fsub_prompt(client, message, payload):
-        raise StopPropagation
+        return
 
     access_res = await cmd.access_verification(client, message.from_user.id, payload)
     v_text = None
@@ -866,13 +871,11 @@ async def special_link_start(client, message):
     elif access_res:
         v_text, access_markup = "<b>🔐 Please verify first to access this link.</b>", access_res
     if access_markup:
-        await cmd.send_verify_prompt(client, message, v_text, access_markup, v_photo)
-        raise StopPropagation
+        return await cmd.send_verify_prompt(client, message, v_text, access_markup, v_photo)
 
     messages = list(record.get("messages", []))
     if not messages:
-        await message.reply("❌ This special link contains no messages.")
-        raise StopPropagation
+        return await message.reply("❌ This special link contains no messages.")
 
     rec = cmd.bot_record(client)
     protected = bool(record.get("protected", False)) or bool(rec.get("protect_content", False)) or bool(rec.get("no_forward", False))
@@ -1027,7 +1030,7 @@ async def special_link_start(client, message):
         except Exception:
             pass
 
-    raise StopPropagation
+    return
 
 
 open_special = special_link_start
@@ -1035,7 +1038,6 @@ open_special = special_link_start
 
 def register(client, base_group=-103):
     private = filters.private
-    client.add_handler(MessageHandler(special_link_start, filters.command("start") & private), group=base_group)
     client.add_handler(MessageHandler(special_link_cmd, filters.command("special_link") & private), group=base_group)
     client.add_handler(MessageHandler(capture_special_message, private), group=base_group + 1)
     client.add_handler(CallbackQueryHandler(special_link_callbacks, filters.regex(r"^spl_")), group=base_group)
