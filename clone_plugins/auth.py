@@ -134,8 +134,8 @@ def is_clone_authorized(client, uid) -> bool:
             return True
         return False
 
-    # 3. On Master Bot:
-    return bool(PUBLIC_FILE_STORE)
+    # 3. On Master Bot: Regular users are NOT authorized to generate links or use settings
+    return False
 
 def unauthorized_markup(client=None):
     """Generate inline keyboard with Create Clone Bot button for unauthorized users."""

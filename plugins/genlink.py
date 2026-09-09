@@ -13,9 +13,8 @@ from plugins.users_api import get_user, get_short_link
 from settings_modules.link_shortener import get_shortened_link_if_enabled
 
 async def allowed(_, __, message):
-    if PUBLIC_FILE_STORE:
-        return True
-    if message.from_user and message.from_user.id in ADMINS:
+    from settings_modules.master_admin_panel import is_master_admin
+    if message.from_user and is_master_admin(message.from_user.id):
         return True
     return False
 

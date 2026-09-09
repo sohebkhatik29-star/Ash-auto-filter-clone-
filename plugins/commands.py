@@ -857,6 +857,11 @@ async def help_command_handler(client, message):
     me = client.me or (await client.get_me())
     if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
         return
+    user_id = message.from_user.id
+    from settings_modules.master_admin_panel import is_master_admin
+    if not is_master_admin(user_id):
+        from clone_plugins.auth import UNAUTHORIZED_MESSAGE_TEXT, unauthorized_markup
+        return await message.reply(UNAUTHORIZED_MESSAGE_TEXT, reply_markup=unauthorized_markup(client), disable_web_page_preview=True)
     buttons = [[
         InlineKeyboardButton("‹ BACK", callback_data="start")
     ]]
@@ -875,7 +880,7 @@ async def help_command_handler(client, message):
         )
 
 
-@Client.on_message(filters.command("settings") & filters.private)
+@Client.on_message(filters.command(["settings", "setting"]) & filters.private)
 async def settings_cmd_handler(client, message):
     me = client.me or (await client.get_me())
     if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
@@ -883,8 +888,8 @@ async def settings_cmd_handler(client, message):
     user_id = message.from_user.id
     from settings_modules.master_admin_panel import is_master_admin
     if not is_master_admin(user_id):
-        from plugins.master_settings import send_manage_clones
-        return await send_manage_clones(client, message)
+        from clone_plugins.auth import UNAUTHORIZED_MESSAGE_TEXT, unauthorized_markup
+        return await message.reply(UNAUTHORIZED_MESSAGE_TEXT, reply_markup=unauthorized_markup(client), disable_web_page_preview=True)
     from plugins.master_settings import send_settings_menu
     return await send_settings_menu(client, message)
 
@@ -895,6 +900,10 @@ async def shortener_cmd_handler(client, message):
     if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
         return
     user_id = message.from_user.id
+    from settings_modules.master_admin_panel import is_master_admin
+    if not is_master_admin(user_id):
+        from clone_plugins.auth import UNAUTHORIZED_MESSAGE_TEXT, unauthorized_markup
+        return await message.reply(UNAUTHORIZED_MESSAGE_TEXT, reply_markup=unauthorized_markup(client), disable_web_page_preview=True)
     from plugins.clone import mongo_db
     m_rec = (mongo_db.master_settings.find_one({"type": "master_config"}) or mongo_db.master_settings.find_one({})) if mongo_db is not None else {}
     site = m_rec.get("shortener_site") or m_rec.get("base_site")
@@ -934,6 +943,10 @@ async def shortener_api_handler(client, m: Message):
     if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
         return
     user_id = m.from_user.id
+    from settings_modules.master_admin_panel import is_master_admin
+    if not is_master_admin(user_id):
+        from clone_plugins.auth import UNAUTHORIZED_MESSAGE_TEXT, unauthorized_markup
+        return await m.reply(UNAUTHORIZED_MESSAGE_TEXT, reply_markup=unauthorized_markup(client), disable_web_page_preview=True)
     user = await get_user(user_id)
     cmd = m.command
 
@@ -953,6 +966,10 @@ async def base_site_handler(client, m: Message):
     if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
         return
     user_id = m.from_user.id
+    from settings_modules.master_admin_panel import is_master_admin
+    if not is_master_admin(user_id):
+        from clone_plugins.auth import UNAUTHORIZED_MESSAGE_TEXT, unauthorized_markup
+        return await m.reply(UNAUTHORIZED_MESSAGE_TEXT, reply_markup=unauthorized_markup(client), disable_web_page_preview=True)
     user = await get_user(user_id)
     cmd = m.command
     text = f"`/base_site (base_site)`\n\n<b>Current base site: None\n\n EX:</b> `/base_site shortnerdomain.com`\n\nIf You Want To Remove Base Site Then Copy This And Send To Bot - `/base_site None`"
