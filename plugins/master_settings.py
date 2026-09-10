@@ -539,84 +539,9 @@ async def callbacks(client, query):
         )
 
     # --- REFER AND EARN --- #
-    if data == "master_refer_earn":
-        ref_on = bool(r.get("refer_enabled", False))
-        pts = r.get("refer_points", 10)
-        target = r.get("refer_target", 50)
-        status_txt = "ON ✅" if ref_on else "OFF ❌"
-        text = (
-            "🌍 <b>REFER AND EARN:</b>\n\n"
-            f"• <b>STATUS:</b> <b>{status_txt}</b>\n"
-            f"• <b>POINTS PER REFERRAL:</b> <code>{pts}</code>\n"
-            f"• <b>POINTS TO UNLOCK REWARD:</b> <code>{target}</code>\n\n"
-            "<b>Reward users for inviting their friends to the bot!</b>"
-        )
-        tgl_btn = "DISABLE REFER & EARN" if ref_on else "ENABLE REFER & EARN"
-        return await edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(tgl_btn, callback_data="m_tgl_refer")],
-            [InlineKeyboardButton("SET POINTS PER REFER", callback_data="m_set_refer_pts")],
-            [InlineKeyboardButton("‹ BACK", callback_data="settings")]
-        ]))
-
-    if data == "m_tgl_refer":
-        new_s = not bool(r.get("refer_enabled", False))
-        save_master(refer_enabled=new_s)
-        await query.answer(f"Refer & Earn {'Enabled' if new_s else 'Disabled'}!")
-        return await callbacks(client, type("Q", (), {"data": "master_refer_earn", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
-
-    if data == "m_set_refer_pts":
-        cancel_user_listeners(client, user_id, user_id)
-        sess_token = start_user_session(user_id, "m_refer_pts")
-        try:
-            await query.answer()
-        except Exception:
-            pass
-        try:
-            if getattr(query, "message", None):
-                await query.message.delete()
-        except Exception:
-            pass
-        prompt_msg = await client.send_message(
-            chat_id=user_id,
-            text="🌍 <b>Send points to award per referral (e.g. <code>10</code>):</b>\n\n<i>Send /cancel to abort.</i>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_refer_earn")]])
-        )
-        async def _ref_worker():
-            try:
-                ans = await client.listen(chat_id=user_id, timeout=120)
-            except Exception:
-                try:
-                    await prompt_msg.delete()
-                except Exception:
-                    pass
-                await client.send_message(user_id, "❌ <b>Timeout. Process cancelled.</b>")
-                clear_user_session(user_id)
-                return
-            if not is_user_session_active(user_id, sess_token):
-                return
-            try:
-                await prompt_msg.delete()
-            except Exception:
-                pass
-            try:
-                if ans:
-                    await ans.delete()
-            except Exception:
-                pass
-            t = (ans.text or "").strip()
-            if t == "/cancel":
-                await client.send_message(user_id, "❌ <b>Cancelled.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_refer_earn")]]))
-                clear_user_session(user_id)
-                return
-            if not t.isdigit():
-                await client.send_message(user_id, "❌ <b>Must be a number.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_refer_earn")]]))
-                clear_user_session(user_id)
-                return
-            save_master(refer_points=int(t))
-            clear_user_session(user_id)
-            await client.send_message(user_id, f"✅ <b>Points set to:</b> {t}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ BACK", callback_data="master_refer_earn")]]))
-        asyncio.create_task(_ref_worker())
-        return
+    if data == "master_refer_earn" or data.startswith("master_refer_earn:"):
+        from settings_modules.refer_earn import handle_refer_callbacks
+        return await handle_refer_callbacks(client, query, data, user_id, r, save_master, cancel_user_listeners, edit_or_reply, target_bid=target_bid)
 
     # --- MAIN LINK SHORTENER --- #
     if (
@@ -662,25 +587,9 @@ async def callbacks(client, query):
 
 
     # --- PERMANENT LINK --- #
-    if data == "master_permanent_link":
-        perm_on = bool(r.get("permanent_link_enabled", True))
-        status_txt = "ON ✅" if perm_on else "OFF ❌"
-        tgl_btn = "DISABLE PERMANENT LINK" if perm_on else "ENABLE PERMANENT LINK"
-        text = (
-            "♾️ <b>PERMANENT LINK:</b>\n\n"
-            f"• <b>STATUS:</b> <b>{status_txt}</b>\n\n"
-            "<b>When enabled, generated file links do not expire.</b>"
-        )
-        return await edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(tgl_btn, callback_data="m_tgl_perm")],
-            [InlineKeyboardButton("‹ BACK", callback_data="settings")]
-        ]))
-
-    if data == "m_tgl_perm":
-        new_s = not bool(r.get("permanent_link_enabled", True))
-        save_master(permanent_link_enabled=new_s)
-        await query.answer(f"Permanent links {'Enabled' if new_s else 'Disabled'}!")
-        return await callbacks(client, type("Q", (), {"data": "master_permanent_link", "from_user": query.from_user, "message": query.message, "answer": query.answer})())
+    if data == "master_permanent_link" or data.startswith("master_permanent_link:"):
+        from settings_modules.permanent_link import handle_permanent_link_callbacks
+        return await handle_permanent_link_callbacks(client, query, data, user_id, r, save_master, cancel_user_listeners, edit_or_reply, target_bid=target_bid)
 
     # --- PROTECT CONTENT --- #
     if data in ("protect_menu", "m_tgl_protect") or data.startswith(("protect_menu:", "m_tgl_protect:")):

@@ -1,24 +1,28 @@
 # ♾️ PERMANENT LINK SETTINGS MODULE
-import asyncio
+from pyrogram import enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-async def handle_permanent_link_callbacks(client, query, data, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn):
-    if data in ("master_permanent_link", "cset_permlink"):
-        perm_on = bool(r.get("permanent_link_enabled", True))
-        status_txt = "ON ✅" if perm_on else "OFF ❌"
-        tgl_btn = "DISABLE PERMANENT LINK" if perm_on else "ENABLE PERMANENT LINK"
-        text = (
-            "♾️ <b>PERMANENT LINK:</b>\n\n"
-            f"• <b>STATUS:</b> <b>{status_txt}</b>\n\n"
-            "<b>When enabled, generated file links do not expire.</b>"
-        )
-        return await edit_or_reply_fn(query, text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(tgl_btn, callback_data="m_tgl_perm")],
-            [InlineKeyboardButton("🪧 BACK", callback_data="settings")]
-        ]))
+async def handle_permanent_link_callbacks(client, query, data, user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn, target_bid=None):
+    try:
+        await query.answer("🚧 Coming Soon!", show_alert=False)
+    except Exception:
+        pass
 
-    if data in ("m_tgl_perm", "cset_permlink_toggle"):
-        new_s = not bool(r.get("permanent_link_enabled", True))
-        save_fn(permanent_link_enabled=new_s)
-        await query.answer(f"Permanent links {'Enabled' if new_s else 'Disabled'}!")
-        return await handle_permanent_link_callbacks(client, query, "master_permanent_link", user_id, r, save_fn, cancel_listeners_fn, edit_or_reply_fn)
+    data_str = str(data or "")
+    if not target_bid and ":" in data_str:
+        try:
+            target_bid = int(data_str.split(":", 1)[1])
+        except Exception:
+            pass
+
+    back_cb = f"manage_clone:{target_bid}" if target_bid else ("clone_my_clone_info" if "cset" in data_str else "settings")
+
+    text = (
+        "♾️ <b>PERMANENT LINK:</b>\n\n"
+        "🚧 <b>COMING SOON...</b>\n\n"
+        "<i>This feature is currently under development and will be available soon!</i>"
+    )
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("‹ BACK", callback_data=back_cb)]
+    ])
+    return await edit_or_reply_fn(query, text, reply_markup=markup)
