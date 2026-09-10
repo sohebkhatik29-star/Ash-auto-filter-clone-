@@ -73,6 +73,9 @@ def clone_commands(include_owner=False):
     ]
     if include_owner:
         return base_commands + [
+            BotCommand("addpost", "Send a post message to all users"),
+            BotCommand("delpost", "Delete a sent post from all users"),
+            BotCommand("delallpost", "Delete all posts sent to all users"),
             BotCommand("broadcast", "Broadcast a messages to users (moderators only)"),
             BotCommand("an_broadcast", "Unpin broadcast messages from users"),
             BotCommand("ban", "Ban a user (moderators only)"),
