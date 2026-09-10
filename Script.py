@@ -79,8 +79,11 @@ I am a permanent file store bot. You can store files from your public channel wi
 🛡️ <b>Moderators Commands:</b>
 ➜ /special_link - store multiple messages and get an editable link.
 ➜ /universal_link - stores multiple messages that can be accessed from any of your clones.
-➜ /broadcast - Broadcast messages to users.
-➜ /an_broadcast - Broadcast messages without pin / unpin notification.
+➜ /broadcast - Broadcast messages to users (with pin).
+➜ /an_broadcast - Broadcast messages without pin.
+➜ /addpost - Send a post message to all bot users without pin.
+➜ /delpost - Delete a sent post from all users (reply to post).
+➜ /delallpost - Delete all posts ever sent from all users with confirmation.
 ➜ /ban - ban a user.
 ➜ /unban - unban a user."""
 

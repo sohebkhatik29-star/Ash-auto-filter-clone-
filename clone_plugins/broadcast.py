@@ -104,3 +104,24 @@ async def pm_an_broadcast(bot, message):
         )
     from clone_plugins.advanced import execute_unpin_single_broadcast
     return await execute_unpin_single_broadcast(bot, message.chat.id, reply)
+
+
+@Client.on_message(filters.command(["addpost", "add_post", "post", "addposts"]))
+async def pm_add_post(bot, message):
+    from clone_plugins.post_manager import add_post_cmd
+    return await add_post_cmd(bot, message)
+
+@Client.on_message(filters.command(["delpost", "del_post", "delposts", "deletepost", "delete_post"]))
+async def pm_del_post(bot, message):
+    from clone_plugins.post_manager import del_post_cmd
+    return await del_post_cmd(bot, message)
+
+@Client.on_message(filters.command(["delallpost", "delallposts", "del_all_post", "del_all_posts", "deleteallposts"]))
+async def pm_del_all_posts(bot, message):
+    from clone_plugins.post_manager import del_all_posts_cmd
+    return await del_all_posts_cmd(bot, message)
+
+@Client.on_callback_query(filters.regex(r"^clone_del_all_posts_"))
+async def pm_del_all_posts_cb(bot, query):
+    from clone_plugins.post_manager import handle_del_all_posts_callback
+    return await handle_del_all_posts_callback(bot, query)

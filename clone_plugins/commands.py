@@ -1259,6 +1259,9 @@ async def callbacks(client, query):
     data = query.data
     if data == "close_data":
         return await query.message.delete()
+    if data and data.startswith("clone_del_all_posts_"):
+        from clone_plugins.post_manager import handle_del_all_posts_callback
+        return await handle_del_all_posts_callback(client, query)
     if data.startswith("verify:"):
         payload = data.split(":", 1)[1] if ":" in data else ""
         markup = await force_markup(client, query.from_user.id, payload)

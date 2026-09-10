@@ -6,6 +6,7 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from clone_plugins import commands as cmd
 from clone_plugins import advanced as adv
 from clone_plugins import clone_settings_ui as cset
+from clone_plugins import post_manager
 from link_modules import register_all_link_modules, single_link, universal_link, channel_batch, custom_batch, special_link
 from clone_plugins import master_manager
 
@@ -158,6 +159,25 @@ def register_clone_handlers(client):
         "start_msg": "start_msg",
     }
 
+    post_commands = {
+        "addpost": post_manager.add_post_cmd,
+        "add_post": post_manager.add_post_cmd,
+        "post": post_manager.add_post_cmd,
+        "addposts": post_manager.add_post_cmd,
+        "delpost": post_manager.del_post_cmd,
+        "del_post": post_manager.del_post_cmd,
+        "delposts": post_manager.del_post_cmd,
+        "deletepost": post_manager.del_post_cmd,
+        "delete_post": post_manager.del_post_cmd,
+        "delallpost": post_manager.del_all_posts_cmd,
+        "delallposts": post_manager.del_all_posts_cmd,
+        "del_all_post": post_manager.del_all_posts_cmd,
+        "del_all_posts": post_manager.del_all_posts_cmd,
+        "deleteallposts": post_manager.del_all_posts_cmd,
+    }
+    for command, handler in post_commands.items():
+        command_map[command] = handler
+
     for command, name in advanced_commands.items():
         fn = getattr(adv, name, None)
         if callable(fn):
@@ -175,4 +195,5 @@ def register_clone_handlers(client):
     if callable(advanced_callback) and advanced_callback is not callback:
         client.add_handler(CallbackQueryHandler(advanced_callback, filters.regex(r"^(my_clone|clone_stats|clone_delete|delete_confirm|admin_broadcast|bc_send_msg|bc_unpin_msg|admin_panel_back|bc_cancel)$")), group=1)
 
+    client.add_handler(CallbackQueryHandler(post_manager.handle_del_all_posts_callback, filters.regex(r"^clone_del_all_posts_")), group=0)
     return client
