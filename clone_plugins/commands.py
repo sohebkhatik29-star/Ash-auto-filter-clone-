@@ -474,13 +474,20 @@ async def access_verification(client, user_id, original_payload=""):
                         }},
                         upsert=True
                     )
-                usage_notice = (
+                usage_notice_text = (
                     f"📊 <b>Free Usage Details</b>\n"
                     f"• <b>Usage:</b> {new_usage} / {allowed_count}\n"
                     f"• <b>Reset Window:</b> {window_text}\n\n"
                     f"You have {remaining} free uses remaining."
                 )
-                return None, None, None, usage_notice
+                premium_is_active = bool(rec.get("premium_is_on", False) or rec.get("premium_enabled", False))
+                usage_markup = None
+                if premium_is_active:
+                    cb_data = f"c_buy_prem:{original_payload}" if original_payload else "c_buy_prem"
+                    usage_markup = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("💎 BUY PREMIUM FOR UNLIMITED ACCESS 💎", callback_data=cb_data)]
+                    ])
+                return None, None, None, (usage_notice_text, usage_markup)
 
     # 1. Collect all active verification slots (1, 2, 3)
     active_slots = []
@@ -1067,7 +1074,14 @@ async def start(client, message):
         await deliver_file(client, message.from_user.id, file_id, protected=prefix == "filep")
         if free_notice:
             try:
-                await client.send_message(message.from_user.id, free_notice)
+                if isinstance(free_notice, (tuple, list)):
+                    fn_text = free_notice[0]
+                    fn_markup = free_notice[1] if len(free_notice) > 1 else None
+                    await client.send_message(message.from_user.id, fn_text, reply_markup=fn_markup, parse_mode=enums.ParseMode.HTML)
+                elif isinstance(free_notice, dict):
+                    await client.send_message(message.from_user.id, free_notice.get("text"), reply_markup=free_notice.get("reply_markup"), parse_mode=enums.ParseMode.HTML)
+                else:
+                    await client.send_message(message.from_user.id, str(free_notice), parse_mode=enums.ParseMode.HTML)
             except Exception:
                 pass
     except Exception as e:

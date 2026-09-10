@@ -115,6 +115,73 @@ async def check_master_verification(client, user_id, original_payload):
     if is_user_premium(user_id, master_cfg):
         return None, None
 
+    # Check Free Usage Limit
+    f_limit = master_cfg.get("free_limit", {})
+    if isinstance(f_limit, dict) and bool(f_limit.get("enabled", False)):
+        allowed_count = int(f_limit.get("count", 0))
+        if allowed_count > 0:
+            duration_sec = f_limit.get("duration_seconds")
+            if not duration_sec:
+                num = int(f_limit.get("num", 1) or 1)
+                unit = str(f_limit.get("unit", "day")).lower()
+                if "sec" in unit:
+                    duration_sec = num
+                elif "min" in unit:
+                    duration_sec = num * 60
+                elif "hour" in unit:
+                    duration_sec = num * 3600
+                elif "month" in unit:
+                    duration_sec = num * 30 * 86400
+                elif "year" in unit:
+                    duration_sec = num * 365 * 86400
+                elif "week" in unit:
+                    duration_sec = num * 7 * 86400
+                else:
+                    duration_sec = num * 86400
+
+            window_display = f_limit.get("display") or f_limit.get("window_text") or (f"Every {f_limit.get('num', 1)} {f_limit.get('unit', 'day').capitalize()}(s)" if f_limit.get("num") else "Every 1 Day(s)")
+            if not str(window_display).lower().startswith("every"):
+                window_text = f"Every {window_display}"
+            else:
+                window_text = str(window_display)
+
+            now = time.time()
+            u_rec = mongo_db.free_usage.find_one({"bot_id": int(bot_id), "user_id": int(user_id)}) if mongo_db is not None else None
+            if not u_rec or (now - float(u_rec.get("window_start", 0))) >= float(duration_sec):
+                current_usage = 0
+                window_start = now
+            else:
+                current_usage = int(u_rec.get("count", 0))
+                window_start = float(u_rec.get("window_start", now))
+
+            if current_usage < allowed_count:
+                new_usage = current_usage + 1
+                remaining = allowed_count - new_usage
+                if mongo_db is not None:
+                    mongo_db.free_usage.update_one(
+                        {"bot_id": int(bot_id), "user_id": int(user_id)},
+                        {"$set": {
+                            "count": new_usage,
+                            "window_start": window_start,
+                            "updated_at": now
+                        }},
+                        upsert=True
+                    )
+                usage_notice_text = (
+                    f"📊 <b>Free Usage Details</b>\n"
+                    f"• <b>Usage:</b> {new_usage} / {allowed_count}\n"
+                    f"• <b>Reset Window:</b> {window_text}\n\n"
+                    f"You have {remaining} free uses remaining."
+                )
+                premium_is_active = bool(master_cfg.get("premium_is_on", False) or master_cfg.get("premium_enabled", False))
+                usage_markup = None
+                if premium_is_active:
+                    cb_data = f"m_buy_prem:{original_payload}" if original_payload else "m_buy_prem"
+                    usage_markup = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("💎 BUY PREMIUM FOR UNLIMITED ACCESS 💎", callback_data=cb_data)]
+                    ])
+                return None, None, None, (usage_notice_text, usage_markup)
+
     active_slots = []
     for s in (1, 2, 3):
         v_key = f"verify_{s}" if s > 1 else "verify_1"
@@ -625,7 +692,11 @@ async def start(client, message):
     if await send_master_fsub_prompt(client, message, data):
         return
 
-    v_text, verify_markup = await check_master_verification(client, message.from_user.id, data)
+    v_res = await check_master_verification(client, message.from_user.id, data)
+    v_text = v_res[0] if v_res else None
+    verify_markup = v_res[1] if v_res and len(v_res) > 1 else None
+    v_photo = v_res[2] if v_res and len(v_res) > 2 else None
+    free_notice = v_res[3] if v_res and len(v_res) > 3 else None
     if verify_markup:
         return await message.reply_text(v_text or "<b>You are not verified !\nKindly verify to continue !</b>", protect_content=True, reply_markup=verify_markup, disable_web_page_preview=True)
 

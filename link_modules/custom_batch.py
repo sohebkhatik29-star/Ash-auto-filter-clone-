@@ -839,7 +839,14 @@ async def batch_start(client, message):
 
     if free_notice and delivered_messages:
         try:
-            await client.send_message(message.from_user.id, free_notice)
+            if isinstance(free_notice, (tuple, list)):
+                fn_text = free_notice[0]
+                fn_markup = free_notice[1] if len(free_notice) > 1 else None
+                await client.send_message(message.from_user.id, fn_text, reply_markup=fn_markup, parse_mode=enums.ParseMode.HTML)
+            elif isinstance(free_notice, dict):
+                await client.send_message(message.from_user.id, free_notice.get('text'), reply_markup=free_notice.get('reply_markup'), parse_mode=enums.ParseMode.HTML)
+            else:
+                await client.send_message(message.from_user.id, str(free_notice), parse_mode=enums.ParseMode.HTML)
         except Exception:
             pass
 

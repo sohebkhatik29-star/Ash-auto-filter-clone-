@@ -417,3 +417,19 @@ async def update_user_info(user_id, value: dict):
     myquery = {"user_id": user_id}
     newvalues = {"$set": value}
     mongo_db.user.update_one(myquery, newvalues, upsert=True)
+
+
+async def check_access_and_get_markup(client, message, payload=""):
+    try:
+        from clone_plugins.commands import access_verification
+        u_id = message.from_user.id if getattr(message, "from_user", None) else getattr(message, "chat", None).id
+        v_res = await access_verification(client, u_id, payload)
+        if isinstance(v_res, (tuple, list)):
+            v_text = v_res[0]
+            v_markup = v_res[1] if len(v_res) > 1 else None
+            v_photo = v_res[2] if len(v_res) > 2 else None
+            free_notice = v_res[3] if len(v_res) > 3 else None
+            return v_markup, v_text, v_photo, free_notice
+        return v_res
+    except Exception:
+        return None
