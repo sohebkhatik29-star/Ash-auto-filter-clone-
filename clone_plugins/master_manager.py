@@ -171,7 +171,7 @@ async def handle_clone_callbacks(client, query):
             await query.answer()
         except Exception:
             pass
-        cancel_all_listeners(client, query.message.chat.id, user_id)
+        cancel_all_listeners(client, query.message.chat.id if query.message else user_id, user_id)
         sess_token = start_user_session(user_id, "create_clone")
         prompt_text = (
             "🤖 <b>CREATE CLONE BOT:</b>\n\n"
@@ -180,14 +180,9 @@ async def handle_clone_callbacks(client, query):
             "3) I will automatically create your clone.\n\n"
             "<i>Send /cancel to abort.</i>"
         )
-        try:
-            if query.message:
-                await query.message.delete()
-        except Exception:
-            pass
-        prompt_msg = await client.send_message(
-            chat_id=user_id,
-            text=prompt_text,
+        prompt_msg = await edit_or_reply(
+            query,
+            prompt_text,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ CANCEL", callback_data="my_clones")]])
         )
         asyncio.create_task(_listen_and_create_clone(client, user_id, sess_token, prompt_msg))
@@ -498,31 +493,76 @@ async def _listen_and_create_clone(client, user_id, sess_token, prompt_msg=None)
         )
     bot_token = match.group(1)
 
+    bot_prefix = int(bot_token.split(":")[0])
     m = db()
     if m is not None:
+        existing_doc = m.bots.find_one({"$or": [{"bot_id": bot_prefix}, {"token": bot_token}]})
+        if existing_doc and int(existing_doc.get("user_id", 0)) != int(user_id):
+            return await client.send_message(
+                user_id,
+                "❌ <b>This bot is already cloned by another user!</b>\n\n"
+                "<i>Please use your own bot token from @BotFather.</i>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ MY CLONE BOTS", callback_data="my_clones")]])
+            )
         current_count = m.bots.count_documents({"user_id": int(user_id)})
-        if current_count >= MAX_USER_CLONES:
+        is_existing_clone = bool(existing_doc and int(existing_doc.get("user_id", 0)) == int(user_id))
+        if not is_existing_clone and current_count >= MAX_USER_CLONES:
             return await client.send_message(user_id, "❌ <b>You can create maximum 5 clone bots.</b>")
 
     msg = await client.send_message(user_id, "<b>👨‍💻 Creating your clone...</b>")
     try:
-        from plugins.clone import register_clone_handlers, set_clone_menu, set_clone_client
-        bot_prefix = int(bot_token.split(":")[0])
+        from plugins.clone import register_clone_handlers, set_clone_menu, set_clone_client, get_clone_client, CLONES
+
+        # Stop any existing running instance of this clone to prevent duplicate handlers / multiple replies
+        existing_client = get_clone_client(bot_prefix)
+        if not existing_client:
+            for k, v in list(CLONES.items()):
+                t = getattr(v, "bot_token", None) or getattr(v, "_token", "")
+                if t == bot_token or (getattr(v, "me", None) and getattr(v.me, "id", None) == bot_prefix):
+                    existing_client = v
+                    break
+
+        if existing_client:
+            try:
+                await existing_client.stop()
+            except Exception:
+                pass
+            CLONES.pop(bot_prefix, None)
+            CLONES.pop(str(bot_prefix), None)
+
         vj = Client(f"clone_{user_id}_{bot_prefix}", API_ID, API_HASH, bot_token=bot_token, plugins={})
         await vj.start()
-        register_clone_handlers(vj)
+
         bot = await vj.get_me()
-        set_clone_client(bot.id, vj)
+
+        if bot.id != bot_prefix:
+            existing_by_id = get_clone_client(bot.id)
+            if existing_by_id and existing_by_id != vj:
+                try:
+                    await existing_by_id.stop()
+                except Exception:
+                    pass
+                CLONES.pop(bot.id, None)
+                CLONES.pop(str(bot.id), None)
+
+        CLONES[int(bot.id)] = vj
+        CLONES[str(bot.id)] = vj
+        register_clone_handlers(vj)
+
         if m is not None:
-            m.bots.update_one(
-                {"bot_id": bot.id},
-                {"$set": {
-                    "bot_id": bot.id,
-                    "is_bot": True,
-                    "user_id": int(user_id),
-                    "name": bot.first_name,
-                    "token": bot_token,
-                    "username": bot.username,
+            existing_rec = m.bots.find_one({"bot_id": bot.id})
+            update_data = {
+                "bot_id": bot.id,
+                "is_bot": True,
+                "user_id": int(user_id),
+                "name": bot.first_name,
+                "token": bot_token,
+                "username": bot.username,
+                "owner_name": ans.from_user.first_name if ans and ans.from_user else None,
+                "owner_username": ans.from_user.username if ans and ans.from_user else None
+            }
+            if not existing_rec:
+                update_data.update({
                     "force_channels": [],
                     "custom_caption": None,
                     "custom_buttons": [],
@@ -536,9 +576,10 @@ async def _listen_and_create_clone(client, user_id, sess_token, prompt_msg=None)
                     "mode": "private",
                     "deactivated": False,
                     "hide_owner": False,
-                    "owner_name": ans.from_user.first_name if ans and ans.from_user else None,
-                    "owner_username": ans.from_user.username if ans and ans.from_user else None
-                }},
+                })
+            m.bots.update_one(
+                {"bot_id": bot.id},
+                {"$set": update_data},
                 upsert=True
             )
         await set_clone_menu(vj, int(user_id))

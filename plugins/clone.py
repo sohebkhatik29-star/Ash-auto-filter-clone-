@@ -34,6 +34,13 @@ def get_clone_client(bot_id):
 
 def set_clone_client(bot_id, client):
     try:
+        old = CLONES.get(int(bot_id)) or CLONES.get(str(bot_id))
+        if old and old != client:
+            try:
+                import asyncio
+                asyncio.create_task(old.stop())
+            except Exception:
+                pass
         CLONES[int(bot_id)] = client
         CLONES[str(bot_id)] = client
     except Exception:
@@ -188,9 +195,20 @@ async def restart_bots():
             logging.warning("Skipping clone %s: database record has no token field", bot.get("bot_id") or bot.get("username") or "unknown")
             continue
         try:
+            bid = bot.get("bot_id")
+            if bid and get_clone_client(bid):
+                logging.info("Clone @%s is already running, skipping restart.", bot.get("username"))
+                continue
             vj = Client(token, API_ID, API_HASH, bot_token=token, plugins={})
             await vj.start()
+            existing = get_clone_client(vj.me.id)
+            if existing and existing != vj:
+                try:
+                    await existing.stop()
+                except Exception:
+                    pass
             CLONES[int(vj.me.id)] = vj
+            CLONES[str(vj.me.id)] = vj
             register_clone_handlers(vj)
             await set_clone_menu(vj, bot.get("user_id"))
             logging.info("Clone started: @%s", bot.get("username"))
