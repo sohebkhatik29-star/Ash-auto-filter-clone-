@@ -238,8 +238,69 @@ async def handle_user_buy_premium_view(client, query_or_msg, rec: dict = None, s
     )
 
 
+def get_user_free_usage_notice(bot_id: int, user_id: int, rec: dict = None):
+    """Calculate and return (usage_text, usage_markup) for the free usage notice."""
+    if not rec:
+        return None, None
+    f_limit = rec.get("free_limit", {})
+    if not isinstance(f_limit, dict) or not bool(f_limit.get("enabled", False)):
+        return None, None
+    allowed_count = int(f_limit.get("count", 0))
+    if allowed_count <= 0:
+        return None, None
+    duration_sec = f_limit.get("duration_seconds")
+    if not duration_sec:
+        num = int(f_limit.get("num", 1) or 1)
+        unit = str(f_limit.get("unit", "day")).lower()
+        if "sec" in unit:
+            duration_sec = num
+        elif "min" in unit:
+            duration_sec = num * 60
+        elif "hour" in unit:
+            duration_sec = num * 3600
+        elif "month" in unit:
+            duration_sec = num * 30 * 86400
+        elif "year" in unit:
+            duration_sec = num * 365 * 86400
+        elif "week" in unit:
+            duration_sec = num * 7 * 86400
+        else:
+            duration_sec = num * 86400
+
+    window_display = f_limit.get("display") or f_limit.get("window_text") or (f"Every {f_limit.get('num', 1)} {f_limit.get('unit', 'day').capitalize()}(s)" if f_limit.get("num") else "Every 1 Day(s)")
+    if not str(window_display).lower().startswith("every"):
+        window_text = f"Every {window_display}"
+    else:
+        window_text = str(window_display)
+
+    import time
+    from plugins.clone import mongo_db
+    now = time.time()
+    u_rec = mongo_db.free_usage.find_one({"bot_id": int(bot_id), "user_id": int(user_id)}) if mongo_db is not None else None
+    if not u_rec or (now - float(u_rec.get("window_start", 0))) >= float(duration_sec):
+        current_usage = 0
+    else:
+        current_usage = int(u_rec.get("count", 0))
+
+    remaining = max(0, allowed_count - current_usage)
+    usage_notice_text = (
+        f"📊 <b>Free Usage Details</b>\n"
+        f"• <b>Usage:</b> {current_usage} / {allowed_count}\n"
+        f"• <b>Reset Window:</b> {window_text}\n\n"
+        f"You have {remaining} free uses remaining."
+    )
+    premium_is_active = bool(rec.get("premium_is_on", False) or rec.get("premium_enabled", False))
+    usage_markup = None
+    if premium_is_active:
+        cb_data = "c_buy_prem:from_free_usage"
+        usage_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💎 BUY PREMIUM FOR UNLIMITED ACCESS 💎", callback_data=cb_data)]
+        ])
+    return usage_notice_text, usage_markup
+
+
 async def handle_user_back_from_premium(client, query, payload: str = ""):
-    """Handle user clicking BACK from Premium/UPI view, reliably restoring verification panel or start menu."""
+    """Handle user clicking BACK from Premium/UPI view, reliably restoring free usage panel, verification panel, or start menu."""
     user = getattr(query, "from_user", None)
     user_id = user.id if user else 0
     msg = getattr(query, "message", None)
@@ -260,25 +321,84 @@ async def handle_user_back_from_premium(client, query, payload: str = ""):
         except Exception:
             payload = ""
 
-    # 1. Try to get verification panel (clone first, then master)
-    v_text, v_markup = None, None
     try:
-        from clone_plugins.commands import access_verification
-        v_res = await access_verification(client, user_id, payload)
-        if isinstance(v_res, (tuple, list)):
-            v_text = v_res[0]
-            v_markup = v_res[1] if len(v_res) > 1 else None
-        elif v_res:
-            v_text, v_markup = "<b>🔐 Please verify first to access this file.</b>", v_res
+        me = client.me or (await client.get_me())
+        bot_id = me.id if me else 0
     except Exception:
-        pass
+        me = getattr(client, "me", None)
+        bot_id = me.id if me else 0
 
-    if not v_markup:
+    rec = None
+    try:
+        from clone_plugins.commands import bot_record
+        rec = bot_record(client)
+    except Exception:
+        rec = None
+
+    if not rec and bot_id:
         try:
-            from plugins.commands import check_master_verification
-            v_text, v_markup = await check_master_verification(client, user_id, payload)
+            from plugins.clone import mongo_db
+            if mongo_db is not None:
+                rec = mongo_db.bots.find_one({"bot_id": int(bot_id)}) or mongo_db.clone_settings.find_one({"bot_id": int(bot_id)}) or mongo_db.master_settings.find_one({"type": "master_config"}) or {}
         except Exception:
             pass
+
+    # 1. If user came from Free Usage Details notice (or payload is from_free_usage):
+    if payload and "from_free_usage" in payload:
+        usage_text, usage_markup = get_user_free_usage_notice(bot_id, user_id, rec)
+        if usage_text:
+            if msg and not getattr(msg, "photo", None):
+                try:
+                    return await msg.edit_text(
+                        text=usage_text,
+                        reply_markup=usage_markup,
+                        parse_mode=enums.ParseMode.HTML,
+                        disable_web_page_preview=True
+                    )
+                except Exception:
+                    pass
+            if msg:
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
+            try:
+                return await client.send_message(
+                    chat_id=chat_id,
+                    text=usage_text,
+                    reply_markup=usage_markup,
+                    parse_mode=enums.ParseMode.HTML,
+                    disable_web_page_preview=True
+                )
+            except Exception:
+                pass
+            return
+
+    # 2. Try to get verification panel (clone first, then master)
+    v_text, v_markup = None, None
+    if payload and payload != "from_free_usage":
+        try:
+            from clone_plugins.commands import access_verification
+            v_res = await access_verification(client, user_id, payload)
+            if isinstance(v_res, (tuple, list)):
+                v_text = v_res[0]
+                v_markup = v_res[1] if len(v_res) > 1 else None
+            elif v_res:
+                v_text, v_markup = "<b>🔐 Please verify first to access this file.</b>", v_res
+        except Exception:
+            pass
+
+        if not v_markup:
+            try:
+                from plugins.commands import check_master_verification
+                v_res = await check_master_verification(client, user_id, payload)
+                if isinstance(v_res, (tuple, list)):
+                    v_text = v_res[0]
+                    v_markup = v_res[1] if len(v_res) > 1 else None
+                elif v_res:
+                    v_text, v_markup = "<b>🔐 Please verify first to access this file.</b>", v_res
+            except Exception:
+                pass
 
     if v_text and v_markup:
         # If current message is text, EDIT IN-PLACE! Never create a new message.
@@ -291,16 +411,7 @@ async def handle_user_back_from_premium(client, query, payload: str = ""):
                     disable_web_page_preview=True
                 )
             except Exception:
-                try:
-                    return await msg.edit_text(
-                        text=v_text,
-                        reply_markup=v_markup,
-                        disable_web_page_preview=True
-                    )
-                except Exception:
-                    pass
-
-        # If current message is a photo (e.g. from UPI view), delete old photo & send text message
+                pass
         if msg:
             try:
                 await msg.delete()
@@ -315,44 +426,40 @@ async def handle_user_back_from_premium(client, query, payload: str = ""):
                 disable_web_page_preview=True
             )
         except Exception:
+            pass
+        return
+
+    # 3. Check if free usage notice is available for this user (if no verification was pending)
+    usage_text, usage_markup = get_user_free_usage_notice(bot_id, user_id, rec)
+    if usage_text:
+        if msg and not getattr(msg, "photo", None):
             try:
-                return await client.send_message(
-                    chat_id=chat_id,
-                    text=v_text,
-                    reply_markup=v_markup,
+                return await msg.edit_text(
+                    text=usage_text,
+                    reply_markup=usage_markup,
+                    parse_mode=enums.ParseMode.HTML,
                     disable_web_page_preview=True
                 )
             except Exception:
                 pass
-        return
-
-    # 2. If no verification is pending (e.g. user already verified or no verification needed):
-    if payload:
+        if msg:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
         try:
-            from clone_plugins.commands import start as clone_start
-            class PseudoMsg:
-                def __init__(self):
-                    self.from_user = user
-                    self.chat = msg.chat if msg else user
-                    self.command = ["start", payload]
-                    self.text = f"/start {payload}"
-                    self.id = getattr(msg, "id", 0)
-                async def reply(self, *args, **kwargs):
-                    return await client.send_message(chat_id, *args, **kwargs)
-                async def reply_text(self, *args, **kwargs):
-                    return await client.send_message(chat_id, *args, **kwargs)
-                async def reply_photo(self, *args, **kwargs):
-                    return await client.send_photo(chat_id, *args, **kwargs)
-            p_msg = PseudoMsg()
-            await clone_start(client, p_msg)
-            if msg:
-                try: await msg.delete()
-                except Exception: pass
-            return
+            return await client.send_message(
+                chat_id=chat_id,
+                text=usage_text,
+                reply_markup=usage_markup,
+                parse_mode=enums.ParseMode.HTML,
+                disable_web_page_preview=True
+            )
         except Exception:
             pass
+        return
 
-    # 3. Fallback: Show start menu
+    # 4. Fallback: Show start menu without re-delivering files
     try:
         me = getattr(client, "me", None) or (await client.get_me())
         me_mention = me.mention if me else "Bot"

@@ -176,7 +176,7 @@ async def check_master_verification(client, user_id, original_payload):
                 premium_is_active = bool(master_cfg.get("premium_is_on", False) or master_cfg.get("premium_enabled", False))
                 usage_markup = None
                 if premium_is_active:
-                    cb_data = f"m_buy_prem:{original_payload}" if original_payload else "m_buy_prem"
+                    cb_data = "m_buy_prem:from_free_usage"
                     usage_markup = InlineKeyboardMarkup([
                         [InlineKeyboardButton("💎 BUY PREMIUM FOR UNLIMITED ACCESS 💎", callback_data=cb_data)]
                     ])

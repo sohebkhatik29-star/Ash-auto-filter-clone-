@@ -483,7 +483,7 @@ async def access_verification(client, user_id, original_payload=""):
                 premium_is_active = bool(rec.get("premium_is_on", False) or rec.get("premium_enabled", False))
                 usage_markup = None
                 if premium_is_active:
-                    cb_data = f"c_buy_prem:{original_payload}" if original_payload else "c_buy_prem"
+                    cb_data = "c_buy_prem:from_free_usage"
                     usage_markup = InlineKeyboardMarkup([
                         [InlineKeyboardButton("💎 BUY PREMIUM FOR UNLIMITED ACCESS 💎", callback_data=cb_data)]
                     ])
