@@ -217,18 +217,21 @@ def set_user_verified(user_id: int, bot_id=0, duration_minutes=1440, slot=1):
 
 
 def create_verify_token(user_id: int, bot_id=0, payload="", slot=1) -> str:
-    token = uuid.uuid4().hex[:10]
+    from anti_bypass import generate_secure_token
+    now = int(time.time())
+    token, sig = generate_secure_token(int(user_id), int(bot_id), int(slot), created_at=now)
     if mongo_db is not None:
         mongo_db.verify_tokens.update_one(
             {"token": token},
             {"$set": {
                 "token": token,
+                "sig": sig,
                 "user_id": int(user_id),
                 "bot_id": int(bot_id),
                 "payload": payload,
                 "slot": int(slot),
-                "created_at": int(time.time()),
-                "expires_at": int(time.time()) + 3600
+                "created_at": now,
+                "expires_at": now + 1800
             }},
             upsert=True
         )
@@ -236,27 +239,9 @@ def create_verify_token(user_id: int, bot_id=0, payload="", slot=1) -> str:
 
 
 def consume_verify_token(token: str, user_id: int, bot_id=0):
-    if mongo_db is None:
-        return "", 1, False, 0
-    rec = mongo_db.verify_tokens.find_one({"token": token, "user_id": int(user_id), "bot_id": int(bot_id)})
-    if not rec:
-        rec = mongo_db.verify_tokens.find_one({"token": token, "user_id": int(user_id)})
-    if not rec:
-        rec = mongo_db.verify_tokens.find_one({"token": token})
-    if not rec:
-        rec = mongo_db.access_tokens.find_one({"token": token})
-    if not rec:
-        return "", 1, False, 0
-    try:
-        mongo_db.verify_tokens.delete_one({"_id": rec["_id"]})
-    except Exception:
-        pass
-    now = int(time.time())
-    created_at = int(rec.get("created_at", now))
-    time_taken = max(0, now - created_at)
-    slot = int(rec.get("slot", 1))
-    payload = rec.get("payload", "")
-    return payload, slot, False, time_taken
+    from anti_bypass import validate_verify_attempt
+    return validate_verify_attempt(token, int(user_id), int(bot_id), mongo_db)
+
 
 async def get_short_link(user, link):
     if not user:
