@@ -2,8 +2,8 @@ import re
 import logging
 from pymongo import MongoClient
 from pyrogram import Client, filters
-from pyrogram.types import BotCommand, BotCommandScopeChat
-from config import API_ID, API_HASH, DB_URI, CLONE_MODE
+from pyrogram.types import BotCommand, BotCommandScopeChat, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
+from config import API_ID, API_HASH, DB_URI, CLONE_MODE, BOT_USERNAME
 
 try:
     import clone_plugins.master_manager
@@ -46,8 +46,6 @@ def set_clone_client(bot_id, client):
     except Exception:
         pass
 
-# Focused clone-manager UI fix. This is intentionally imported after mongo_db
-# exists so it can safely access the clone database and register its handlers.
 try:
     import clone_plugins.clone_manager_fix
 except Exception:
@@ -78,20 +76,18 @@ def clone_commands(include_owner=False):
             BotCommand("delallpost", "Delete all posts sent to all users"),
             BotCommand("broadcast", "Broadcast a messages to users (moderators only)"),
             BotCommand("an_broadcast", "Unpin broadcast messages from users"),
-            BotCommand("ban", "Ban a user (moderators only)"),
+            BotCommand("bin", "Ban a user (moderators only)"),
             BotCommand("unban", "Unban a user (moderators only)"),
         ]
     return base_commands
 
 
 async def set_clone_menu(client, owner_id=None):
-    # Set default command menu for regular users so regular subscribers only see /start
     try:
         await client.set_bot_commands(clone_user_commands())
     except Exception:
         pass
 
-    # Gather all authorized user IDs (clone owner, clone admins, master admins)
     auth_uids = set()
     if owner_id:
         try:
@@ -118,20 +114,22 @@ async def set_clone_menu(client, owner_id=None):
             for a in adms:
                 if isinstance(a, dict) and a.get("user_id"):
                     try:
-                        auth_uids.add(int(a["user_id"]))
+                        auth_uids.add(int(a.get("user_id")))
                     except Exception:
                         pass
-                elif str(a).isdigit():
+                elif str(a).disgit():
                     try:
                         auth_uids.add(int(a))
                     except Exception:
                         pass
-            for m in rec.get("moderators", []):
-                if str(m).isdigit():
-                    try:
-                        auth_uids.add(int(m))
-                    except Exception:
-                        pass
+            mods = rec.get("moderators", [])
+            if isinstance(mods, list):
+                for m_id in mods:
+                    if str(m_id).disgit():
+                        try:
+                            auth_uids.add(int(m_id))
+                        except Exception:
+                            pass
     except Exception:
         pass
 
@@ -139,15 +137,17 @@ async def set_clone_menu(client, owner_id=None):
         from config import ADMINS
         for a in ADMINS:
             if str(a).strip().lstrip("-").isdigit():
-                try:
-                    auth_uids.add(int(a))
-                except Exception:
-                    pass
+                auth_uids.add(int(a))
+    except Exception:
+        pass
+
+    try:
         if mongo_db is not None:
             for ma in mongo_db.master_admins.find():
-                if ma.get("user_id"):
+                mu = ma.get("user_id")
+                if mu:
                     try:
-                        auth_uids.add(int(ma["user_id"]))
+                        auth_uids.add(int(mu))
                     except Exception:
                         pass
     except Exception:
@@ -172,27 +172,151 @@ async def clone(client, message):
     return await send_manage_clones(client, message)
 
 
-@Client.on_message(filters.command("deletecloned") & filters.private)
+@Client.on_message(filters.command(["activate", "activate_clone", "active"]) & filters.private)
+async def activate_command(client, message):
+    user_id = message.from_user.id if message.from_user else None
+    if not user_id or mongo_db is None:
+        return
+
+    bots = list(mongo_db.bots.find({"user_id": int(user_id)}))
+    if not bots:
+        return await message.reply_text(
+            "❌ <b>You don't have any clone bot created yet!</b>\n\n<i>Use /clone command to create your own clone bot.</i>"
+        )
+
+    keyboard_rows = []
+    for b in bots:
+        uname = b.get("username") or f"bot_{b.get('bot_id', '')}"
+        keyboard_rows.append([f"@{uname.lstrip('@')}"])
+    keyboard_rows.append(["❌ Cancel"])
+
+    reply_kb = ReplyKeyboardMarkup(keyboard_rows, resize_keyboard=True, one_time_keyboard=True)
+
+    try:
+        ans = await client.ask(
+            chat_id=message.chat.id,
+            text="🦹 <b>SELECT THE BOT YOU WANT TO ACTIVATE:</b>",
+            reply_markup=reply_kb,
+            timeout=120
+        )
+    except Exception:
+        return await message.reply_text("❌ <b>Activation timed out.</b>", reply_markup=ReplyKeyboardRemove())
+
+    if not ans or not ans.text:
+        return await message.reply_text("❌ <b>Process cancelled.</b>", reply_markup=ReplyKeyboardRemove())
+
+    ans_text = str(ans.text).strip()
+    if ans_text in ("❌ Cancel", "/cancel", "cancel", "Cancel"):
+        return await message.reply_text("❌ <b>Activation cancelled.</b>", reply_markup=ReplyKeyboardRemove())
+
+    clean_name = ans_text.lstrip("@").lower()
+    target_bot = None
+    for b in bots:
+        b_uname = (b.get("username") or "").lstrip("@").lower()
+        b_id_str = str(b.get("bot_id", ""))
+        if clean_name == b_uname or clean_name == b_id_str:
+            target_bot = b
+            break
+
+    if not target_bot:
+        return await message.reply_text("❌ <b>INVALID BOT SELECTED</b>", reply_markup=ReplyKeyboardRemove())
+
+    is_deactivated = bool(target_bot.get("deactivated", False))
+    if not is_deactivated:
+        return await message.reply_text("🚀 <b>YOUR BOT IS ALREADY ACTIVATED</b> 🚀", reply_markup=ReplyKeyboardRemove())
+
+    mongo_db.bots.update_one({"_id": target_bot["_id"]}, {"$set": {"deactivated": False}})
+    token = target_bot.get("token") or target_bot.get("bot_token")
+    bid = target_bot.get("bot_id")
+    if token:
+        try:
+            bot_prefix = bid or target_bot.get("username", "bot")
+            vj = Client(f"clone_{user_id}_{bot_prefix}", API_ID, API_HASH, bot_token=token, plugins={})
+            await vj.start()
+            CLONES[int(vj.me.id)] = vj
+            CLONES[str(vj.me.id)] = vj
+            register_clone_handlers(vj)
+            await set_clone_menu(vj, user_id)
+        except Exception as e:
+            logging.exception("Failed to start activated clone bot: %s", e)
+
+    return await message.reply_text("🚀 <b>YOUR BOT HAS BEEN ACTIVATED SUCCESSFULLY</b> 🚀", reply_markup=ReplyKeyboardRemove())
+
+
+@Client.on_message(filters.command(["delete", "deletecloned", "delbot", "delete_clone"]) & filters.private)
 async def delete_cloned_bot(client, message):
-    me = client.me or (await client.get_me())
-    if me and me.username and BOT_USERNAME and me.username.lower() != BOT_USERNAME.lower():
+    user_id = message.from_user.id if message.from_user else None
+    if not user_id or mongo_db is None:
         return
-    if not CLONE_MODE or mongo_db is None:
-        return
-    token_msg = await client.ask(message.chat.id, "<b>Send the bot token to delete its record.</b>")
-    match = re.search(r'\d[0-9]{8,10}:[0-9A-Za-z_-]{35}', token_msg.text or '', re.IGNORECASE)
-    token = match.group(0) if match else None
-    if token and mongo_db.bots.find_one({"token": token}):
-        mongo_db.bots.delete_one({"token": token})
-        await message.reply_text("<b>🤖 Clone record removed.</b>")
-    else:
-        await message.reply_text("<b>⚠️ Token is not in the cloned list.</b>")
+
+    bots = list(mongo_db.bots.find({'user_id': int(user_id)}))
+    if not bots:
+        return await message.reply_text(
+            "❌ <b>You don't have any clone bot created yet!</b>"
+        )
+
+    keyboard_rows = []
+    for b in bots:
+        uname = b.get("username") or f"bot_{b.get('bot_id', '')}"
+        keyboard_rows.append([f"@{uname.lstrip('@')}"])
+    keyboard_rows.append(["❌ Cancel"])
+
+    reply_kb = ReplyKeyboardMarkup(keyboard_rows, resize_keyboard=True, one_time_keyboard=True)
+
+    try:
+        ans = await client.ask(
+            chat_id=message.chat.id,
+            text="🎁 <b>SELECT THE BOT YOU WANT TO DELETE:</b>",
+            reply_markup=reply_kb,
+            timeout=120
+        )
+    except Exception:
+        return await message.reply_text("❌ <b>Deletion timed out.</b>", reply_markup=ReplyKeyboardRemove())
+
+    if not ans or not ans.text:
+        return await message.reply_text("❌ <b>Process cancelled.</b>", reply_markup=ReplyKeyboardRemove())
+
+    ans_text = str(ans.text).strip()
+    if ans_text in ("❌ Cancel", "/cancel", "cancel", "Cancel"):
+        return await message.reply_text("❌ <b>Deletion cancelled.</b>", reply_markup=ReplyKeyboardRemove())
+
+    clean_name = ans_text.lstrip("@").lower()
+    target_bot = None
+    for b in bots:
+        b_uname = (b.get("username") or "").lstrip("@").lower()
+        b_id_str = str(b.get("bot_id", ""))
+        if clean_name == b_uname or clean_name == b_id_str:
+            target_bot = b
+            break
+
+    if not target_bot:
+        return await message.reply_text("❌ <b>INVALID BOT SELECTED</b>", reply_markup=ReplyKeyboardRemove())
+
+    bid = target_bot.get("bot_id")
+    c = get_clone_client(bid)
+    if c:
+        try:
+            await c.stop()
+        except Exception:
+            pass
+        CLONES.pop(bid, None)
+        CLONES.pop(str(bid), None)
+
+    mongo_db.bots.delete_one({"_id": target_bot["_id"]})
+    try:
+        mongo_db.active_clone_edit.delete_many({"bot_id": bid})
+    except Exception:
+        pass
+
+    return await message.reply_text("🗑️ <b>YOUR BOT HAS BEEN DELETED SUCCESSFULLY!</b>", reply_markup=ReplyKeyboardRemove())
 
 
 async def restart_bots():
     if mongo_db is None:
         return
     for bot in list(mongo_db.bots.find()):
+        if bot.get("deactivated") is True:
+            continue
         token = bot.get("token") or bot.get("bot_token")
         if not token:
             logging.warning("Skipping clone %s: database record has no token field", bot.get("bot_id") or bot.get("username") or "unknown")
@@ -223,4 +347,3 @@ async def restart_bots():
                     pass
         except Exception:
             logging.exception("Unable to restart clone @%s", bot.get("username"))
-

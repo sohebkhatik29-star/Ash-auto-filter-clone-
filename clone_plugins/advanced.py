@@ -599,6 +599,15 @@ async def transfer_db(client,message):
     if not owner_only(client,message.from_user.id):return await reject_unauthorized(client, message)
     if len(message.command)<2 or not message.command[1].isdigit():return await message.reply("Usage: /transfer_db OLD_BOT_ID")
     await message.reply("🔄 Transfer request received. Use the selected clone workflow from Master → My Clone Bot.")
+async def activate_cmd(client, message):
+    if not owner_only(client, message.from_user.id):
+        return await reject_unauthorized(client, message)
+    rec = bot_record(client)
+    if not rec.get("deactivated", False):
+        return await message.reply("🚀 <b>YOUR BOT IS ALREADY ACTIVATED</b> 🚀")
+    save(client, {"deactivated": False})
+    return await message.reply("🚀 <b>YOUR BOT HAS BEEN ACTIVATED SUCCESSFULLY</b> 🚀")
+
 async def deactivate(client,message):
     if not owner_only(client,message.from_user.id):return await reject_unauthorized(client, message)
     value=len(message.command)>1 and message.command[1].lower() in ("on","1","yes","true");save(client,{"deactivated":value});await message.reply("⏸ Clone deactivated." if value else "▶️ Clone activated.")

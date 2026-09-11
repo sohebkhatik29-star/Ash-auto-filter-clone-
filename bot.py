@@ -24,6 +24,8 @@ def all_commands():
     return [
         BotCommand('start', 'Start the bot'),
         BotCommand('clone', 'Create your own clone'),
+        BotCommand('activate', 'Activate your clone bot'),
+        BotCommand('delete', 'Permanently delete your clone bot'),
     ]
 
 
@@ -63,6 +65,7 @@ def owner_commands():
         BotCommand('restart', 'Save and restart'),
         BotCommand('delete', 'Delete clone record'),
         BotCommand('start_msg', 'Set start message'),
+        BotCommand('activate', 'Activate your clone bot'),
         BotCommand('deletecloned', 'Remove a cloned bot record'),
     ]
 

@@ -154,7 +154,7 @@ def register_clone_handlers(client):
         "caption": "caption", "button": "button", "protect": "protect",
         "auto_delete": "auto_delete", "no_forward": "no_forward",
         "moderator": "moderator", "access_token": "access_token",
-        "transfer_db": "transfer_db", "deactivate": "deactivate",
+        "transfer_db": "transfer_db", "deactivate": "deactivate", "activate": "activate_cmd", "active": "activate_cmd",
         "mode": "mode", "restart": "restart", "delete": "delete",
         "start_msg": "start_msg",
     }
