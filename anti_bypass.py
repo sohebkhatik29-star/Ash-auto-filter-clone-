@@ -141,9 +141,9 @@ def check_user_agent(user_agent: str) -> bool:
 def get_bypass_threshold(bot_id: int, slot: int = 1, mongo_db=None) -> int:
     """
     Determine the minimum time (in seconds) required for human verification.
-    Defaults to 12s, or reads custom setting from DB.
+    Defaults to 50s, or reads custom setting from DB.
     """
-    default_time = 12
+    default_time = 50
     if mongo_db is None:
         return default_time
 
@@ -285,7 +285,7 @@ def validate_verify_attempt(
         msg_text, markup = build_bypass_warning_ui(
             f"Token was generated for User {token_owner_id}, but claimed by User {user_id}",
             time_taken,
-            12,
+            50,
             orig_payload
         )
         return AntiBypassResult(
@@ -334,7 +334,7 @@ def validate_verify_attempt(
             msg_text, markup = build_bypass_warning_ui(
                 "Cryptographic HMAC signature verification failed (Tampered Token)",
                 time_taken,
-                12,
+                50,
                 orig_payload
             )
             return AntiBypassResult(
