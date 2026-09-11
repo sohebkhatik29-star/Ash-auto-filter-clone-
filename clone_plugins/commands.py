@@ -754,7 +754,7 @@ async def deliver_file(client, user_id, file_id, protected=False):
 import datetime as _dt
 import time as _time
 
-async def send_verify_log(client, user, log_type="verified", slot=1, validity=None, payload=None, time_taken=None, model_name=None, reason=None):
+async def send_verify_log(client, user, log_type="verified", slot=1, validity=None, payload=None, time_taken=None):
     """Send detailed verify/bypass log to verify_log_channel."""
     rec = bot_record(client)
     if not rec:
@@ -785,10 +785,6 @@ async def send_verify_log(client, user, log_type="verified", slot=1, validity=No
             parts.append(f"👤 <b>Last Name:</b> {last}")
             parts.append(f"📎 <b>Username:</b> {uname_str}")
             parts.append(f"🤖 <b>Bot:</b> {bot_uname}")
-            if model_name:
-                parts.append(f"🛡️ <b>Defense:</b> <code>{model_name}</code>")
-            if reason:
-                parts.append(f"🔍 <b>Reason:</b> <i>{reason}</i>")
             if time_taken is not None and time_taken > 0:
                 parts.append(f"⏱ <b>Time Taken:</b> <code>{time_taken}s</code> (Too fast / Bypass bot)")
             elif time_taken == 0:
@@ -1025,22 +1021,7 @@ async def start(client, message):
         
     if data.startswith("verify_") or data.startswith("verify-"):
         token_str = data.split("_", 1)[1] if data.startswith("verify_") else data.split("-", 1)[1]
-        v_res = consume_verify_token(token_str, message.from_user.id, me.id)
-        orig_payload, slot_used, is_bypassed, time_taken = v_res
-
-        # 🛡️ 8-Model Anti-Bypass Guard: Reject if bypassed or invalid
-        if hasattr(v_res, "is_valid") and not v_res.is_valid:
-            if getattr(v_res, "is_bypassed", False):
-                asyncio.create_task(send_verify_log(
-                    client, message.from_user, log_type="bypass",
-                    slot=slot_used, payload=orig_payload or None, time_taken=time_taken,
-                    model_name=getattr(v_res, "model_triggered", None),
-                    reason=getattr(v_res, "reason", None)
-                ))
-            warning_text = getattr(v_res, "warning_text", None) or "❌ <b>Verification failed or bypass detected!</b>"
-            markup = getattr(v_res, "retry_markup", None)
-            return await message.reply(warning_text, reply_markup=markup)
-
+        orig_payload, slot_used, is_bypassed, time_taken = consume_verify_token(token_str, message.from_user.id, me.id)
         if not orig_payload and mongo_db is not None:
             rec_t = mongo_db.access_tokens.find_one({
                 "bot_id": me.id, "token": token_str, "user_id": int(message.from_user.id)
