@@ -24,6 +24,13 @@ def all_commands():
     return [
         BotCommand('start', 'Start the bot'),
         BotCommand('clone', 'Create your own clone'),
+    ]
+
+
+def clone_owner_commands():
+    return [
+        BotCommand('start', 'Start the bot'),
+        BotCommand('clone', 'Create your own clone'),
         BotCommand('activate', 'Activate your clone bot'),
         BotCommand('delete', 'Permanently delete your clone bot'),
     ]
@@ -81,6 +88,22 @@ async def setup_main_menu():
                 )
             except Exception:
                 logging.exception('Unable to set admin menu for %s', admin)
+
+        try:
+            from plugins.clone import mongo_db
+            if mongo_db is not None:
+                user_ids = mongo_db.bots.distinct("user_id")
+                for uid in user_ids:
+                    if uid and str(uid).isdigit():
+                        try:
+                            await StreamBot.set_bot_commands(
+                                clone_owner_commands(),
+                                scope=BotCommandScopeChat(chat_id=int(uid)),
+                            )
+                        except Exception:
+                            pass
+        except Exception:
+            logging.exception('Unable to set clone owner menus on startup')
     except Exception:
         logging.exception('Unable to set main command menu')
 

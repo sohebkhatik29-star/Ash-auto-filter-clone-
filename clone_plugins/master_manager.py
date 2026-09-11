@@ -583,6 +583,11 @@ async def _listen_and_create_clone(client, user_id, sess_token, prompt_msg=None)
                 upsert=True
             )
         await set_clone_menu(vj, int(user_id))
+        try:
+            from plugins.clone import sync_user_clone_menu
+            await sync_user_clone_menu(client, int(user_id))
+        except Exception:
+            pass
         await msg.edit_text(
             f"✨ <b>Successfully Cloned Your Bot: @{bot.username}</b>",
             reply_markup=InlineKeyboardMarkup([

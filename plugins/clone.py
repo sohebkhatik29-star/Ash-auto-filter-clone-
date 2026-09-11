@@ -52,6 +52,46 @@ except Exception:
     logging.exception("Unable to load focused clone manager fix")
 
 
+def master_user_commands():
+    return [
+        BotCommand("start", "Start the bot"),
+        BotCommand("clone", "Create your own clone"),
+    ]
+
+
+def master_clone_owner_commands():
+    return [
+        BotCommand("start", "Start the bot"),
+        BotCommand("clone", "Create your own clone"),
+        BotCommand("activate", "Activate your clone bot"),
+        BotCommand("delete", "Permanently delete your clone bot"),
+    ]
+
+
+async def sync_user_clone_menu(client, user_id):
+    if not user_id or mongo_db is None:
+        return
+    try:
+        count = mongo_db.bots.count_documents({"user_id": int(user_id)})
+        if count > 0:
+            await client.set_bot_commands(
+                master_clone_owner_commands(),
+                scope=BotCommandScopeChat(chat_id=int(user_id))
+            )
+        else:
+            try:
+                await client.delete_bot_commands(
+                    scope=BotCommandScopeChat(chat_id=int(user_id))
+                )
+            except Exception:
+                await client.set_bot_commands(
+                    master_user_commands(),
+                    scope=BotCommandScopeChat(chat_id=int(user_id))
+                )
+    except Exception as e:
+        logging.warning("Error syncing clone menu for user %s: %s", user_id, e)
+
+
 def clone_user_commands():
     return [
         BotCommand("start", "Check i am alive"),
@@ -76,7 +116,7 @@ def clone_commands(include_owner=False):
             BotCommand("delallpost", "Delete all posts sent to all users"),
             BotCommand("broadcast", "Broadcast a messages to users (moderators only)"),
             BotCommand("an_broadcast", "Unpin broadcast messages from users"),
-            BotCommand("bin", "Ban a user (moderators only)"),
+            BotCommand("ban", "Ban a user (moderators only)"),
             BotCommand("unban", "Unban a user (moderators only)"),
         ]
     return base_commands
@@ -305,6 +345,10 @@ async def delete_cloned_bot(client, message):
     mongo_db.bots.delete_one({"_id": target_bot["_id"]})
     try:
         mongo_db.active_clone_edit.delete_many({"bot_id": bid})
+    except Exception:
+        pass
+    try:
+        await sync_user_clone_menu(client, int(user_id))
     except Exception:
         pass
 
