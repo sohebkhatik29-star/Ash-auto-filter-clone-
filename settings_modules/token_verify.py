@@ -32,13 +32,8 @@ def bypass_time_markup(slot: int, prefix_cb="cset", target_bid=None):
     bid_suffix = f":{target_bid}" if target_bid else ""
     back_cb = f"{cb}_token_verification:{slot}{bid_suffix}"
     return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("⚡ 30s", callback_data=f"{cb}_quick_v_bypass_time:30:{slot}{bid_suffix}"),
-            InlineKeyboardButton("🛡️ 45s", callback_data=f"{cb}_quick_v_bypass_time:45:{slot}{bid_suffix}"),
-            InlineKeyboardButton("🔒 60s", callback_data=f"{cb}_quick_v_bypass_time:60:{slot}{bid_suffix}")
-        ],
-        [InlineKeyboardButton("✍️ SET CUSTOM TIME", callback_data=f"{cb}_set_v_bypass_time:{slot}{bid_suffix}")],
-        [InlineKeyboardButton("🔄 RESET DEFAULT (50s)", callback_data=f"{cb}_del_v_bypass_time:{slot}{bid_suffix}")],
+        [InlineKeyboardButton("SET BYPASS TIME", callback_data=f"{cb}_set_v_bypass_time:{slot}{bid_suffix}")],
+        [InlineKeyboardButton("RESET BYPASS TIME (12s)", callback_data=f"{cb}_del_v_bypass_time:{slot}{bid_suffix}")],
         [InlineKeyboardButton("‹ BACK", callback_data=back_cb)]
     ])
 
@@ -596,33 +591,11 @@ async def handle_token_callbacks(
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
         v_cfg = curr_r.get(v_key, {})
-        secs = int(v_cfg.get("bypass_time") or curr_r.get("bypass_time") or 50)
+        secs = int(v_cfg.get("bypass_time") or curr_r.get("bypass_time") or 12)
         text = (
             f"🛡️ <b>{prefix} ANTI-BYPASS TIME:</b>\n\n"
             "<blockquote>ANTI-BYPASS PROTECTION: Sets the minimum time (in seconds) a user must spend before verification is accepted. Shortener bypass bots that resolve instantly will be detected and blocked!</blockquote>\n\n"
-            f"<b>MINIMUM TIME -</b> <code>{secs} Seconds</code> (Default: 50s)"
-        )
-        return await clean_show(text, reply_markup=bypass_time_markup(slot, prefix_cb, target_bid=target_bid))
-
-    if str(data).startswith(("master_quick_v_bypass_time:", "m_quick_v_bypass_time:", "cset_quick_v_bypass_time:")):
-        parts = data.split(":")
-        sec_val = int(parts[1])
-        slot = int(parts[2])
-        v_key = f"verify_{slot}" if slot > 1 else "verify_1"
-        curr_r = get_rec_fn() if callable(get_rec_fn) else r
-        v_cfg = dict(curr_r.get(v_key, {}))
-        v_cfg["bypass_time"] = sec_val
-        curr_r[v_key] = v_cfg
-        save_fn(**{v_key: v_cfg})
-        try:
-            await query.answer(f"Anti-bypass time set to {sec_val}s!")
-        except Exception:
-            pass
-        prefix = slot_name(slot)
-        text = (
-            f"🛡️ <b>{prefix} ANTI-BYPASS TIME:</b>\n\n"
-            "<blockquote>ANTI-BYPASS PROTECTION: Sets the minimum time (in seconds) a user must spend before verification is accepted. Shortener bypass bots that resolve instantly will be detected and blocked!</blockquote>\n\n"
-            f"<b>MINIMUM TIME -</b> <code>{sec_val} Seconds</code> (Default: 50s)"
+            f"<b>MINIMUM TIME -</b> <code>{secs} Seconds</code> (Default: 12s)"
         )
         return await clean_show(text, reply_markup=bypass_time_markup(slot, prefix_cb, target_bid=target_bid))
 
@@ -631,18 +604,18 @@ async def handle_token_callbacks(
         v_key = f"verify_{slot}" if slot > 1 else "verify_1"
         curr_r = get_rec_fn() if callable(get_rec_fn) else r
         v_cfg = dict(curr_r.get(v_key, {}))
-        v_cfg["bypass_time"] = 50
+        v_cfg["bypass_time"] = 12
         curr_r[v_key] = v_cfg
         save_fn(**{v_key: v_cfg})
         try:
-            await query.answer("Bypass protection reset to 50s!")
+            await query.answer("Bypass protection reset to 12s!")
         except Exception:
             pass
         prefix = slot_name(slot)
         text = (
             f"🛡️ <b>{prefix} ANTI-BYPASS TIME:</b>\n\n"
             "<blockquote>ANTI-BYPASS PROTECTION: Sets the minimum time (in seconds) a user must spend before verification is accepted. Shortener bypass bots that resolve instantly will be detected and blocked!</blockquote>\n\n"
-            "<b>MINIMUM TIME -</b> <code>50 Seconds</code> (Default: 50s)"
+            "<b>MINIMUM TIME -</b> <code>12 Seconds</code> (Default: 12s)"
         )
         return await clean_show(text, reply_markup=bypass_time_markup(slot, prefix_cb, target_bid=target_bid))
 
