@@ -39,14 +39,14 @@ AUTO_DELETE_TIME = int(environ.get("AUTO_DELETE_TIME", "1800"))
 # Channel Information
 LOG_CHANNEL = int(environ.get("LOG_CHANNEL", "-1003444819050"))
 SUPPORT_GROUP = environ.get("SUPPORT_GROUP", "ash_movie_j")
-UPDATE_CHANNEL = environ.get("UPDATE_CHANNEL", environ.get("UPDATES_CHANNEL", "ash_mods_world_bot"))
+UPDATE_CHANNEL = environ.get("UPDATE_CHANNEL", environ.get("UPDATES_CHANNEL", "ash_movie_1782"))
 
 def tg_link(name_or_url, default=""):
     val = (name_or_url or default or "").strip()
     if not val or "moviesgroupg3" in val.lower() or "gvanirbez" in val.lower():
         val = (default or "").strip()
         if not val or "moviesgroupg3" in val.lower() or "gvanirbez" in val.lower():
-            return "https://t.me/ash_mods_world_bot"
+            return "https://t.me/ash_movie_1782"
     if val.startswith("https://") or val.startswith("http://"):
         return val
     return f"https://t.me/{val.lstrip('@')}"

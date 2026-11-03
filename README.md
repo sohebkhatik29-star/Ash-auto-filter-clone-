@@ -12,7 +12,7 @@
 
 ## 📢 Telegram
 
-- **Channel:** [ash_mods_world_bot](https://t.me/ash_mods_world_bot)
+- **Channel:** [ash_movie_1782](https://t.me/ash_movie_1782)
 - **Group:** [ash_movie_j](https://t.me/ash_movie_j)
 
 ## ✨ Features
@@ -74,7 +74,7 @@ This repository is a customized deployment/configuration of a Telegram file-stor
 
 **Bot:** [@Ash_files_or_clone_mangar_bot](https://t.me/Ash_files_or_clone_mangar_bot)
 
-**Channel:** [ash_mods_world_bot](https://t.me/ash_mods_world_bot)
+**Channel:** [ash_movie_1782](https://t.me/ash_movie_1782)
 
 **Group:** [ash_movie_j](https://t.me/ash_movie_j)
 

@@ -17,7 +17,7 @@ class script(object):
 
     CAPTION = """<b>📂 ғɪʟᴇɴᴀᴍᴇ : {file_name}
 ⚙️ sɪᴢᴇ : {file_size}
-Jᴏɪɴ [ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ](https://t.me/ash_mods_world_bot)</b>"""
+Jᴏɪɴ [ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ](https://t.me/ash_movie_1782)</b>"""
 
     SHORTENER_API_MESSAGE = """<b>Tᴏ ᴀᴅᴅ ᴏʀ ᴜᴘᴅᴀᴛᴇ ʏᴏᴜʀ Sʜᴏʀᴛᴇɴᴇʀ Wᴇʙsɪᴛᴇ API, /api (ᴀᴘɪ)
 Ex: /api ʏᴏᴜʀ_ᴀᴘɪ_ᴋᴇʏ
@@ -35,7 +35,7 @@ If You Want To Remove Api Then Copy This And Send To Bot - `/api None`"""
 
 ☆ <b>MY OWNER:</b> <a href=tg://user?id={}>{}</a>
 
-☆ <b>UPDATES:</b> <a href=https://t.me/ash_mods_world_bot>ASH BOTZ</a>
+☆ <b>UPDATES:</b> <a href=https://t.me/ash_movie_1782>ASH BOTZ</a>
 
 ☆ <b>SUPPORT:</b> <a href=https://t.me/ash_movie_j>ASH GROUP</a>
 
@@ -49,7 +49,7 @@ If You Want To Remove Api Then Copy This And Send To Bot - `/api None`"""
 
 ☆ <b>MY OWNER:</b> <a href=tg://user?id={}>{}</a>
 
-☆ <b>UPDATES:</b> <a href=https://t.me/ash_mods_world_bot>ASH BOTZ</a>
+☆ <b>UPDATES:</b> <a href=https://t.me/ash_movie_1782>ASH BOTZ</a>
 
 ☆ <b>SUPPORT:</b> <a href=https://t.me/ash_movie_j>ASH GROUP</a>
 

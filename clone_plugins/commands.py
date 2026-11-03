@@ -832,7 +832,7 @@ def get_clone_start_markup(client, user_id, rec):
         InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")
     ])
     buttons.append([
-        InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "ash_mods_world_bot"))
+        InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "ash_movie_1782"))
     ])
     start_btns = rec.get("start_buttons", [])
     for r_item in start_btns:
