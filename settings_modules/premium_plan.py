@@ -470,7 +470,7 @@ async def handle_user_back_from_premium(client, query, payload: str = ""):
         buttons = [
             [InlineKeyboardButton("⚙️ SETTINGS", callback_data="settings"), InlineKeyboardButton("🤖 MY OWN BOT", url=f"https://t.me/{BOT_USERNAME}?start=clone")],
             [InlineKeyboardButton("💁 HELP", callback_data="help"), InlineKeyboardButton("ℹ️ ABOUT", callback_data="about")],
-            [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "MoviesGroupG3"))]
+            [InlineKeyboardButton("📢 UPDATE CHANNEL", url=tg_link(UPDATE_CHANNEL, "ash_mods_world_bot"))]
         ]
         start_txt = getattr(script, "CLONE_START_TXT", getattr(script, "START_TXT", "Welcome!"))
         try:

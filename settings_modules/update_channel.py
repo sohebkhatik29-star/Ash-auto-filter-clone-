@@ -12,15 +12,15 @@ logger = logging.getLogger(__name__)
 # Default list of update channels (can include join-request links like https://t.me/+... or usernames)
 # You can add or edit as many update channel links as you want here!
 DEFAULT_UPDATE_CHANNELS = [
-    "MoviesGroupG3",  # default username or join link e.g. "https://t.me/+YourJoinRequestLink"
+    "ash_mods_world_bot",  # default username or join link e.g. "https://t.me/+YourJoinRequestLink"
 ]
 
 
 def format_telegram_link(link_or_username: str) -> str:
     """Format any join request link, invite link or username into a valid Telegram URL."""
     val = (link_or_username or "").strip()
-    if not val:
-        return "https://t.me/MoviesGroupG3"
+    if not val or "moviesgroupg3" in val.lower() or "gvanirbez" in val.lower():
+        return "https://t.me/ash_mods_world_bot"
     if val.startswith("https://") or val.startswith("http://"):
         return val
     if val.startswith("+"):
@@ -92,7 +92,7 @@ def get_update_channel_url(client=None, bot_id=None) -> str:
     if DEFAULT_UPDATE_CHANNELS:
         return format_telegram_link(DEFAULT_UPDATE_CHANNELS[0])
 
-    return "https://t.me/MoviesGroupG3"
+    return "https://t.me/ash_mods_world_bot"
 
 
 def get_wait_markup(client=None, cancel_callback_data: str = "cancel_delivery", custom_channel_url: str = None) -> InlineKeyboardMarkup:
